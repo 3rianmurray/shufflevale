@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import * as haptics from '../lib/haptics';
@@ -28,10 +28,10 @@ const MARKS = Array.from({ length: 360 / STEP + 1 }, (_, i) => i * STEP - 180);
 export function RotationControl({ value, onChange }: { value: number; onChange: (deg: number) => void }) {
   const [track, setTrack] = useState({ left: 0, width: 1 });
   const [typed, setTyped] = useState<string | null>(null);
-  const trackView = useRef<View>(null);
-  // Kept outside React state: the slider's drag is made once, and reads where the track is and what's showing.
+  // Kept outside React state: the slider's drag is made once, and reads where the track is (and the track itself,
+  // to measure it again) and what's showing.
   const [live] = useState(() => {
-    const box = { track: { left: 0, width: 1 }, value: 0, onChange: (_: number) => {} };
+    const box = { track: { left: 0, width: 1 }, value: 0, onChange: (_: number) => {}, view: null as View | null };
     return { set: (next: Partial<typeof box>) => Object.assign(box, next), get: () => box };
   });
   live.set({ track, value, onChange });
@@ -42,12 +42,24 @@ export function RotationControl({ value, onChange }: { value: number; onChange: 
       if (deg % STEP === 0 && deg !== was) haptics.tick();
       change(deg);
     };
+    // Where the track lies now, as a finger comes down: it may have moved since it was laid out (its window
+    // dragged elsewhere, or its sheet still sliding in).
+    const start = (pageX: number) => {
+      const { view } = live.get();
+      if (!view) return at(pageX);
+      view.measureInWindow((x, _y, width) => {
+        const t = { left: x, width: Math.max(1, width) };
+        live.set({ track: t });
+        setTrack(t);
+        at(pageX);
+      });
+    };
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       // Sideways drags are the slider's, not the sheet's.
       onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (e) => at(e.nativeEvent.pageX),
+      onPanResponderGrant: (e) => start(e.nativeEvent.pageX),
       onPanResponderMove: (e) => at(e.nativeEvent.pageX),
     });
   });
@@ -63,10 +75,12 @@ export function RotationControl({ value, onChange }: { value: number; onChange: 
   return (
     <View style={styles.box}>
       <View
-        ref={trackView}
+        ref={(v) => {
+          live.set({ view: v });
+        }}
         style={styles.track}
         // Where it lies across the screen, to tell where along it a finger is.
-        onLayout={() => trackView.current?.measureInWindow((x, _y, width) => setTrack({ left: x, width: Math.max(1, width) }))}
+        onLayout={() => live.get().view?.measureInWindow((x, _y, width) => setTrack({ left: x, width: Math.max(1, width) }))}
         {...drag.panHandlers}
         accessible
         accessibilityRole="adjustable"

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { SymbolView } from 'expo-symbols';
 import type { SymbolViewProps } from 'expo-symbols';
-import { Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { previousTourStep, useTourStep } from '../lib/tour';
@@ -51,11 +51,22 @@ interface Props {
    * card's copies) is kept as it's made, when it's Done.
    */
   closeLabel?: string;
+  /**
+   * Where it shows, instead of a sheet at the bottom (on iPad, over a table): a window floating by `at` (a point
+   * on screen, e.g. where the finger was), dragged by its title or the grip in its corner, nothing darkened; or a
+   * panel dropped from the top, in the middle, that stays put. Either closes with a tap anywhere else, so has no
+   * Cancel (only a `closeLabel` of its own, e.g. Done).
+   */
+  place?: { kind: 'window'; at: { x: number; y: number } } | { kind: 'drop' };
 }
 
 /** How long the sheet takes to come up, and to go. */
 const IN_MS = 260;
 const OUT_MS = 200;
+/** A window's width, and its gap from the point it's by; the dropped panel's width. */
+const WINDOW_W = 340;
+const WINDOW_GAP = 16;
+const DROP_W = 440;
 
 /**
  * A bottom sheet of actions. Each action closes the sheet when pressed. The dimmed backdrop fades in and out
@@ -68,9 +79,21 @@ export function ActionSheet(props: Props) {
   // 0 is closed, 1 open: the backdrop's opacity, and how far up the sheet has slid.
   const [progress] = useState(() => new Animated.Value(0));
   // Starts below the screen, until the sheet has been measured (it slides in only once it has).
-  const { height: screenHeight } = useWindowDimensions();
+  const { height: screenHeight, width: screenWidth } = useWindowDimensions();
   const [sheetHeight, setSheetHeight] = useState(screenHeight);
   const [measured, setMeasured] = useState(false);
+  // A window, dragged by its title or its grip: it stays where it's let go (back by its point, each time it opens).
+  const [pan] = useState(() => new Animated.ValueXY());
+  const [windowTouches] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => pan.extractOffset(),
+      onPanResponderMove: (_, g) => pan.setValue({ x: g.dx, y: g.dy }),
+      onPanResponderRelease: () => pan.flattenOffset(),
+      onPanResponderTerminate: () => pan.flattenOffset(),
+    }),
+  );
   // What the sheet shows, kept from when it was last open: while it slides away, whatever it was showing may
   // already be gone (the card just moved, the group just deleted), and it should leave as it was.
   const shown = useMemo(() => {
@@ -78,7 +101,10 @@ export function ActionSheet(props: Props) {
     return { keep: (p: Props) => Object.assign(box, { last: p }), get: () => box.last };
   }, []);
   if (visible) shown.keep(props);
-  const { title, header, banner, tiles, actions, overlay, closeLabel = 'Cancel' } = visible ? props : (shown.get() ?? props);
+  const showing = visible ? props : (shown.get() ?? props);
+  const { title, header, banner, tiles, actions, overlay, place } = showing;
+  // A window or a dropped panel closes with a tap elsewhere: no Cancel, only a close button of its own (Done).
+  const closeLabel = showing.closeLabel ?? (place ? null : 'Cancel');
   // The modal stays up after `visible` goes false until the sheet has slid away.
   const [mounted, setMounted] = useState(visible);
   if (visible && !mounted) setMounted(true);
@@ -105,6 +131,13 @@ export function ActionSheet(props: Props) {
   // Everything else is grayed out and can't be pressed meanwhile (Cancel still closes the menu).
   const isOff = (a: SheetAction) => !!guided && !isGuided(a);
 
+  // A window opens by its point, wherever the last one was dragged.
+  useEffect(() => {
+    if (!visible) return;
+    pan.setOffset({ x: 0, y: 0 });
+    pan.setValue({ x: 0, y: 0 });
+  }, [visible, pan]);
+
   useEffect(() => {
     if (visible && !measured) return;
     if (visible) {
@@ -128,7 +161,81 @@ export function ActionSheet(props: Props) {
     }
   };
 
-  return (
+  // Measured as it comes (not while it goes: its size changing then would make it jump).
+  const measure = (h: number) => {
+    if (!visible) return;
+    setSheetHeight(h);
+    setMeasured(true);
+  };
+  // What it holds, whichever way it shows: the title (but in a window, it's in the window's top), what's above
+  // the choices, the choices, and its close button.
+  const body = (
+    <>
+      {guided ? <TourTip index={guided.index} step={guided.step} /> : null}
+      {header}
+      {title && place?.kind !== 'window' ? <Text style={styles.title}>{title}</Text> : null}
+      {banner}
+      {tiles?.length ? (
+        <View style={styles.tiles}>
+          {tiles.map((t) => (
+            // Three to a row, or four when there are more than six, so the rows stay even.
+            <View key={t.label} style={[styles.tileCell, { width: tiles.length > 6 ? '25%' : '33.333%' }]}>
+              <Pressable
+                onPress={() => run(t)}
+                disabled={t.disabled || isOff(t)}
+                accessibilityRole="button"
+                accessibilityLabel={t.label}
+                accessibilityState={{ disabled: t.disabled || isOff(t) }}
+                style={({ pressed }) => [
+                  styles.tile,
+                  isGuided(t) && styles.guided,
+                  pressed && styles.pressed,
+                  (t.disabled || isOff(t)) && styles.tileDisabled,
+                ]}>
+                <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
+                <Text style={[styles.tileText, t.destructive && { color: colors.danger }]} numberOfLines={1}>
+                  {t.label}
+                </Text>
+                {t.pro ? (
+                  <View style={[styles.proTag, styles.tileProTag]}>
+                    <Text style={styles.proTagText}>PRO</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {actions.map((a) => (
+        <Pressable
+          key={a.label}
+          onPress={() => run(a)}
+          disabled={isOff(a)}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: isOff(a) }}
+          style={({ pressed }) => [styles.action, a.groupStart && styles.groupStart, isGuided(a) && styles.guided, pressed && styles.pressed, isOff(a) && styles.tileDisabled]}>
+          <Text style={[styles.actionText, a.destructive && { color: colors.danger }]}>{a.label}</Text>
+          {a.pro ? (
+            <View style={styles.proTagSpot}>
+              <View style={styles.proTag}>
+                <Text style={styles.proTagText}>PRO</Text>
+              </View>
+            </View>
+          ) : null}
+        </Pressable>
+      ))}
+      {closeLabel ? (
+        <Pressable
+          onPress={onClose}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.action, styles.cancel, pressed && styles.pressed]}>
+          <Text style={[styles.actionText, { fontWeight: '600' }]}>{closeLabel}</Text>
+        </Pressable>
+      ) : null}
+    </>
+  );
+
+  const modal = (children: ReactNode) => (
     <Modal
       visible={mounted}
       transparent
@@ -142,88 +249,96 @@ export function ActionSheet(props: Props) {
         pending.current = null;
         next?.();
       }}>
-      {/* Lifts the sheet above the keyboard when the header contains a text field. */}
-      <KeyboardAvoidingView style={styles.screen} behavior="padding">
-        <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, { opacity: progress }]}>
+      {children}
+      {overlay}
+    </Modal>
+  );
+  const room = screenHeight - insets.top - insets.bottom - 16;
+
+  if (place?.kind === 'window') {
+    // By its point: to the right of it if there's room (else the left, else over it), a little above it, on screen.
+    const w = Math.min(WINDOW_W, screenWidth - 24);
+    const h = measured ? sheetHeight : 0;
+    const { at } = place;
+    const x =
+      at.x + WINDOW_GAP + w <= screenWidth - 12
+        ? at.x + WINDOW_GAP
+        : at.x - WINDOW_GAP - w >= 12
+          ? at.x - WINDOW_GAP - w
+          : Math.max(12, Math.min(screenWidth - w - 12, at.x - w / 2));
+    const y = Math.max(insets.top + 8, Math.min(screenHeight - insets.bottom - h - 8, at.y - 40));
+    return modal(
+      <>
+        {/* Nothing darkened: a tap anywhere else closes it. */}
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+        <Animated.View
+          onLayout={(e) => measure(e.nativeEvent.layout.height)}
+          style={[
+            styles.window,
+            { left: x, top: y, width: w, maxHeight: room },
+            {
+              opacity: measured ? progress : 0,
+              transform: [...pan.getTranslateTransform(), { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) }],
+            },
+          ]}>
+          <View {...windowTouches.panHandlers} style={styles.windowHead}>
+            <Text style={styles.windowTitle} numberOfLines={1}>
+              {title ?? ''}
+            </Text>
+          </View>
+          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" style={styles.windowScroll} contentContainerStyle={styles.windowContent}>
+            {body}
+          </ScrollView>
+          {/* The grip: it can be moved (as a window's corner, or a zone's). */}
+          <View {...windowTouches.panHandlers} style={styles.gripSpot} hitSlop={10}>
+            <View style={styles.grip} />
+          </View>
+        </Animated.View>
+      </>,
+    );
+  }
+
+  if (place?.kind === 'drop') {
+    // From the top, in the middle, staying where it is.
+    const w = Math.min(DROP_W, screenWidth - 32);
+    return modal(
+      <>
+        <Animated.View style={[StyleSheet.absoluteFill, styles.backdropLight, { opacity: progress }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
         </Animated.View>
         <Animated.View
-          onLayout={(e) => {
-            // Not while it slides away: its height changing then would make the slide jump.
-            if (!visible) return;
-            setSheetHeight(e.nativeEvent.layout.height);
-            setMeasured(true);
-          }}
+          onLayout={(e) => measure(e.nativeEvent.layout.height)}
           style={[
-            styles.sheet,
-            { paddingBottom: insets.bottom + 8 },
-            { transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [sheetHeight, 0] }) }] },
+            styles.drop,
+            { top: insets.top + 8, left: (screenWidth - w) / 2, width: w, maxHeight: room },
+            { transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [-(sheetHeight + insets.top + 16), 0] }) }] },
           ]}>
           <ScrollView bounces={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-            {guided ? <TourTip index={guided.index} step={guided.step} /> : null}
-            {header}
-            {title ? <Text style={styles.title}>{title}</Text> : null}
-            {banner}
-            {tiles?.length ? (
-              <View style={styles.tiles}>
-                {tiles.map((t) => (
-                  // Three to a row, or four when there are more than six, so the rows stay even.
-                  <View key={t.label} style={[styles.tileCell, { width: tiles.length > 6 ? '25%' : '33.333%' }]}>
-                    <Pressable
-                      onPress={() => run(t)}
-                      disabled={t.disabled || isOff(t)}
-                      accessibilityRole="button"
-                      accessibilityLabel={t.label}
-                      accessibilityState={{ disabled: t.disabled || isOff(t) }}
-                      style={({ pressed }) => [
-                        styles.tile,
-                        isGuided(t) && styles.guided,
-                        pressed && styles.pressed,
-                        (t.disabled || isOff(t)) && styles.tileDisabled,
-                      ]}>
-                      <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
-                      <Text style={[styles.tileText, t.destructive && { color: colors.danger }]} numberOfLines={1}>
-                        {t.label}
-                      </Text>
-                      {t.pro ? (
-                        <View style={[styles.proTag, styles.tileProTag]}>
-                          <Text style={styles.proTagText}>PRO</Text>
-                        </View>
-                      ) : null}
-                    </Pressable>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-            {actions.map((a) => (
-              <Pressable
-                key={a.label}
-                onPress={() => run(a)}
-                disabled={isOff(a)}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: isOff(a) }}
-                style={({ pressed }) => [styles.action, a.groupStart && styles.groupStart, isGuided(a) && styles.guided, pressed && styles.pressed, isOff(a) && styles.tileDisabled]}>
-                <Text style={[styles.actionText, a.destructive && { color: colors.danger }]}>{a.label}</Text>
-                {a.pro ? (
-                  <View style={styles.proTagSpot}>
-                    <View style={styles.proTag}>
-                      <Text style={styles.proTagText}>PRO</Text>
-                    </View>
-                  </View>
-                ) : null}
-              </Pressable>
-            ))}
-            <Pressable
-              onPress={onClose}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.action, styles.cancel, pressed && styles.pressed]}>
-              <Text style={[styles.actionText, { fontWeight: '600' }]}>{closeLabel}</Text>
-            </Pressable>
+            {body}
           </ScrollView>
         </Animated.View>
-      </KeyboardAvoidingView>
-      {overlay}
-    </Modal>
+      </>,
+    );
+  }
+
+  return modal(
+    // Lifts the sheet above the keyboard when the header contains a text field.
+    <KeyboardAvoidingView style={styles.screen} behavior="padding">
+      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, { opacity: progress }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
+      </Animated.View>
+      <Animated.View
+        onLayout={(e) => measure(e.nativeEvent.layout.height)}
+        style={[
+          styles.sheet,
+          { paddingBottom: insets.bottom + 8 },
+          { transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [sheetHeight, 0] }) }] },
+        ]}>
+        <ScrollView bounces={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+          {body}
+        </ScrollView>
+      </Animated.View>
+    </KeyboardAvoidingView>,
   );
 }
 
@@ -231,6 +346,35 @@ const styles = StyleSheet.create({
   // The sheet sits at the bottom, over a backdrop that covers the whole screen.
   screen: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { backgroundColor: 'rgba(0,0,0,0.5)' },
+  backdropLight: { backgroundColor: 'rgba(0,0,0,0.25)' },
+  // A window (as the table's other options are, on iPad: see CardFocus's compact panel).
+  window: {
+    position: 'absolute',
+    borderRadius: 18,
+    backgroundColor: 'rgba(8,18,26,0.96)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.25)',
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  windowHead: { alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16 },
+  windowTitle: { color: colors.text, fontSize: 15, fontWeight: '600', minHeight: 18 },
+  windowScroll: { flexShrink: 1 },
+  windowContent: { paddingHorizontal: 12, paddingBottom: 22, gap: 6 },
+  gripSpot: { position: 'absolute', right: 0, bottom: 0, width: 30, height: 30 },
+  grip: { position: 'absolute', right: 7, bottom: 7, width: 14, height: 14, borderRightWidth: 3, borderBottomWidth: 3, borderBottomRightRadius: 6, borderColor: 'rgba(255,255,255,0.85)' },
+  // The table's settings, dropped from the top.
+  drop: {
+    position: 'absolute',
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+  },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: 16,

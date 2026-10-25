@@ -414,6 +414,25 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const [held, setHeld] = useState<Held | null>(null);
   const [target, setTarget] = useState<string | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
+  /**
+   * Where the last finger came down on screen (on the table, its tools, or in a menu's window), kept outside React
+   * state as it changes with every touch: on iPad, a menu opens there (see menuAt).
+   */
+  const [lastTouch] = useState(() => {
+    const box = { x: 0, y: 0, known: false };
+    return { set: (x: number, y: number) => Object.assign(box, { x, y, known: true }), get: () => box };
+  });
+  /** Where an iPad's menu window opens: where the finger was as it was opened (a follow-on one, where it was tapped). */
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const [menuWas, setMenuWas] = useState<Menu | null>(null);
+  // As a menu opens, or another takes its place: set during render, React's way for state that follows state.
+  if (menu !== menuWas) {
+    setMenuWas(menu);
+    if (menu && menu.kind !== menuWas?.kind) {
+      const t = lastTouch.get();
+      setMenuAt(t.known ? { x: t.x, y: t.y } : null);
+    }
+  }
   /** Dealing from this stack: its menu shows how many to deal and to whom, instead of its options. */
   const [dealingFrom, setDealingFrom] = useState<string | null>(null);
   /** Looking through this stack: its menu shows its cards, to take one into the hand. */
@@ -3845,7 +3864,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const zoomCard = zoomed ? cardOf(zoomed) : undefined;
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.outside }]}>
+    <View
+      style={[styles.root, { backgroundColor: theme.outside }]}
+      // Every finger, wherever on the screen (menus' windows too: they're inside this): where menus open, on iPad.
+      onTouchStart={
+        IS_PAD
+          ? (e) => {
+              lastTouch.set(e.nativeEvent.pageX, e.nativeEvent.pageY);
+            }
+          : undefined
+      }>
       <GestureDetector gesture={gesture}>
         <View style={StyleSheet.absoluteFill} onLayout={layOut}>
           {/* The table, seen through the camera. */}
@@ -4425,7 +4453,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         card={sheet && 'header' in sheet ? sheet.header : null}
         spotlight={spotlight}
         onOptionsTop={setOptionsTop}
-        near={spotNear}
+        // On iPad, a window beside it; a card in the hand's beside where it was tapped.
+        near={spotNear ?? (IS_PAD && menu?.kind === 'hand' && menuAt ? { x: menuAt.x, y: menuAt.y, w: 0, h: 0 } : undefined)}
         title={sheet?.title}
         tiles={sheet?.tiles ?? []}
         rows={sheet && 'rows' in sheet ? sheet.rows : undefined}
@@ -4479,6 +4508,15 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         actions={sheet?.actions ?? []}
         // Scaling is kept as it's made: put away, it's done (and one undo).
         closeLabel={menu?.kind === 'scale' || menu?.kind === 'rotate' ? 'Done' : undefined}
+        // On iPad: the table's settings (and its theme, chosen from them) dropped from the top; every other menu a
+        // window where the finger was.
+        place={
+          IS_PAD
+            ? menu?.kind === 'table' || menu?.kind === 'color'
+              ? { kind: 'drop' }
+              : { kind: 'window', at: menuAt ?? { x: screenW / 2 - 170, y: area.h / 3 } }
+            : undefined
+        }
         onClose={() => {
           finishScale();
           setMenu(null);
