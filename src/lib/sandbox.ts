@@ -1478,6 +1478,47 @@ export function fitCamera(bounds: Area, space: Area): Camera {
   };
 }
 
+// ---- Double taps that zoom (on iPad) ----
+
+/** Zoomed in this far or more, a double tap zooms back out to fit everything in view. */
+export const ZOOMED_IN = 1.6;
+/** A double tap on the table zooms in on that spot: to this at least (or twice as far as it was), up to the most. */
+const TAP_ZOOM = 1.25;
+const TAP_ZOOM_MAX = 2.4;
+/** How much of the room a double-tapped thing fills, and how far in that can take the camera. */
+const FOCUS_FILL = 0.8;
+const FOCUS_MAX_ZOOM = 3;
+
+/** The camera looking at a table point from the middle of `space` (an area of the screen), at zoom `k`, turned as it is. */
+export function cameraLookingAt(c: Camera, at: { x: number; y: number }, k: number, space: Area): Camera {
+  const turn = Math.atan2(c.b, c.a);
+  const a = k * Math.cos(turn);
+  const b = k * Math.sin(turn);
+  const mid = { x: space.x + space.w / 2, y: space.y + space.h / 2 };
+  return { a, b, tx: mid.x - (a * at.x - b * at.y), ty: mid.y - (b * at.x + a * at.y) };
+}
+
+/** A double tap on the table at a point: zoomed in on it, there in the middle (twice as close, or close enough to see). */
+export function zoomInOn(c: Camera, at: { x: number; y: number }, space: Area): Camera {
+  const k = Math.min(TAP_ZOOM_MAX, Math.max(TAP_ZOOM, cameraZoom(c) * 2));
+  return cameraLookingAt(c, at, k, space);
+}
+
+/** A thing on the table (its middle, size and turn) filling the room, in the middle, the camera turned as it is. */
+export function zoomOnto(c: Camera, it: { x: number; y: number; w: number; h: number; angle: number }, space: Area): Camera {
+  // Its outline as seen on screen (turned with the camera).
+  const seen = Math.atan2(c.b, c.a) + (it.angle * Math.PI) / 180;
+  const bw = Math.abs(it.w * Math.cos(seen)) + Math.abs(it.h * Math.sin(seen));
+  const bh = Math.abs(it.w * Math.sin(seen)) + Math.abs(it.h * Math.cos(seen));
+  const k = Math.min(FOCUS_MAX_ZOOM, Math.max(MIN_ZOOM, FOCUS_FILL * Math.min(space.w / Math.max(1, bw), space.h / Math.max(1, bh))));
+  return cameraLookingAt(c, it, k, space);
+}
+
+/** Whether two cameras show much the same (as near as makes no difference to the eye). */
+export function sameView(p: Camera, q: Camera): boolean {
+  return Math.abs(cameraZoom(p) / cameraZoom(q) - 1) < 0.05 && Math.hypot(p.tx - q.tx, p.ty - q.ty) < 24;
+}
+
 /**
  * Brings a deck onto the table: every card (and every copy) in one shuffled, face-down stack at (x, y). `ids`
  * makes unique ids for the stack and its cards.

@@ -71,6 +71,10 @@ import {
   PIECE_SIZE,
   rotateItems,
   turnsFreely,
+  sameView,
+  zoomInOn,
+  zoomOnto,
+  ZOOMED_IN,
   normalizeAngle,
   artLevel,
   keepArtLevels,
@@ -178,6 +182,8 @@ const DOUBLE_TAP_MS = 260;
 /** A tap on empty table, then another held down within this long and this near: a lasso. */
 const LASSO_TAP_MS = 400;
 const LASSO_TAP_REACH = 40;
+/** A second tap on a zone or something locked this soon after the first is a double tap (on iPad: a zoom onto it). */
+const ZOOM_TAP_MS = 400;
 /** How far the finger moves (on screen) before the lasso takes another point. */
 const LASSO_STEP = 6;
 /** A lasso traced back over rubs out: how near its line the finger must come back (points), and how far back along it. */
@@ -214,6 +220,8 @@ const SPOT_MS = 280;
  * finger's tap on empty table turns over what's carried (no reaching for the flip button on a big screen).
  */
 const IS_PAD = Platform.OS === 'ios' && Platform.isPad;
+/** What a double tap zooms to (on iPad): a spot on the table, or something on it (its middle, size and turn). */
+type ZoomTarget = { at: { x: number; y: number } } | { item: { x: number; y: number; w: number; h: number; angle: number } };
 /** How long after a menu window closes the menu that follows is counted its follow-up (the pause before it opens, and some). */
 const FOLLOW_MS = 700;
 /** The time now (read in events, never as a screen is drawn). */
@@ -1489,10 +1497,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       dropZoneSize: () => void;
       lockedOut: (id: string) => boolean;
       openPro: () => void;
+      zoomTo: (target: ZoomTarget) => void;
     };
     return { set: (next: typeof box) => Object.assign(box, next), get: () => box };
   });
-  latest.set({ table, size, handTop, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, tapPiece, setPieceDrag, dropPieces, onDiceGridButton, gridPickedDice, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, rollDice, lockedOut, openPro });
+  latest.set({ table, size, handTop, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, tapPiece, setPieceDrag, dropPieces, onDiceGridButton, gridPickedDice, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, rollDice, lockedOut, openPro, zoomTo: (t) => zoomToTarget(t) });
 
   // The gesture in progress (never drawn from, so kept outside React state).
   const [gestureState] = useState(() => {
@@ -1533,6 +1542,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       onEmpty: false,
       firstDownAt: 0,
       emptyTap: null as null | { x: number; y: number; at: number },
+      /** When the lasso's finger came down: let go at once, unmoved, it was a double tap (on iPad, a zoom). */
+      lassoAt: 0,
+      /** The last tap on a zone or something locked (on iPad): a second soon after on the same zooms onto it. */
+      lastPieceTap: null as null | { id: string; at: number },
       /** The lasso's shape so far, on the table and on screen, and the selection it adds to. */
       lassoBase: [] as string[],
       lassoPieceBase: [] as string[],
@@ -2125,6 +2138,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           if (touch.clearTimer) clearTimeout(touch.clearTimer);
           touch.clearTimer = null;
           touch.mode = 'lasso';
+          touch.lassoAt = now;
           touch.lasso = [w];
           touch.lassoScreen = [{ x: t.x, y: t.y }];
           touch.lassoBase = L.selected;
@@ -2422,9 +2436,19 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const L = latest.get();
       const lifted = changed.map((t) => t.id);
       if (touch.mode === 'lasso' && lifted.includes(touch.first)) {
-        // What it went round stays picked out.
         L.setLassoPath(null);
-        if (L.selected.length) haptics.drop();
+        const f = touch.fingers.get(touch.first);
+        const doubleTap = IS_PAD && !!f && Math.hypot(f.now.x - f.start.x, f.now.y - f.start.y) < TAP_SLOP && Date.now() - touch.lassoAt < TAP_MS;
+        if (doubleTap && f && L.table) {
+          // Let go at once, unmoved: a double tap, not a lasso (on iPad). The camera zooms in there, or onto the
+          // zone there (a locked zone's table works as if it weren't there, so it's found here).
+          const w = toTable(readCamera(), f.start.x, f.start.y);
+          const zone = zoneAt(L.table, w.x, w.y);
+          L.zoomTo(zone ? { item: { x: zone.x, y: zone.y, ...pieceSizeOf(zone), angle: 0 } } : { at: w });
+        } else if (L.selected.length) {
+          // What it went round stays picked out.
+          haptics.drop();
+        }
         touch.mode = 'none';
       } else if (touch.mode === 'group') {
         if (touch.groupTwist && lifted.includes(touch.groupTwist.id)) touch.groupTwist = null;
@@ -2457,7 +2481,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             if (touch.tapTimer) clearTimeout(touch.tapTimer);
             touch.tapTimer = null;
             touch.lastTap = null;
-            L.flipFromTap(src);
+            // A locked card or stack (on iPad): the camera zooms onto it, rather than it turning over.
+            const locked = IS_PAD && src.kind !== 'hand' ? L.table?.stacks.find((s) => s.id === src.stackId && s.locked) : undefined;
+            if (locked) L.zoomTo({ item: { x: locked.x, y: locked.y, ...cardSizeOf(locked.cards[locked.cards.length - 1], L.size), angle: locked.angle } });
+            else L.flipFromTap(src);
           } else {
             if (touch.tapTimer) clearTimeout(touch.tapTimer);
             touch.lastTap = { key, at: now };
@@ -2503,7 +2530,18 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           // A bag held a moment and let go without moving: its options, as any other piece's held.
           L.setMenu({ kind: 'piece', id: pressed.id });
         } else if (pressed) {
-          L.tapPiece(pressed.id, pressed.part, pressed.from);
+          // A zone, or something locked (on iPad): tapped twice, the camera zooms onto it (the first tap did as a
+          // tap does).
+          const now = Date.now();
+          const p = L.table?.pieces?.find((q) => q.id === pressed.id);
+          const zoomable = IS_PAD && !!p && (p.kind === 'zone' || !!p.locked);
+          if (p && zoomable && touch.lastPieceTap?.id === p.id && now - touch.lastPieceTap.at < ZOOM_TAP_MS) {
+            touch.lastPieceTap = null;
+            L.zoomTo({ item: { x: p.x, y: p.y, ...pieceSizeOf(p), angle: turnsFreely(p) ? (p.angle ?? 0) : 0 } });
+          } else {
+            touch.lastPieceTap = p && zoomable ? { id: p.id, at: now } : null;
+            L.tapPiece(pressed.id, pressed.part, pressed.from);
+          }
         }
         touch.mode = 'none';
       } else if (touch.mode === 'carry') {
@@ -2877,15 +2915,21 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
 
   const rename = askName;
 
+  /** The room things are fitted into: between the top bar's buttons and the top of the hand's tabs (as it is now: open, or folded away). */
+  const fitSpace = (w: number) => {
+    const top = insets.top + TOP_BAR_H;
+    const bottom = handTop - HAND_TAB_H;
+    return { x: FIT_MARGIN, y: top + FIT_MARGIN, w: w - FIT_MARGIN * 2, h: bottom - top - FIT_MARGIN * 2 };
+  };
+  /** The camera with everything in sight (cards and all), upright: for this table, as it'll be. */
+  const fitAllCamera = (t: SandboxTable, w: number) => {
+    const bounds = tableBounds(t, size);
+    return bounds ? fitCamera(bounds, fitSpace(w)) : startCamera({ w, h: handTop - HAND_TAB_H }, t.focus);
+  };
   /** Everything in sight (cards and all): below the top bar's buttons, above the hand, upright (for this table, as it'll be). */
   const fitView = (t: SandboxTable, quiet = false) => {
     if (!view) return;
-    const bounds = tableBounds(t, size);
-    // Between the top bar's buttons and the hand: the top of its tabs (as it is now: open, or folded away).
-    const top = insets.top + TOP_BAR_H;
-    const bottom = handTop - HAND_TAB_H;
-    const space = { x: FIT_MARGIN, y: top + FIT_MARGIN, w: view.w - FIT_MARGIN * 2, h: bottom - top - FIT_MARGIN * 2 };
-    writeCamera(bounds ? fitCamera(bounds, space) : startCamera({ w: view.w, h: bottom }, t.focus));
+    writeCamera(fitAllCamera(t, view.w));
     // Saved with the table as it is by then (this render's may be a change behind).
     setTimeout(() => latest.get().saveCamera(), 50);
     if (!quiet) haptics.tick();
@@ -3070,6 +3114,20 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     camB.set(withTiming(to.b, t));
     camX.set(withTiming(to.tx, t));
     camY.set(withTiming(to.ty, t));
+  };
+  /**
+   * A double tap's zoom (on iPad): in on the spot tapped, or onto the thing tapped; back out to everything in view if
+   * the camera's in close already (or already on it). Glided there, and kept with the table.
+   */
+  const zoomToTarget = (target: ZoomTarget) => {
+    if (!view || !table || table.lockCamera) return;
+    const cam = readCamera();
+    const space = fitSpace(view.w);
+    const onto = 'item' in target ? zoomOnto(cam, target.item, space) : zoomInOn(cam, target.at, space);
+    const to = cameraZoom(cam) >= ZOOMED_IN || sameView(cam, onto) ? fitAllCamera(table, view.w) : onto;
+    glideCamera(to);
+    haptics.tick();
+    setTimeout(() => latest.get().saveCamera(), SPOT_MS + 50);
   };
   useEffect(() => {
     // (On iPad the camera's left be: the options float beside it instead.)
