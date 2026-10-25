@@ -13,7 +13,7 @@ import { SwipeRow } from '../components/SwipeRow';
 import type { SwipeSide } from '../components/SwipeRow';
 import { useDecks } from '../lib/DecksContext';
 import { askName } from '../lib/names';
-import { DeckFileError } from '../lib/deckFile';
+import { DeckFileError, deckIdsOn } from '../lib/deckFile';
 import { everythingFile, pickDeckFiles, readDeckFile, tableFile } from '../lib/deckExport';
 import type { FileContents } from '../lib/deckExport';
 import { whileBusy } from '../lib/busy';
@@ -25,7 +25,7 @@ import { exampleAllowances, isPlayground, usePro } from '../lib/pro';
 import * as haptics from '../lib/haptics';
 import { buildRows, dropDeck, dropGroup } from '../lib/groups';
 import type { Row } from '../lib/groups';
-import { isExampleTable, useExamples } from '../lib/examples';
+import { isExampleDeck, isExampleTable, useExamples } from '../lib/examples';
 import { deleteSandbox, duplicateSandbox, moveSandbox, updateSandbox, useSandboxes } from '../lib/sandboxStore';
 import { loadSettings, saveSettings } from '../lib/storage';
 import { offerTipAfterUses, resetTips, setTipsOn, tipsOn } from '../lib/tips';
@@ -231,6 +231,19 @@ export default function HomeScreen() {
     decks: decks.filter((d) => d.groupId === groupId),
     groups: groups.filter((g) => g.id === groupId),
   });
+  /**
+   * Everything but the app's examples (Playing Cards, Solitaire, the Playground: Help brings them back as new). The
+   * Playing Cards deck still goes if a table of the player's uses it.
+   */
+  const backupContents = (): FileContents => {
+    const own = sandboxes.filter((t) => !isExampleTable(t.id));
+    const used = new Set(own.flatMap((t) => [...deckIdsOn(t)]));
+    return everythingFile(
+      decks.filter((d) => !isExampleDeck(d) || used.has(d.id)),
+      own,
+      groups,
+    );
+  };
   /**
    * Opens a Shufflevale file (or all the parts of one saved in parts): its decks go at the top of the list, and its
    * tables (pointed at them) with the rest.
@@ -640,7 +653,7 @@ export default function HomeScreen() {
                   label: 'Back up everything',
                   pro: !pro,
                   opensModal: pro,
-                  onPress: pro ? () => backUpWithNotice(everythingFile(decks, sandboxes, groups)) : () => openPro('files'),
+                  onPress: pro ? () => backUpWithNotice(backupContents()) : () => openPro('files'),
                 },
               ]
             : []),
