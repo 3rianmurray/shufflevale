@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../components/Button';
@@ -7,9 +7,6 @@ import { Text } from '../components/Text';
 import { useExamples } from '../lib/examples';
 import { startTour } from '../lib/tour';
 import { colors } from '../theme';
-
-/** The iPad has a few gestures of its own. */
-const IS_PAD = Platform.OS === 'ios' && Platform.isPad;
 
 /**
  * Gestures and tips, a section per part of the app: only what can't be seen on screen (swipes, holds, double taps,
@@ -47,14 +44,10 @@ const TIPS: { title: string; tips: [string, string][] }[] = [
     tips: [
       ['Move around', 'Slide with one finger. Pinch and twist with two to zoom and turn.'],
       ['Two-finger double tap', 'Tap twice with two fingers: everything on the table fitted in view.'],
-      ...(IS_PAD
-        ? ([
-            ['Double-tap the table', 'Zooms in there. Double-tap a zone, or anything locked, to zoom onto it. Zoomed in close, it fits everything in view again.'],
-          ] as [string, string][])
-        : []),
+      ['Double-tap the table', 'Zooms in there. Double-tap a zone, or anything locked, to zoom onto it. Zoomed in close, it fits everything in view again.'],
       ['Drag a stack', 'Takes its top card. Hold it a moment first to move the whole stack.'],
       ['Tap a card', 'Picks it out. Tap it again for its options.'],
-      ['Double-tap a card', IS_PAD ? 'Flips it (a locked one, the camera zooms onto). Flipped onto a stack facing the same way, it joins it.' : 'Flips it. Flipped onto a stack facing the same way, it joins it.'],
+      ['Double-tap a card', 'Flips it (a locked one, the camera zooms onto instead). Flipped onto a stack facing the same way, it joins it.'],
       ['Double-tap, then hold the table', 'Draw a loop round cards to pick them all out. Do it again to add more.'],
       ['Gone too far with the lasso', 'Trace back over the line: it rubs out, and lets go of what it caught.'],
       ['Start the selection over', 'Tap an empty spot on the table to let go of every picked-out card.'],
