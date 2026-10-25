@@ -22,6 +22,7 @@ export const TIPS = {
   'tables-quick-pinch': 'Quicker: tap twice with two fingers to fit everything in view.',
   'tables-tools-drag': 'Hold the tools tab to move it: up or down, or across to the other side.',
   'tables-drag-to-hand': 'You can also drag a card straight down into the hand to draw it.',
+  'deck-scan-backs': 'Lots of cards with their own backs? Scan each front, then its back, and pair them up as you check the cards.',
 } as const;
 
 export type TipId = keyof typeof TIPS;

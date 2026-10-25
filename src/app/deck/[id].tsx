@@ -12,6 +12,8 @@ import { CardSizePicker } from '../../components/CardSizePicker';
 import { CardView } from '../../components/CardView';
 import { CardScanModal } from '../../components/CardScanModal';
 import { CropModal } from '../../components/CropModal';
+import { ImportReview } from '../../components/ImportReview';
+import type { ImportPicture } from '../../components/ImportReview';
 import { ReorderableGrid } from '../../components/ReorderableGrid';
 import { SpriteSheetModal } from '../../components/SpriteSheetModal';
 import { useDecks } from '../../lib/DecksContext';
@@ -24,7 +26,8 @@ import { exampleAllowances, usePro } from '../../lib/pro';
 import { sandboxes } from '../../lib/sandboxStore';
 import * as haptics from '../../lib/haptics';
 import { sampleBack, sampleCards } from '../../lib/sampleDeck';
-import { cropToShape, loadUpright, smallPixels } from '../../lib/images';
+import { fitToCard } from '../../lib/cardFit';
+import { keepOriginal, loadUpright, smallPixels } from '../../lib/images';
 import { guessSheet } from '../../lib/sheetGuess';
 import { imageUri } from '../../lib/storage';
 import { offerTipAfterUses, offerTipSoon } from '../../lib/tips';
@@ -124,6 +127,10 @@ export default function DeckEditorScreen() {
   const [cropNext, setCropNext] = useState<{ uris: string[]; target: ArtTarget } | null>(null);
   /** A sprite sheet being cut into cards, or picked from for the card back. */
   const [spriteSheet, setSpriteSheet] = useState<{ uri: string; target: ArtTarget } | null>(null);
+  /** Several new cards, being checked over (and paired with their own backs) before they're added. */
+  const [review, setReview] = useState<ImportPicture[] | null>(null);
+  /** Cards cut from a sprite sheet, to check over once its screen has gone (one full-screen view at a time). */
+  const [reviewNext, setReviewNext] = useState<ImportPicture[] | null>(null);
   const pro = usePro();
   /** How many more cards fit in the free version (unlimited with Pro). */
   const room = cardRoom(decks.decks, exampleAllowances(), pro);
@@ -157,9 +164,9 @@ export default function DeckEditorScreen() {
    * New cards: as many as the free version has room for (all of them with Pro). Past that, says how many were
    * added and offers Pro; nothing already added is lost.
    */
-  const addNewCards = (uris: string[], originals: string[], names?: string[]) => {
+  const addNewCards = (uris: string[], originals: string[], names?: string[], backs?: (ImportPicture | undefined)[]) => {
     const fit = Math.min(uris.length, room);
-    if (fit > 0) decks.addCards(deck.id, uris.slice(0, fit), names?.slice(0, fit), originals.slice(0, fit));
+    if (fit > 0) decks.addCards(deck.id, uris.slice(0, fit), names?.slice(0, fit), originals.slice(0, fit), backs?.slice(0, fit));
     if (fit < uris.length) {
       Alert.alert(
         fit ? `Added ${fit} of ${uris.length} cards` : 'You’ve reached the free limit',
@@ -187,7 +194,9 @@ export default function DeckEditorScreen() {
           setBack(back, back);
         } else {
           const cards = await Promise.all(scans.map((s) => fitScan(s, ratio)));
-          addNewCards(cards, cards);
+          // Several: checked over first, where backs scanned with them are paired up.
+          if (cards.length > 1) setReview(cards.map((c) => ({ uri: c, original: c })));
+          else addNewCards(cards, cards);
         }
         return;
       }
@@ -208,6 +217,18 @@ export default function DeckEditorScreen() {
   // One picture that looks like a sprite sheet (a grid of cards): asked whether to cut it up as one, rather than
   // crop it as a single card.
   const cropOrCut = async (uris: string[], target: ArtTarget) => {
+    // Several new cards: each fitted to the card (a cut-out scaled into it, anything else trimmed to it) and
+    // checked over together, rather than cropped one by one (any can still be cut again there).
+    if (target === 'cards' && uris.length > 1) {
+      const ratio = await settleAuto(uris[0]);
+      const pictures: ImportPicture[] = [];
+      for (const u of uris) {
+        const upright = await loadUpright(u);
+        pictures.push({ uri: await fitToCard(upright.uri, ratio), original: await keepOriginal(upright.uri) });
+      }
+      setReview(pictures);
+      return;
+    }
     // To crop: an automatic card size is worked out from the first picture first, so the frame fits it.
     const crop = async () => {
       await settleAuto(uris[0]);
@@ -278,8 +299,11 @@ export default function DeckEditorScreen() {
   ];
   /** A new back: the card's own, if one's being given one (see `backFor`), else the deck's. */
   const setBack = (uri: string, original: string) => {
-    if (backFor) decks.setOwnBack(deck.id, backFor, uri, original);
-    else decks.setCardBack(deck.id, uri, original);
+    if (backFor) {
+      decks.setOwnBack(deck.id, backFor, uri, original);
+      // Giving several cards their own backs one by one: there's a quicker way.
+      offerTipAfterUses('deck-scan-backs', 2, 900);
+    } else decks.setCardBack(deck.id, uri, original);
   };
   const openDeckBackMenu = () => {
     setBackFor(null);
@@ -334,9 +358,10 @@ export default function DeckEditorScreen() {
     const ownBacks = deck.cards.flatMap((c) => (c.backOriginal ? [{ id: c.id, original: c.backOriginal }] : []));
     if (Math.abs(after - before) < 0.001 || (!back && !cards.length && !ownBacks.length)) return;
     withBusy(async () => {
-      if (back) decks.setCardBack(deck.id, await cropToShape(imageUri(back), after));
-      for (const c of cards) decks.replaceCardImage(deck.id, c.id, await cropToShape(imageUri(c.original), after));
-      for (const c of ownBacks) decks.setOwnBack(deck.id, c.id, await cropToShape(imageUri(c.original), after));
+      // (A cut-out is scaled into the new shape, never trimmed: see fitToCard.)
+      if (back) decks.setCardBack(deck.id, await fitToCard(imageUri(back), after));
+      for (const c of cards) decks.replaceCardImage(deck.id, c.id, await fitToCard(imageUri(c.original), after));
+      for (const c of ownBacks) decks.setOwnBack(deck.id, c.id, await fitToCard(imageUri(c.original), after));
     });
   };
 
@@ -717,13 +742,38 @@ export default function DeckEditorScreen() {
           const target = spriteSheet?.target;
           setSpriteSheet(null);
           // An automatic card size is the cut cards' shape.
+          // Several: checked over once this screen has gone (noted now, before it has).
+          const several = target === 'cards' && uris.length > 1;
+          if (several) setReviewNext(uris.map((u) => ({ uri: u, original: u })));
           withBusy(async () => {
             await settleAuto(uris[0]);
             if (target === 'back') setBack(uris[0], uris[0]);
-            else addNewCards(uris, uris);
+            else if (!several) addNewCards(uris, uris);
           });
         }}
         onCancel={() => setSpriteSheet(null)}
+        onClosed={() => {
+          if (reviewNext) setReview(reviewNext);
+          setReviewNext(null);
+        }}
+      />
+
+      <ImportReview
+        pictures={review}
+        cardRatio={cardRatio(deck)}
+        roundness={deck.roundness}
+        room={room}
+        onRoundness={(r) => decks.setRoundness(deck.id, r)}
+        onAdd={(cards) => {
+          setReview(null);
+          addNewCards(
+            cards.map((c) => c.front.uri),
+            cards.map((c) => c.front.original),
+            undefined,
+            cards.map((c) => c.back),
+          );
+        }}
+        onCancel={() => setReview(null)}
       />
     </View>
   );

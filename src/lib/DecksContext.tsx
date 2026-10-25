@@ -51,9 +51,16 @@ interface DecksApi {
   refillDeck: (id: string, name: string, cards: { uri: string; name: string }[], back: string) => Deck | undefined;
   /**
    * Adds a card for each image, named by `names` where given (otherwise numbered). `originals` are the uncropped
-   * pictures they were cut from, kept to cut them again if the card size changes.
+   * pictures they were cut from, kept to cut them again if the card size changes. `backs` gives cards their own
+   * backs (and what each was cut from), where given, all in the same step.
    */
-  addCards: (deckId: string, imageUris: string[], names?: string[], originals?: string[]) => void;
+  addCards: (
+    deckId: string,
+    imageUris: string[],
+    names?: string[],
+    originals?: string[],
+    backs?: ({ uri: string; original: string } | undefined)[],
+  ) => void;
   setCopies: (deckId: string, cardId: string, copies: number) => void;
   renameCard: (deckId: string, cardId: string, name: string) => void;
   removeCard: (deckId: string, cardId: string) => void;
@@ -316,16 +323,20 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         setDecks((all) => all.map((d) => (d.id === id ? deck : d)));
         return deck;
       },
-      addCards(deckId, uris, names, originals) {
+      addCards(deckId, uris, names, originals, backs) {
         const deck = getDeck(deckId);
         if (!deck) return;
         const start = deck.cards.length;
-        const cards: Card[] = uris.map((uri, i) => ({
-          id: newId(),
-          name: names?.[i] ?? `Card ${start + i + 1}`,
-          image: importImage(deckId, uri),
-          ...(originals?.[i] ? { original: importImage(deckId, originals[i]) } : {}),
-        }));
+        const cards: Card[] = uris.map((uri, i) => {
+          const back = backs?.[i];
+          return {
+            id: newId(),
+            name: names?.[i] ?? `Card ${start + i + 1}`,
+            image: importImage(deckId, uri),
+            ...(originals?.[i] ? { original: importImage(deckId, originals[i]) } : {}),
+            ...(back ? { back: importImage(deckId, back.uri), backOriginal: importImage(deckId, back.original) } : {}),
+          };
+        });
         updateDeck(deckId, (d) => ({ ...d, cards: [...d.cards, ...cards] }));
       },
       setCopies(deckId, cardId, copies) {

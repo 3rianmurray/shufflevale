@@ -32,7 +32,7 @@ const formatOf = (uri: string) => (isPng(uri) ? SaveFormat.PNG : SaveFormat.JPEG
 const ALPHA_CHECK_WIDTH = 160;
 
 /** Whether a picture has see-through pixels (only a PNG can). */
-async function hasTransparency(uri: string): Promise<boolean> {
+export async function hasTransparency(uri: string): Promise<boolean> {
   if (!isPng(uri)) return false;
   try {
     const ref = await ImageManipulator.manipulate(uri).resize({ width: ALPHA_CHECK_WIDTH }).renderAsync();
@@ -126,7 +126,7 @@ export async function smallPixels(uri: string, width: number): Promise<{ width: 
 }
 
 /** Turns a whole image a quarter turn and returns the new file, keeping full quality for further editing. */
-export async function rotateImage(uri: string, turn: -90 | 90): Promise<LoadedImage> {
+export async function rotateImage(uri: string, turn: -90 | 90 | 180): Promise<LoadedImage> {
   const ref = await ImageManipulator.manipulate(uri).rotate(turn).renderAsync();
   const img = await ref.saveAsync({ format: formatOf(uri), compress: 1 });
   return { uri: img.uri, width: img.width, height: img.height };

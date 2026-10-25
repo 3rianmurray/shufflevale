@@ -51,10 +51,12 @@ interface Props {
   /** Called with one image uri per card, in card order (just the one, when picking one). */
   onDone: (cards: string[]) => void;
   onCancel: () => void;
+  /** Once it has slid away (iOS can only show another full-screen view after that). */
+  onClosed?: () => void;
 }
 
 /** Slices one image laid out as a grid of cards into separate card images, or takes one card from it. */
-export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCancel }: Props) {
+export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCancel, onClosed }: Props) {
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const [loaded, setLoaded] = useState<(LoadedImage & { source: string }) | null>(null);
@@ -222,7 +224,7 @@ export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCa
   const busy = progress !== null;
 
   return (
-    <Modal visible={uri !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={onCancel}>
+    <Modal visible={uri !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={onCancel} onDismiss={onClosed}>
       <KeyboardAvoidingView style={styles.screen} behavior="padding">
         <ScrollView
           scrollEnabled={!painting}
