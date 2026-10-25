@@ -2832,13 +2832,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const c = readCamera();
     return toTable(c, area.w / 2, handTop / 2);
   };
-  /** Puts cards on the table in the middle of the view, upright as seen (snapped to the table's 45° steps). */
-  const playToView = (t: SandboxTable, cards: SandboxCard[]) => {
-    const m = viewMiddle();
-    const at = { x: m.x, y: m.y, angle: snapAngle(-cameraAngle(readCamera()), 45, 45) };
-    return putOnTable(t, cards, gridOn ? snapToGrid(at, gridStep) : at, newId());
-  };
-
   /**
    * A new stack (the last in `next`) comes onto the table where it can't get lost: above everything already on it,
    * centered across it (below it, if there's no room above). It flies in from the top of the screen as the camera
@@ -3365,11 +3358,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const src: Source = { kind: 'hand', hand: menu.hand, iid: menu.iid };
       const tiles: SheetTile[] = [
         { label: 'Flip over', icon: FLIP_ICON, onPress: () => commit(flipInHand(table, menu.hand, menu.iid)) },
-        {
-          label: 'Play',
-          icon: { ios: 'rectangle.portrait.on.rectangle.portrait', android: 'style', web: 'style' },
-          onPress: () => commit(playToView(take(table, src), [menuHandCard])),
-        },
         ...(menuHandCard.faceUp
           ? [{ label: 'Full size', icon: { ios: 'arrow.up.left.and.arrow.down.right', android: 'open_in_full', web: 'open_in_full' } as const, keepsOpen: true, onPress: () => setZoomed(menuHandCard) }]
           : []),

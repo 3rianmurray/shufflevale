@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
   window: {
     position: 'absolute',
     borderRadius: 18,
-    backgroundColor: 'rgba(8,18,26,0.96)',
+    backgroundColor: '#08121a',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.25)',
     shadowColor: '#000',

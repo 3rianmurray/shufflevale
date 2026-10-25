@@ -336,7 +336,8 @@ export function CardFocus(props: Props) {
           style={styles.options}
           onLayout={(e) => visible && onOptionsTop?.(e.nativeEvent.layout.y)}>
         {spotlight && title ? <Text style={styles.title}>{title}</Text> : null}
-        {options}
+        {/* In a solid panel, as the iPad's windows are, so nothing behind it gets in the way of its buttons. */}
+        <View style={styles.optionsPanel}>{options}</View>
         </View>
       </Animated.View>
       {overlay}
@@ -345,6 +346,8 @@ export function CardFocus(props: Props) {
 }
 
 const ICON = 52;
+/** The solid color of the options' panel (the same in the table's other windows: see ActionSheet). */
+const PANEL = '#08121a';
 /** The compact panel (on iPad): its width (four buttons to a row, with room round them), and its gap from the thing it's beside. */
 const COMPACT_W = 372;
 const COMPACT_GAP = 16;
@@ -377,7 +380,7 @@ const styles = StyleSheet.create({
   // With the thing lit up where it lies: the options at the foot of the screen, under it.
   bottom: { justifyContent: 'flex-end' },
   options: { alignItems: 'center', gap: 18, alignSelf: 'stretch' },
-  // The compact panel: its options, framed, floating beside the thing.
+  // The options' panel, solid, framed: the compact one floating beside the thing, and the one under it otherwise.
   compact: {
     position: 'absolute',
     alignItems: 'center',
@@ -385,7 +388,23 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 18,
     borderRadius: 18,
-    backgroundColor: 'rgba(8,18,26,0.94)',
+    backgroundColor: PANEL,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.25)',
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  optionsPanel: {
+    alignItems: 'center',
+    gap: 14,
+    paddingTop: 16,
+    paddingBottom: 16,
+    width: '94%',
+    maxWidth: COMPACT_W,
+    borderRadius: 18,
+    backgroundColor: PANEL,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.25)',
     shadowColor: '#000',
@@ -412,7 +431,7 @@ const styles = StyleSheet.create({
   list: {
     width: '92%',
     maxWidth: 360,
-    backgroundColor: 'rgba(8,18,26,0.85)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.2)',
@@ -435,16 +454,9 @@ const styles = StyleSheet.create({
     borderRadius: ICON / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(8,18,26,0.85)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.25)',
   },
-  tileText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '600',
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowRadius: 3,
-    textShadowOffset: { width: 0, height: 1 },
-  },
+  tileText: { color: colors.text, fontSize: 12, fontWeight: '600' },
 });
