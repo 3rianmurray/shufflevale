@@ -155,12 +155,10 @@ export default function HomeScreen() {
       return;
     }
     haptics.warn();
-    const n = inIt.length === 1 ? 'its deck' : `its ${inIt.length} decks`;
-    // Deleting them takes their cards off tables and out of sessions too: said if it would.
-    const used = inIt.some((d) => sessions.some((s) => s.deckIds.includes(d.id)) || sandboxes.some((t) => t.stacks.some((s) => s.cards.some((c) => c.deckId === d.id)) || t.hands.some((h) => h.some((c) => c.deckId === d.id))));
+    // The buttons say it all.
     Alert.alert(
       `Delete the group “${group.name}”?`,
-      `Keep ${n} (they stay in your decks, out of any group), or delete ${inIt.length === 1 ? 'it' : 'them'} too, card images and all.${used ? ' Deleting also takes their cards off any tables and out of any sessions.' : ''}`,
+      undefined,
       [
         {
           text: inIt.length === 1 ? 'Keep the deck' : 'Keep the decks',
