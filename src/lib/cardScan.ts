@@ -51,9 +51,6 @@ export function quadSize(q: Quad) {
   return { w: (length(q[0], q[1]) + length(q[3], q[2])) / 2, h: (length(q[0], q[3]) + length(q[1], q[2])) / 2 };
 }
 
-/** The area inside the corners, in the photo's pixels (the shoelace formula). */
-export const quadArea = (q: Quad) => Math.abs(q.reduce((s, p, i) => s + p.x * q[(i + 1) % 4].y - q[(i + 1) % 4].x * p.y, 0)) / 2;
-
 /**
  * Turns the corners so the card stands the way the deck's cards do (portrait or landscape): a portrait card
  * photographed sideways gets a quarter turn.

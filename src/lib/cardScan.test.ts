@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { findCard, homography, mapPoint, orderCorners, outputSize, quadArea, uprightCorners } from './cardScan.ts';
+import { findCard, homography, mapPoint, orderCorners, outputSize, uprightCorners } from './cardScan.ts';
 import type { Point, Quad } from './cardScan.ts';
 import type { Pixels } from './sheetGuess.ts';
 
@@ -160,11 +160,4 @@ test('a light card on a fairly light table, where the two differ less', () => {
   const { corners, found } = findCard(photo({ width: 340, height: 360, corners: truth, seed: 6, table: [175, 172, 165] }));
   assert.ok(found);
   assert.ok(worstMiss(corners, truth, 340) < 0.025, `missed by ${worstMiss(corners, truth, 340)}`);
-});
-test('the area inside a card’s corners, whichever way round they go', () => {
-  const square: Quad = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 20 }, { x: 0, y: 20 }];
-  assert.equal(quadArea(square), 200);
-  assert.equal(quadArea([...square].reverse() as Quad), 200);
-  // A card shot at an angle: a trapezoid.
-  assert.equal(quadArea([{ x: 2, y: 0 }, { x: 8, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]), 80);
 });

@@ -16,7 +16,6 @@ import { Text } from './Text';
 
 const KINDS: [CardKind, string][] = [
   ['card', 'Rectangle'],
-  ['auto', 'Auto'],
   ['cutOut', 'Cut out'],
 ];
 
@@ -44,11 +43,11 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
   const [camera, setCamera] = useState<CameraView | null>(null);
   const [ready, setReady] = useState(false);
   const [backs, setBacks] = useState(false);
-  /** What the cards are, or Auto: remembered from last time (a game's cards are usually all one or the other). */
-  const [kind, setKind] = useState<CardKind>(() => loadSettings().cameraKind ?? 'auto');
+  /** What the cards are: remembered from last time (a game's cards are all one or the other). Rectangles to start. */
+  const [kind, setKind] = useState<CardKind>(() => (loadSettings().cameraKind === 'cutOut' ? 'cutOut' : 'card'));
   const chooseKind = (k: CardKind) => {
     setKind(k);
-    saveSettings({ ...loadSettings(), cameraKind: k === 'auto' ? undefined : k });
+    saveSettings({ ...loadSettings(), cameraKind: k === 'cutOut' ? 'cutOut' : undefined });
     haptics.tick();
   };
   /** Each shot as it's worked on, then its picture (null if it couldn't be made). */
@@ -155,7 +154,7 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
                 </View>
               )}
             </View>
-            {/* What the cards are: straightened as rectangles, cut out as other shapes, or worked out from each photo. */}
+            {/* What the cards are: straightened as rectangles, or cut out as other shapes. */}
             <View style={styles.kinds}>
               {KINDS.map(([k, label]) => (
                 <Pressable

@@ -1606,6 +1606,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   };
 
   /** Starts carrying what was pressed, from where the finger is now. */
+  /** Pressed on a locked stack that's a single card: picking its card up would move the stack, which it mustn't. */
+  const lockedAlone = (src: Source | null) => {
+    if (!src || (src.kind !== 'top' && src.kind !== 'card')) return false;
+    const stack = latest.get().table?.stacks.find((s) => s.id === src.stackId);
+    return !!stack?.locked && stack.cards.length === 1;
+  };
   const pickUp = () => {
     const touch = gestureState.get();
     const L = latest.get();
@@ -2124,9 +2130,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // Other fingers while the hand is pressed or scrolled: ignored.
       if (touch.mode === 'handPress') return;
       if (touch.mode === 'press' || touch.mode === 'carry') {
-        // A second finger while a card is held: it twists the card.
+        // A second finger while a card is held: it twists the card (not a locked card on its own, which stays put).
         if (touch.mode === 'press') {
           clearHold();
+          if (lockedAlone(touch.pressed)) {
+            touch.pressed = null;
+            touch.mode = 'button';
+            return;
+          }
           pickUp();
         }
         for (const c of changed) if (c.id !== touch.first) touch.downAt.set(c.id, Date.now());
@@ -2170,7 +2181,19 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         if (f && Math.hypot(f.now.x - f.start.x, f.now.y - f.start.y) > TAP_SLOP) {
           clearHold();
           if (touch.groupPress) startGroup();
-          else pickUp();
+          else if (lockedAlone(touch.pressed)) {
+            // A locked card on its own stays put (its card is the whole stack): the drag moves the table instead, as
+            // a locked piece's does. (A locked stack of several still gives its top card.)
+            touch.pressed = null;
+            if (latest.get().cameraLocked) {
+              touch.mode = 'button';
+              return;
+            }
+            touch.mode = 'camera';
+            touch.camStart = readCamera();
+            touch.camFrom = [f.start];
+            return move(all);
+          } else pickUp();
         }
         return;
       }
