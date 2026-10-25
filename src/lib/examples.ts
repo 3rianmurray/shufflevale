@@ -34,6 +34,15 @@ function restorePlayground(deck: Deck | undefined): boolean {
   return true;
 }
 
+/** The Solitaire example table, if it's still here (found by its name, if it was made before it was noted). */
+function solitaireTable(): SandboxTable | undefined {
+  const id = loadSettings().solitaireTableId;
+  return id ? sandboxes().find((t) => t.id === id) : sandboxes().find((t) => t.name === SOLITAIRE);
+}
+
+/** Whether a table is one of the app's examples, which can be reset to how it first was. */
+export const isExampleTable = (id: string) => loadSettings().playgroundTableId === id || solitaireTable()?.id === id;
+
 export function useExamples() {
   const { decks, createReadyDeck, refillDeck, getDeck } = useDecks();
 
@@ -60,16 +69,49 @@ export function useExamples() {
     (found ? reset : added).push(PLAYING_CARDS);
 
     // The Solitaire table: dealt again in place (keeping its spot on the home screen), or made again.
-    const table = sandboxes().find((t) => t.name === SOLITAIRE);
+    const table = solitaireTable();
     if (table) {
       updateSandbox(solitaire(newSandbox(table.id, SOLITAIRE, table.createdAt), deck, newId));
       reset.push(SOLITAIRE);
     } else {
-      createSandboxWith(SOLITAIRE, (empty) => solitaire(empty, deck, newId));
+      const made = createSandboxWith(SOLITAIRE, (empty) => solitaire(empty, deck, newId));
+      saveSettings({ ...loadSettings(), solitaireTableId: made.id });
       added.push(SOLITAIRE);
     }
     (restorePlayground(deck) ? added : reset).push(PLAYGROUND);
     return { added, reset };
+  };
+
+  /**
+   * An example table as it first was (Solitaire dealt afresh, the Playground laid out again), keeping its id, name
+   * and place; or null if it isn't one. Solitaire needs the Playing Cards deck: without it, null too.
+   */
+  const freshExample = (table: SandboxTable): SandboxTable | null => {
+    const deck = playingDeck();
+    const empty = newSandbox(table.id, table.name, table.createdAt);
+    if (loadSettings().playgroundTableId === table.id) return playground(empty, deck, newId);
+    if (solitaireTable()?.id === table.id && deck) return solitaire(empty, deck, newId);
+    return null;
+  };
+
+  /** Asks first, then puts an example table back as it first was (see freshExample), through `put`. */
+  const confirmResetTable = (table: SandboxTable, put: (fresh: SandboxTable) => void = updateSandbox) => {
+    const fresh = freshExample(table);
+    if (!fresh) {
+      Alert.alert('Couldn’t reset it', 'The Playing Cards deck is gone. Restore the examples from Help.');
+      return;
+    }
+    Alert.alert(`Reset “${table.name}”?`, undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Reset',
+        style: 'destructive',
+        onPress: () => {
+          put(fresh);
+          haptics.success();
+        },
+      },
+    ]);
   };
 
   /** Just the Playground, if it's never been made (for those who had the other examples before it came). */
@@ -104,5 +146,5 @@ export function useExamples() {
       ],
     );
 
-  return { restore, confirmRestore, addPlayground };
+  return { restore, confirmRestore, addPlayground, confirmResetTable };
 }

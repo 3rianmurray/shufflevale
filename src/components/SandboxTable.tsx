@@ -165,6 +165,7 @@ import { WoodRail } from './Tabletop';
 import { TABLE_THEMES, THEME_KEYS, themeOf } from '../lib/tableThemes';
 import { imageUri, importImage, isSeeThrough, loadSettings, saveSettings } from '../lib/storage';
 import { canCutOut, cutOut } from '../lib/subjectLift';
+import { isExampleTable, useExamples } from '../lib/examples';
 import { Text } from './Text';
 
 /** Steps of undo kept. */
@@ -1119,6 +1120,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   // ---- Pro: every component but dice is part of it. The Playground's are there to try, but nothing more comes
   // onto it (no cards, no more components, nothing pasted) and nothing of it goes elsewhere (copies need Pro). ----
   const pro = usePro();
+  const examples = useExamples();
   const playgroundHere = !!table && isPlayground(table.id);
   /** A Pro component that can't be used here: Pro is off (refunded, say) and this isn't the Playground. Left as it lies. */
   const lockedOut = (id: string) => {
@@ -3200,6 +3202,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           ...(Platform.OS === 'ios'
             ? [{ label: 'Rename table', opensModal: true, onPress: () => rename('Rename table', table.name, (name) => updateSandbox({ ...table, name })) }]
             : []),
+          // Solitaire and the Playground: back as they first were (one undo puts it back as it was).
+          ...(isExampleTable(table.id) ? [{ label: 'Reset table', opensModal: true, onPress: () => examples.confirmResetTable(table, commit) }] : []),
           {
             label: 'Clear the table',
             destructive: true,

@@ -74,12 +74,6 @@
       "expo-font",
       "expo-asset",
       "expo-sharing",
-      [
-        "react-native-document-scanner-plugin",
-        {
-          "cameraPermission": "Shufflevale uses your camera so you can photograph your own artwork and turn it into cards."
-        }
-      ],
       "expo-iap",
       "expo-system-ui",
       [

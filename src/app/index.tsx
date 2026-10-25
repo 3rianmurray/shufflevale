@@ -24,7 +24,7 @@ import { exampleAllowances, isPlayground, usePro } from '../lib/pro';
 import * as haptics from '../lib/haptics';
 import { buildRows, dropDeck, dropGroup } from '../lib/groups';
 import type { Row } from '../lib/groups';
-import { useExamples } from '../lib/examples';
+import { isExampleTable, useExamples } from '../lib/examples';
 import { deleteSandbox, duplicateSandbox, moveSandbox, updateSandbox, useSandboxes } from '../lib/sandboxStore';
 import { loadSettings, saveSettings } from '../lib/storage';
 import { offerTipAfterUses, resetTips, setTipsOn, tipsOn } from '../lib/tips';
@@ -690,6 +690,10 @@ export default function HomeScreen() {
                     swipeTipSoon();
                   },
                 },
+                // Solitaire and the Playground: back as they first were.
+                ...(isExampleTable(menuTable.id)
+                  ? [{ label: 'Reset table', opensModal: true, onPress: () => examples.confirmResetTable(menuTable) }]
+                  : []),
                 // The table as it lies, with the decks its cards come from.
                 ...fileActions('table', () => tableFile(menuTable, decks), true),
                 {

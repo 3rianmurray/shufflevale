@@ -18,7 +18,6 @@ import { ReorderableGrid } from '../../components/ReorderableGrid';
 import { SpriteSheetModal } from '../../components/SpriteSheetModal';
 import { useDecks } from '../../lib/DecksContext';
 import { askName, MAX_NAME_LENGTH, titleCase } from '../../lib/names';
-import { appleScannerAvailable, fitScan, scanCards } from '../../lib/appleScanner';
 import { backUpWithNotice, shareWithNotice } from '../../lib/fileActions';
 import { deleteDeckWarning } from '../../lib/deckInUse';
 import { cardRoom, FREE_CARD_LIMIT } from '../../lib/limits';
@@ -189,27 +188,7 @@ export default function DeckEditorScreen() {
         setCameraFor(target);
         return;
       }
-      // Apple's scanner, where the app has it: it finds and straightens each card itself, several in a row,
-      // and they're fitted to the deck's card size. (Just the first, for the back.)
-      if (appleScannerAvailable()) {
-        const scans = await scanCards();
-        if (!scans.length) return;
-        const ratio = await settleAuto(scans[0]);
-        if (target === 'back') {
-          const back = await fitScan(scans[0], ratio);
-          setBack(back, back);
-        } else {
-          const cards = await Promise.all(scans.map((s) => fitScan(s, ratio)));
-          // Several: checked over first, where backs scanned with them are paired up.
-          if (cards.length > 1) {
-            setReviewGrid(null);
-            setReviewPairing('none');
-            setReview(cards.map((c) => ({ uri: c, original: c })));
-          }
-          else addNewCards(cards, cards);
-        }
-        return;
-      }
+      // Without it (Expo Go): a photo, and the app's own finder.
       const uri = await takePhoto();
       // The card is found in the photo and straightened (or cropped by hand, if the player prefers).
       if (uri) setScan({ uri, target });
@@ -307,8 +286,8 @@ export default function DeckEditorScreen() {
   // The pickers are system screens, which iOS can only show once this menu has gone (hence opensModal).
   const sourceActions = (target: ArtTarget) => [
     {
-      // With Apple's scanner, it scans (several cards in a row, for new cards); otherwise a plain photo.
-      label: canFindCards() || appleScannerAvailable() ? (target === 'cards' ? 'Scan cards' : 'Scan card back') : 'Take photo',
+      // With the card camera, it scans (several cards in a row, for new cards); otherwise a plain photo.
+      label: canFindCards() ? (target === 'cards' ? 'Scan cards' : 'Scan card back') : 'Take photo',
       opensModal: true,
       onPress: () => fromCamera(target),
     },
