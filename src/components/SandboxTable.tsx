@@ -11,7 +11,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDecks } from '../lib/DecksContext';
-import { askName, askNumber } from '../lib/names';
+import { askName, askNumber, askText } from '../lib/names';
 import * as haptics from '../lib/haptics';
 import { newId } from '../lib/id';
 import {
@@ -935,7 +935,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       return;
     }
     if (piece.kind === 'text') {
-      rename('Text', piece.label ?? '', (label) => commit(setPiece(table, id, { label })));
+      askText('Text', piece.label ?? '', (label) => commit(setPiece(table, id, { label })));
       return;
     }
     if (piece.kind === 'bag') {
@@ -3475,7 +3475,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const tile = (label: string, ios: string, android: string, onPress: () => void, disabled = false): SheetTile => ({ label, icon: icon(ios, android), onPress, disabled });
       // What opens over the table once this has gone: another menu, the name prompt, the system's picture menu.
       const next = (m: Menu) => () => setTimeout(() => setMenu(m), 250);
-      const ask = (title: string, current: string, done: (text: string) => void) => () => setTimeout(() => rename(title, current, done), 350);
+      // (The words on the table are kept as typed, not title-cased like names: see askText.)
+      const ask = (title: string, current: string, done: (text: string) => void) => () => setTimeout(() => askText(title, current, done), 350);
       // A number (or a time), with the number keyboard.
       const askNum = (title: string, current: string, done: (text: string) => void, kind: 'number' | 'signed' | 'time' = 'number') => () =>
         setTimeout(() => askNumber(title, current, done, kind), 350);

@@ -28,6 +28,8 @@ export interface NameRequest {
   current: string;
   done: (name: string) => void;
   kind?: AskKind;
+  /** Words to be kept just as typed (the words on a table: a zone's name, a text label), not title-cased like names. */
+  plain?: boolean;
 }
 
 let request: NameRequest | null = null;
@@ -44,6 +46,11 @@ const set = (next: NameRequest | null) => {
 /** Asks for a name (see NamePrompt); `done` gets it trimmed, and only if it isn't empty. */
 export function askName(title: string, current: string, done: (name: string) => void) {
   set({ title, current, done });
+}
+
+/** Asks for words just as they're typed (the words on a table: see NameRequest's `plain`); otherwise as `askName`. */
+export function askText(title: string, current: string, done: (text: string) => void) {
+  set({ title, current, done, plain: true });
 }
 
 /** Asks for a number (or a time) the same way, with the number keyboard (see AskKind). */
