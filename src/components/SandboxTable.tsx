@@ -70,6 +70,7 @@ import {
   pasteItems,
   PIECE_SIZE,
   rotateItems,
+  sortStack,
   turnsFreely,
   doubleTapZoom,
   zoomInOn,
@@ -3305,6 +3306,26 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const rows: FocusRow[] = [
         // Dealing: how many off the top, and to whom (see DealPanel).
         { kind: 'action', label: 'Deal…', more: true, keepsOpen: true, onPress: () => setDealingFrom(menuStack.id) },
+        // A deck put back in the order it was made in (its first card on top). Decks mixed in one stack go one
+        // after another, in the order they first show from the top.
+        ...(n > 1
+          ? [
+              {
+                kind: 'action' as const,
+                label: 'Put in order',
+                onPress: () => {
+                  const decksFromTop: string[] = [];
+                  for (const c of [...menuStack.cards].reverse()) if (!decksFromTop.includes(c.deckId)) decksFromTop.push(c.deckId);
+                  const rank = (c: SandboxCard) => {
+                    const at = decksById.get(c.deckId)?.cards.findIndex((x) => x.id === c.cardId);
+                    return at === undefined || at < 0 ? undefined : decksFromTop.indexOf(c.deckId) * 100000 + at;
+                  };
+                  commit(sortStack(table, menuStack.id, rank));
+                  haptics.deal();
+                },
+              },
+            ]
+          : []),
         // Spread out, every card showing, as close as the grid allows.
         ...(n > 1
           ? [

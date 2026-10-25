@@ -1423,8 +1423,21 @@ export const placeStack = (t: SandboxTable, stackId: string, at: { x: number; y:
 export const shuffleStack = (t: SandboxTable, stackId: string, random: () => number = Math.random) =>
   updateStack(t, stackId, (s) => ({ ...s, cards: shuffled(s.cards, random) }));
 
+/**
+ * A stack put in order, as a new deck is: the lowest `rank` on top (a deck's first card on top, then its second,
+ * and so on; copies of a card together), keeping the way each card faces. Cards with no rank (not in their deck any
+ * more) go to the bottom, in the order they were. The sort is stable.
+ */
+export const sortStack = (t: SandboxTable, stackId: string, rank: (c: SandboxCard) => number | undefined) =>
+  updateStack(t, stackId, (s) => {
+    const keyed = s.cards.map((c, i) => ({ c, i, r: rank(c) ?? Number.POSITIVE_INFINITY }));
+    // The top of a stack is its last card: so the highest rank first.
+    keyed.sort((a, b) => (a.r === b.r ? a.i - b.i : b.r - a.r));
+    return { ...s, cards: keyed.map((k) => k.c) };
+  });
+
 /** Flips a card in a hand. */
-export const flipInHand = (t: SandboxTable, hand: number, iid: string): SandboxTable => ({
+export const flipInHand =(t: SandboxTable, hand: number, iid: string): SandboxTable => ({
   ...t,
   hands: t.hands.map((h, i) => (i === hand ? h.map((c) => (c.iid === iid ? { ...c, faceUp: !c.faceUp } : c)) : h)),
 });

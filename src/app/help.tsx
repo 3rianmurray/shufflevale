@@ -52,6 +52,7 @@ const TIPS: { title: string; tips: [string, string][] }[] = [
       ['Gone too far with the lasso', 'Trace back over the line: it rubs out, and lets go of what it caught.'],
       ['Start the selection over', 'Tap an empty spot on the table to let go of every picked-out card.'],
       ['Drag a picked-out card', 'Moves all of them together.'],
+      ['Put a deck back in order', 'Tap Gather by Deck in the tools to bring every card home, then open its stack’s options and tap Put in order: the deck’s first card ends up on top.'],
       ['Second finger, while carrying', 'Tap other cards to pick them up too, tap the flip button to turn them over, or twist to turn them.'],
       ['Drag into a hand', 'Cards gather into a pile and slip into the hand when you let go.'],
       ['Searching a stack', 'Hold a card, then tap Close with another finger to take it out onto the table.'],
