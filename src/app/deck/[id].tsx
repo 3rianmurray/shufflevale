@@ -1,4 +1,3 @@
-import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
@@ -28,7 +27,9 @@ import * as haptics from '../../lib/haptics';
 import { sampleBack, sampleCards } from '../../lib/sampleDeck';
 import { fitToCard } from '../../lib/cardFit';
 import { keepOriginal, loadUpright, smallPixels } from '../../lib/images';
+import { pickFiles, pickImages } from '../../lib/pickers';
 import { guessSheet } from '../../lib/sheetGuess';
+import type { Grid } from '../../lib/spriteSheet';
 import { imageUri } from '../../lib/storage';
 import { offerTipAfterUses, offerTipSoon } from '../../lib/tips';
 import { tourEvent, useTourStep } from '../../lib/tour';
@@ -46,25 +47,6 @@ const PADDING = 16;
 
 /** What a picked picture is for: new cards, or the deck's card back. */
 type ArtTarget = 'cards' | 'back';
-
-async function pickImages(multiple: boolean): Promise<string[]> {
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images'],
-    allowsMultipleSelection: multiple,
-    selectionLimit: multiple ? 0 : 1,
-    // Full quality here; the cropper compresses once when it saves.
-    quality: 1,
-    // The picture as it is, not converted: a PNG stays a PNG, so its see-through parts can be kept.
-    preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current,
-  });
-  return result.canceled ? [] : result.assets.map((a) => a.uri);
-}
-
-/** Picks images from the Files app (iCloud Drive and other storage apps), copied somewhere the app can read them. */
-async function pickFiles(multiple: boolean): Promise<string[]> {
-  const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', multiple, copyToCacheDirectory: true });
-  return result.canceled ? [] : result.assets.map((a) => a.uri);
-}
 
 /** Returns the photo's uri, or null if the user canceled or denied camera access. */
 async function takePhoto(): Promise<string | null> {
@@ -131,6 +113,8 @@ export default function DeckEditorScreen() {
   const [review, setReview] = useState<ImportPicture[] | null>(null);
   /** Cards cut from a sprite sheet, to check over once its screen has gone (one full-screen view at a time). */
   const [reviewNext, setReviewNext] = useState<ImportPicture[] | null>(null);
+  /** The grid those cards were cut with, for a sheet of their backs to start from (none when they weren't). */
+  const [reviewGrid, setReviewGrid] = useState<Grid | null>(null);
   const pro = usePro();
   /** How many more cards fit in the free version (unlimited with Pro). */
   const room = cardRoom(decks.decks, exampleAllowances(), pro);
@@ -195,7 +179,10 @@ export default function DeckEditorScreen() {
         } else {
           const cards = await Promise.all(scans.map((s) => fitScan(s, ratio)));
           // Several: checked over first, where backs scanned with them are paired up.
-          if (cards.length > 1) setReview(cards.map((c) => ({ uri: c, original: c })));
+          if (cards.length > 1) {
+            setReviewGrid(null);
+            setReview(cards.map((c) => ({ uri: c, original: c })));
+          }
           else addNewCards(cards, cards);
         }
         return;
@@ -226,6 +213,7 @@ export default function DeckEditorScreen() {
         const upright = await loadUpright(u);
         pictures.push({ uri: await fitToCard(upright.uri, ratio), original: await keepOriginal(upright.uri) });
       }
+      setReviewGrid(null);
       setReview(pictures);
       return;
     }
@@ -738,13 +726,17 @@ export default function DeckEditorScreen() {
         uri={spriteSheet?.uri ?? null}
         pickOne={spriteSheet?.target === 'back'}
         cardRatio={cardRatio(deck)}
-        onDone={(uris) => {
+        onDone={(uris, grid) => {
           const target = spriteSheet?.target;
           setSpriteSheet(null);
           // An automatic card size is the cut cards' shape.
-          // Several: checked over once this screen has gone (noted now, before it has).
+          // Several: checked over once this screen has gone (noted now, before it has), where a sheet of their
+          // backs can start from the same grid.
           const several = target === 'cards' && uris.length > 1;
-          if (several) setReviewNext(uris.map((u) => ({ uri: u, original: u })));
+          if (several) {
+            setReviewGrid(grid);
+            setReviewNext(uris.map((u) => ({ uri: u, original: u })));
+          }
           withBusy(async () => {
             await settleAuto(uris[0]);
             if (target === 'back') setBack(uris[0], uris[0]);
@@ -760,6 +752,7 @@ export default function DeckEditorScreen() {
 
       <ImportReview
         pictures={review}
+        sheetGrid={reviewGrid}
         cardRatio={cardRatio(deck)}
         roundness={deck.roundness}
         room={room}

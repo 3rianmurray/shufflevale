@@ -10,18 +10,23 @@ export interface Grid {
   /** How many cells hold artwork, counted from the first cell in `order`. */
   count: number;
   order: SheetOrder;
+  /**
+   * Numbered from the right instead (each row runs right to left): a sheet of backs printed to go behind a sheet of
+   * fronts, double-sided, has the back of each front's cell in the mirror cell.
+   */
+  mirrored?: boolean;
 }
 
 /** The [row, column] of the nth card (0-based). */
 export function cellPosition(n: number, grid: Grid): [number, number] {
-  return grid.order === 'rows'
-    ? [Math.floor(n / grid.columns), n % grid.columns]
-    : [n % grid.rows, Math.floor(n / grid.rows)];
+  const [r, c] = grid.order === 'rows' ? [Math.floor(n / grid.columns), n % grid.columns] : [n % grid.rows, Math.floor(n / grid.rows)];
+  return [r, grid.mirrored ? grid.columns - 1 - c : c];
 }
 
 /** The 0-based card number of a cell, or null if that cell is past `count`. */
 export function cellNumber(row: number, column: number, grid: Grid): number | null {
-  const n = grid.order === 'rows' ? row * grid.columns + column : column * grid.rows + row;
+  const c = grid.mirrored ? grid.columns - 1 - column : column;
+  const n = grid.order === 'rows' ? row * grid.columns + c : c * grid.rows + row;
   return n < grid.count ? n : null;
 }
 

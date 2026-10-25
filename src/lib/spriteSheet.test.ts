@@ -23,6 +23,20 @@ test('down columns numbers cells top to bottom, then right', () => {
   assert.equal(cellNumber(1, 1, grid), 5);
 });
 
+test('a mirrored sheet (backs printed for double-sided) numbers each row from the right', () => {
+  const grid = { rows: 2, columns: 3, count: 6, order: 'rows' as const, mirrored: true };
+  assert.deepEqual(
+    Array.from({ length: 6 }, (_, n) => cellPosition(n, grid)),
+    [[0, 2], [0, 1], [0, 0], [1, 2], [1, 1], [1, 0]],
+  );
+  // Each cell's number is the front it goes behind: the top-left front's back is top right.
+  assert.equal(cellNumber(0, 2, grid), 0);
+  assert.equal(cellNumber(1, 0, grid), 5);
+  // Fewer cards than cells: the missing ones are at the left of the last row.
+  assert.equal(cellNumber(1, 0, { ...grid, count: 5 }), null);
+  for (let n = 0; n < 6; n++) assert.equal(cellNumber(...cellPosition(n, grid), grid), n);
+});
+
 test('cell rects tile the image with no gaps, even when it does not divide evenly', () => {
   const rects = cellRects(101, 50, { rows: 2, columns: 3, count: 6, order: 'rows' });
   assert.equal(rects.length, 6);

@@ -48,15 +48,21 @@ interface Props {
   pickOne?: boolean;
   /** The deck's card shape (width over height), which helps guess the sheet's grid. */
   cardRatio: number;
-  /** Called with one image uri per card, in card order (just the one, when picking one). */
-  onDone: (cards: string[]) => void;
+  /**
+   * A sheet of backs for cards already cut from a sheet of fronts: it starts with their grid (`startGrid`), and
+   * can be numbered mirrored (as backs printed to go behind the fronts are).
+   */
+  backs?: boolean;
+  startGrid?: Grid;
+  /** Called with one image uri per card, in card order (just the one, when picking one), and the grid used. */
+  onDone: (cards: string[], grid: Grid) => void;
   onCancel: () => void;
   /** Once it has slid away (iOS can only show another full-screen view after that). */
   onClosed?: () => void;
 }
 
 /** Slices one image laid out as a grid of cards into separate card images, or takes one card from it. */
-export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCancel, onClosed }: Props) {
+export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGrid, cardRatio, onDone, onCancel, onClosed }: Props) {
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const [loaded, setLoaded] = useState<(LoadedImage & { source: string }) | null>(null);
@@ -65,6 +71,8 @@ export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCa
   const [colsText, setColsText] = useState('2');
   const [countText, setCountText] = useState('');
   const [order, setOrder] = useState<SheetOrder>('rows');
+  /** A sheet of backs numbered from the right (see Grid's `mirrored`). */
+  const [mirrored, setMirrored] = useState(false);
   const [turn, setTurn] = useState<QuarterTurn>(0);
   const [progress, setProgress] = useState<number | null>(null);
   /** When picking one card: the cell chosen, as row and column. */
@@ -89,6 +97,14 @@ export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCa
       .then(async (img) => {
         if (canceled) return;
         setLoaded({ ...img, source: uri });
+        // Backs for a sheet of fronts: its grid to start with (a game's sheets usually match), not a guess.
+        if (startGrid) {
+          setRowsText(String(startGrid.rows));
+          setColsText(String(startGrid.columns));
+          setCountText(startGrid.count < startGrid.rows * startGrid.columns ? String(startGrid.count) : '');
+          setOrder(startGrid.order);
+          return;
+        }
         // Then an educated guess at its grid, filled in as a start. If it can't be worked out, the numbers
         // stay as they were (sheets from one game usually share a layout).
         setGuessing(true);
@@ -114,7 +130,7 @@ export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCa
     return () => {
       canceled = true;
     };
-  }, [uri, cardRatio, pickOne]);
+  }, [uri, cardRatio, pickOne, startGrid]);
 
   const rows = parseCount(rowsText, 1, MAX_CELLS_PER_SIDE);
   const columns = parseCount(colsText, 1, MAX_CELLS_PER_SIDE);
@@ -124,7 +140,7 @@ export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCa
   if (countText && parseInt(countText, 10) > cells) setCountText(String(cells));
   const grid: Grid = pickOne
     ? { rows, columns, count: cells, order: 'rows' }
-    : { rows, columns, count: parseCount(countText, cells, cells), order };
+    : { rows, columns, count: parseCount(countText, cells, cells), order, ...(backs && mirrored ? { mirrored: true } : {}) };
   const left = new Set(skipped.source === uri ? skipped.cards.filter((n) => n < grid.count) : []);
   const taking = grid.count - left.size;
   /** Leaves cards out of the import, or puts them back. */
@@ -213,7 +229,7 @@ export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCa
         setProgress(i);
         out.push(await saveCrop(image.uri, rect, turn));
       }
-      onDone(out);
+      onDone(out, grid);
     } catch (e) {
       Alert.alert('Could not cut out the cards', String(e));
     } finally {
@@ -230,8 +246,9 @@ export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCa
           scrollEnabled={!painting}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 24, paddingHorizontal: PADDING, gap: 16 }}>
-          <Text style={styles.title}>{pickOne ? 'Choose a card from the sheet' : 'Import sprite sheet'}</Text>
+          <Text style={styles.title}>{pickOne ? 'Choose a card from the sheet' : backs ? 'Sheet of backs' : 'Import sprite sheet'}</Text>
           {pickOne ? <Text style={styles.help}>Set the grid, then tap the card to use.</Text> : null}
+          {backs ? <Text style={styles.help}>Each number is the card that back goes with.</Text> : null}
 
           <View style={[styles.previewBox, { height: preview?.h ?? box.h }]}>
             {image && preview ? (
@@ -335,6 +352,20 @@ export function SpriteSheetModal({ uri, pickOne = false, cardRatio, onDone, onCa
               />
             </>
           )}
+          {backs ? (
+            <>
+              <Segment
+                label="Backs"
+                value={mirrored ? 'mirrored' : 'same'}
+                onChange={(v) => setMirrored(v === 'mirrored')}
+                options={[
+                  ['same', 'Same order'],
+                  ['mirrored', 'Mirrored'],
+                ]}
+              />
+              <Text style={styles.help}>Printed to go behind the fronts, double-sided? Then each row runs right to left: choose Mirrored.</Text>
+            </>
+          ) : null}
 
           <Segment
             label="Rotate cards"

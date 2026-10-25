@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { frontCount, pairingNote, pairUp, swapSides } from './importBatch.ts';
+import { frontCount, frontsAfterRemoving, pairingNote, pairUp, swapSides } from './importBatch.ts';
 
 const sides = (cards: { front: string; back?: string }[]) => cards.map((c) => (c.back ? `${c.front}/${c.back}` : c.front));
 
@@ -33,6 +33,21 @@ test('taking out a stray scan pairs every card after it again', () => {
   const scans = ['1f', '1b', '2f', '2f', '2b', '3f', '3b'];
   assert.deepEqual(sides(pairUp(scans, 'inTurn')), ['1f/1b', '2f/2f', '2b/3f', '3b']);
   assert.deepEqual(sides(pairUp(scans.filter((_, i) => i !== 3), 'inTurn')), ['1f/1b', '2f/2b', '3f/3b']);
+});
+
+test('a sheet of fronts and a sheet of backs pair by number, even when they don’t match', () => {
+  // 3 fronts, 2 backs: the last front has the deck's back.
+  assert.deepEqual(sides(pairUp(['1f', '2f', '3f', '1b', '2b'], 'halves', 3)), ['1f/1b', '2f/2b', '3f']);
+  assert.match(pairingNote(5, 'halves', 3)!, /^1 card has no back/);
+  // 2 fronts, 3 backs: the one over isn't used.
+  assert.deepEqual(sides(pairUp(['1f', '2f', '1b', '2b', '3b'], 'halves', 2)), ['1f/1b', '2f/2b']);
+  assert.match(pairingNote(5, 'halves', 2)!, /^1 more back/);
+  assert.equal(pairingNote(4, 'halves', 2), null);
+  // Taking out a front leaves one fewer; taking out a back, the same.
+  assert.equal(frontsAfterRemoving(3, 1), 2);
+  assert.equal(frontsAfterRemoving(3, 4), 3);
+  assert.equal(frontsAfterRemoving(undefined, 0), undefined);
+  assert.deepEqual(swapSides(['1f', '2f', '1b', '2b'], 'halves', 1, 2), ['1f', '2b', '1b', '2f']);
 });
 
 test('a card scanned back first has its sides swapped', () => {

@@ -5,12 +5,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import * as haptics from '../lib/haptics';
 import { rotateImage } from '../lib/images';
-import { pairingNote, pairUp, swapSides } from '../lib/importBatch';
+import { frontCount, frontsAfterRemoving, pairingNote, pairUp, swapSides } from '../lib/importBatch';
 import type { Pairing } from '../lib/importBatch';
+import { pickFiles, pickImages } from '../lib/pickers';
+import type { Grid } from '../lib/spriteSheet';
 import { cardRadius } from '../lib/types';
 import { colors } from '../theme';
 import { Button } from './Button';
 import { CropModal } from './CropModal';
+import { SpriteSheetModal } from './SpriteSheetModal';
 import { TipToast } from './TipToast';
 import { Text } from './Text';
 
@@ -23,6 +26,8 @@ export interface ImportPicture {
 interface Props {
   /** The pictures coming in, in the order they came. The screen is shown while this is set. */
   pictures: ImportPicture[] | null;
+  /** The grid the pictures were cut from a sprite sheet with, if they were: a sheet of their backs starts from it. */
+  sheetGrid?: Grid | null;
   cardRatio: number;
   roundness?: number;
   /** How many more cards the free version has room for (Infinity with Pro). */
@@ -47,7 +52,7 @@ const PAIRINGS: [Pairing, string][] = [
  * include backs (scanned in turn, or all the fronts and then the backs). A picture tapped can be turned, cut
  * again or taken out (the cards after it pair up again), and a card's two sides swapped.
  */
-export function ImportReview({ pictures, cardRatio, roundness, room, onRoundness, onAdd, onCancel }: Props) {
+export function ImportReview({ pictures, sheetGrid, cardRatio, roundness, room, onRoundness, onAdd, onCancel }: Props) {
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
   const [list, setList] = useState<ImportPicture[]>([]);
@@ -57,6 +62,13 @@ export function ImportReview({ pictures, cardRatio, roundness, room, onRoundness
   const [busy, setBusy] = useState(false);
   /** The picture being cut again, in the cropper. */
   const [cropping, setCropping] = useState<number | null>(null);
+  /**
+   * How many of the pictures are fronts, when that's known: the fronts, then backs from a sheet of their own
+   * (which may hold more or fewer). Otherwise fronts and backs are half and half.
+   */
+  const [fronts, setFronts] = useState<number | undefined>(undefined);
+  /** A sheet of backs being cut, over this screen. */
+  const [backSheet, setBackSheet] = useState<string | null>(null);
 
   // New pictures: start afresh, every picture a card. Set during render, React's way for state that follows a prop.
   const [source, setSource] = useState<ImportPicture[] | null>(null);
@@ -64,13 +76,36 @@ export function ImportReview({ pictures, cardRatio, roundness, room, onRoundness
     setSource(pictures);
     setList(pictures);
     setPairing('none');
+    setFronts(undefined);
     setPicked(null);
   }
 
-  const cards = pairUp(list, pairing);
+  const cards = pairUp(list, pairing, fronts);
   const paired = pairing !== 'none';
   const adding = Math.min(cards.length, room);
-  const note = pairingNote(list.length, pairing);
+  const note = pairingNote(list.length, pairing, fronts);
+  /** The backs came from a sheet of their own: they can be cut from another instead. */
+  const backsFromSheet = pairing === 'halves' && fronts !== undefined;
+
+  /** A sheet of backs, from Photos or Files, to cut and pair with the fronts by number. */
+  const chooseBackSheet = () => {
+    // The picker opens once the alert has gone (iOS shows one at a time).
+    const from = (pick: (multiple: boolean) => Promise<string[]>) => () =>
+      setTimeout(async () => setBackSheet((await pick(false))[0] ?? null), 350);
+    Alert.alert('Sheet of backs', 'Its cards are paired with these by number: card 1’s back is cell 1.', [
+      { text: 'From Photos', onPress: from(pickImages) },
+      { text: 'From Files', onPress: from(pickFiles) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+  const addBacks = (uris: string[]) => {
+    const theFronts = list.slice(0, frontCount(list.length, pairing, fronts));
+    setBackSheet(null);
+    setList([...theFronts, ...uris.map((u) => ({ uri: u, original: u }))]);
+    setFronts(theFronts.length);
+    setPairing('halves');
+    setPicked(null);
+  };
 
   // Fronts on their own, three to a row (five on a wide screen); a front and its back side by side, a pair to a
   // row (two on a wide screen).
@@ -96,11 +131,12 @@ export function ImportReview({ pictures, cardRatio, roundness, room, onRoundness
   };
   const remove = (at: number) => {
     setList((l) => l.filter((_, i) => i !== at));
+    setFronts((f) => frontsAfterRemoving(f, at));
     setPicked(null);
     haptics.drop();
   };
   const swap = (cardIndex: number) => {
-    setList((l) => swapSides(l, pairing, cardIndex));
+    setList((l) => swapSides(l, pairing, cardIndex, fronts));
     setPicked(null);
     haptics.tick();
   };
@@ -158,6 +194,8 @@ export function ImportReview({ pictures, cardRatio, roundness, room, onRoundness
                   key={value}
                   onPress={() => {
                     setPairing(value);
+                    // Chosen by hand: half and half again.
+                    setFronts(undefined);
                     setPicked(null);
                     haptics.tick();
                   }}
@@ -172,11 +210,21 @@ export function ImportReview({ pictures, cardRatio, roundness, room, onRoundness
             </View>
             <Text style={styles.help}>
               {pairing === 'none'
-                ? 'Every card gets the deck’s back. Scanned each card’s back too? Choose how, and they pair up.'
-                : pairing === 'inTurn'
-                  ? 'Each front, then its own back. Tap a picture to turn it, cut it again or take it out.'
-                  : 'All the fronts, then all their backs in the same order. Tap a picture to turn it, cut it again or take it out.'}
+                ? 'Every card gets the deck’s back. Scanned each card’s back too? Choose how, and they pair up. Or add a sheet of backs.'
+                : backsFromSheet
+                  ? 'Each card with the back from the same cell of the backs sheet. Tap a picture to turn it, cut it again or take it out.'
+                  : pairing === 'inTurn'
+                    ? 'Each front, then its own back. Tap a picture to turn it, cut it again or take it out.'
+                    : 'All the fronts, then all their backs in the same order. Tap a picture to turn it, cut it again or take it out.'}
             </Text>
+            {pairing === 'none' || backsFromSheet ? (
+              <Button
+                label={backsFromSheet ? 'Use another sheet of backs' : 'Add backs from a sheet'}
+                onPress={chooseBackSheet}
+                disabled={busy}
+                style={{ marginTop: 10 }}
+              />
+            ) : null}
             {note ? <Text style={styles.note}>{note}</Text> : null}
             {adding < cards.length ? (
               <Text style={styles.note}>
@@ -249,6 +297,15 @@ export function ImportReview({ pictures, cardRatio, roundness, room, onRoundness
           setCropping(null);
         }}
         onCancel={() => setCropping(null)}
+      />
+      {/* A sheet of backs, cut over this screen: starting from the fronts' grid, if they came from a sheet. */}
+      <SpriteSheetModal
+        uri={backSheet}
+        backs
+        startGrid={sheetGrid ?? undefined}
+        cardRatio={cardRatio}
+        onDone={addBacks}
+        onCancel={() => setBackSheet(null)}
       />
       {/* This screen is its own window, over the app's: tips show here too. */}
       <TipToast />
