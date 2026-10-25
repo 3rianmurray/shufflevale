@@ -5,13 +5,20 @@ import { ActivityIndicator, Linking, Modal, Pressable, StyleSheet, Switch, View 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { cardFromPhoto } from '../lib/cardCapture';
-import type { CapturedCard } from '../lib/cardCapture';
+import type { CapturedCard, CardKind } from '../lib/cardCapture';
 import * as haptics from '../lib/haptics';
 import type { Pairing } from '../lib/importBatch';
+import { loadSettings, saveSettings } from '../lib/storage';
 import { colors } from '../theme';
 import { Button } from './Button';
 import type { ImportPicture } from './ImportReview';
 import { Text } from './Text';
+
+const KINDS: [CardKind, string][] = [
+  ['card', 'Rectangle'],
+  ['auto', 'Auto'],
+  ['cutOut', 'Cut out'],
+];
 
 interface Props {
   visible: boolean;
@@ -37,6 +44,13 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
   const [camera, setCamera] = useState<CameraView | null>(null);
   const [ready, setReady] = useState(false);
   const [backs, setBacks] = useState(false);
+  /** What the cards are, or Auto: remembered from last time (a game's cards are usually all one or the other). */
+  const [kind, setKind] = useState<CardKind>(() => loadSettings().cameraKind ?? 'auto');
+  const chooseKind = (k: CardKind) => {
+    setKind(k);
+    saveSettings({ ...loadSettings(), cameraKind: k === 'auto' ? undefined : k });
+    haptics.tick();
+  };
   /** Each shot as it's worked on, then its picture (null if it couldn't be made). */
   const [shots, setShots] = useState<(CapturedCard | null | 'working')[]>([]);
   const [taking, setTaking] = useState(false);
@@ -82,7 +96,7 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
       const job = last.then(async () => {
         let made: CapturedCard;
         try {
-          made = await cardFromPhoto(photo.uri, ratioFor);
+          made = await cardFromPhoto(photo.uri, ratioFor, kind);
         } catch {
           // The photo as it is (to fix on the checking screen), so the cards after it still pair up.
           made = { uri: photo.uri, original: photo.uri, how: 'trimmed' };
@@ -141,6 +155,19 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
                 </View>
               )}
             </View>
+            {/* What the cards are: straightened as rectangles, cut out as other shapes, or worked out from each photo. */}
+            <View style={styles.kinds}>
+              {KINDS.map(([k, label]) => (
+                <Pressable
+                  key={k}
+                  onPress={() => chooseKind(k)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: kind === k }}
+                  style={[styles.kind, kind === k && styles.kindOn]}>
+                  <Text style={[styles.kindText, kind === k && { color: colors.accentText }]}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
             <View style={styles.promptBox} pointerEvents="none">
               <Text style={styles.prompt}>{prompt}</Text>
               <Text style={styles.hint}>
@@ -185,7 +212,11 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16 },
   backsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, paddingLeft: 14, paddingRight: 6, paddingVertical: 4 },
   backsLabel: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  promptBox: { position: 'absolute', left: 0, right: 0, top: '18%', alignItems: 'center', gap: 6 },
+  kinds: { flexDirection: 'row', alignSelf: 'center', marginTop: 12, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, padding: 3 },
+  kind: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 17 },
+  kindOn: { backgroundColor: colors.accent },
+  kindText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  promptBox: { position: 'absolute', left: 0, right: 0, top: '22%', alignItems: 'center', gap: 6 },
   prompt: { color: '#fff', fontSize: 20, fontWeight: '700', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, overflow: 'hidden' },
   hint: { color: 'rgba(255,255,255,0.85)', fontSize: 14, backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, overflow: 'hidden' },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24 },

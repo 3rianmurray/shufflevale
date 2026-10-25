@@ -154,6 +154,8 @@ export interface Settings {
   proOwned?: boolean;
   /** Where the player's put the tools drawer on tables: which edge, and how far down it (0 top, 1 bottom). */
   toolsSpot?: { side: 'left' | 'right'; at: number };
+  /** What the card camera was last told the cards are (see CardKind in lib/cardCapture): none for Auto. */
+  cameraKind?: 'card' | 'cutOut';
 }
 export const loadSettings = () => readJson<Settings>(SETTINGS_FILE, {});
 export const saveSettings = (settings: Settings) => writeJson(SETTINGS_FILE, settings);
