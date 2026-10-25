@@ -5033,8 +5033,8 @@ const StackView = memo(function StackView({
         </View>
       ) : null}
       {target || selected ? <View style={styles.target} /> : null}
-      {/* Locked in place: a small padlock on its corner. */}
-      {stack.locked ? (
+      {/* Locked in place: a small padlock on its corner, but only while it's picked out (not on every locked card). */}
+      {stack.locked && selected ? (
         <View style={styles.lockBadge}>
           <SymbolView name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }} size={11} tintColor={colors.text} />
         </View>
