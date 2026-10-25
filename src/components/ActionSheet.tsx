@@ -45,8 +45,10 @@ interface Props {
   banner?: ReactNode;
   /** Shown over the sheet, filling the screen, e.g. a card full size; the sheet stays open underneath. */
   overlay?: ReactNode;
-  /** Actions shown as a grid of icon tiles, three to a row, above `actions`. */
+  /** Actions shown as a grid of icon tiles, in even rows of up to four (see tileRows), above `actions`. */
   tiles?: SheetTile[];
+  /** One more tile, under the grid and centered, as wide as two (e.g. Paste, under what can be added). */
+  wideTile?: SheetTile;
   actions: SheetAction[];
   onClose: () => void;
   /**
@@ -124,7 +126,7 @@ export function ActionSheet(props: Props) {
   }, []);
   if (visible) shown.keep(props);
   const showing = visible ? props : (shown.get() ?? props);
-  const { title, header, banner, tiles, actions, overlay, place, onPlace } = showing;
+  const { title, header, banner, tiles, wideTile, actions, overlay, place, onPlace } = showing;
   // A window or a dropped panel closes with a tap elsewhere: no Cancel, only a close button of its own (Done).
   const closeLabel = showing.closeLabel ?? (place ? null : 'Cancel');
   // The modal stays up after `visible` goes false until the sheet has slid away.
@@ -133,7 +135,7 @@ export function ActionSheet(props: Props) {
 
   // The walkthrough, when its step is about one of this menu's choices: the tip shows here, by that choice.
   const tour = useTourStep();
-  const guided = visible && tour?.step.tile && [...(tiles ?? []), ...actions].some((a) => a.label === tour.step.tile) ? tour : null;
+  const guided = visible && tour?.step.tile && [...(tiles ?? []), ...(wideTile ? [wideTile] : []), ...actions].some((a) => a.label === tour.step.tile) ? tour : null;
   const guide = useMemo(() => {
     const box = { chosen: false, was: false };
     return { box };
@@ -211,45 +213,45 @@ export function ActionSheet(props: Props) {
   };
   // What it holds, whichever way it shows: the title (but in a window, it's in the window's top), what's above
   // the choices, the choices, and its close button.
+  // The tiles in even rows of up to four, each centered (see tileRows), every tile as wide as the fullest row's
+  // (a share of the width); the wide tile under them, as wide as two.
+  const tileRowsShown = tiles?.length ? inTileRows(tiles) : [];
+  const cellShare = 100 / Math.max(2, ...tileRowsShown.map((x) => x.length));
+  const tileButton = (t: SheetTile, span = 1) => (
+    <View key={t.label} style={[styles.tileCell, { width: `${cellShare * span}%` }]}>
+      <Pressable
+        onPress={() => run(t)}
+        disabled={t.disabled || isOff(t)}
+        accessibilityRole="button"
+        accessibilityLabel={t.label}
+        accessibilityState={{ disabled: t.disabled || isOff(t) }}
+        style={({ pressed }) => [styles.tile, isGuided(t) && styles.guided, pressed && styles.pressed, (t.disabled || isOff(t)) && styles.tileDisabled]}>
+        <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
+        <Text style={[styles.tileText, t.destructive && { color: colors.danger }]} numberOfLines={1}>
+          {t.label}
+        </Text>
+        {t.pro ? (
+          <View style={[styles.proTag, styles.tileProTag]}>
+            <Text style={styles.proTagText}>PRO</Text>
+          </View>
+        ) : null}
+      </Pressable>
+    </View>
+  );
   const body = (
     <>
       {guided ? <TourTip index={guided.index} step={guided.step} /> : null}
       {header}
       {title && place?.kind !== 'window' ? <Text style={styles.title}>{title}</Text> : null}
       {banner}
-      {tiles?.length ? (
-        // In even rows of up to four, each centered (see tileRows), every tile as wide as the fullest row's.
+      {tileRowsShown.length || wideTile ? (
         <View style={styles.tiles}>
-          {inTileRows(tiles).map((row, r, rows) => (
+          {tileRowsShown.map((row, r) => (
             <View key={r} style={styles.tileRow}>
-              {row.map((t) => (
-                <View key={t.label} style={[styles.tileCell, { width: `${100 / Math.max(...rows.map((x) => x.length))}%` }]}>
-                  <Pressable
-                    onPress={() => run(t)}
-                    disabled={t.disabled || isOff(t)}
-                    accessibilityRole="button"
-                    accessibilityLabel={t.label}
-                    accessibilityState={{ disabled: t.disabled || isOff(t) }}
-                    style={({ pressed }) => [
-                      styles.tile,
-                      isGuided(t) && styles.guided,
-                      pressed && styles.pressed,
-                      (t.disabled || isOff(t)) && styles.tileDisabled,
-                    ]}>
-                    <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
-                    <Text style={[styles.tileText, t.destructive && { color: colors.danger }]} numberOfLines={1}>
-                      {t.label}
-                    </Text>
-                    {t.pro ? (
-                      <View style={[styles.proTag, styles.tileProTag]}>
-                        <Text style={styles.proTagText}>PRO</Text>
-                      </View>
-                    ) : null}
-                  </Pressable>
-                </View>
-              ))}
+              {row.map((t) => tileButton(t))}
             </View>
           ))}
+          {wideTile ? <View style={styles.tileRow}>{tileButton(wideTile, 2)}</View> : null}
         </View>
       ) : null}
       {actions.map((a) => (

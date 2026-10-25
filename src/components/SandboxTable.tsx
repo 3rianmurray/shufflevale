@@ -3858,6 +3858,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             ] as SheetTile[]
           ).map(proTile),
         ],
+        // Under them, always there: what's been copied, put down where the table was held (or in the middle of the
+        // view); grayed out while nothing has been. (Pro's rules are pasteClip's.)
+        wideTile: {
+          label: clip && clipSize(clip) > 1 ? `Paste ${clipSize(clip)} things` : 'Paste',
+          icon: icon('doc.on.clipboard', 'content_paste'),
+          disabled: !clip,
+          onPress: () => pasteClip(),
+        },
         actions: [],
       };
     }
@@ -4648,6 +4656,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'addCards')}
         title={sheet?.title}
         banner={sheet && 'banner' in sheet ? sheet.banner : undefined}
+        wideTile={sheet && 'wideTile' in sheet ? sheet.wideTile : undefined}
         tiles={sheet?.tiles}
         actions={sheet?.actions ?? []}
         // Scaling is kept as it's made: put away, it's done (and one undo).
