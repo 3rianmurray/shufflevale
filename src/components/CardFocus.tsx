@@ -8,6 +8,7 @@ import * as haptics from '../lib/haptics';
 import { colors } from '../theme';
 import type { SheetTile } from './ActionSheet';
 import { Text } from './Text';
+import { ALL_ORIENTATIONS } from '../lib/orientations';
 
 /** How long it takes to come and go. */
 const IN_MS = 180;
@@ -219,7 +220,7 @@ export function CardFocus(props: Props) {
       right + COMPACT_W <= screenW - 12 ? right : left >= 12 ? left : Math.max(12, Math.min(screenW - COMPACT_W - 12, near.x + near.w / 2 - COMPACT_W / 2));
     const y = Math.max(insets.top + 8, Math.min(height - insets.bottom - H - 8, near.y + near.h / 2 - H / 2));
     return (
-      <Modal visible={mounted} transparent animationType="none" onRequestClose={onClose}>
+      <Modal visible={mounted} transparent animationType="none" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={onClose}>
         {/* Nothing darkened: a tap anywhere else closes it. */}
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
         <Animated.View
@@ -249,7 +250,7 @@ export function CardFocus(props: Props) {
   }
 
   return (
-    <Modal visible={mounted} transparent animationType="none" onRequestClose={onClose}>
+    <Modal visible={mounted} transparent animationType="none" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={onClose}>
       {/* The screen behind, darkened; tapping it closes this. */}
       <Animated.View style={[StyleSheet.absoluteFill, spotlight ? styles.darker : styles.backdrop, { opacity: anim.shown }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />

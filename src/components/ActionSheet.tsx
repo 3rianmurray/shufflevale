@@ -9,6 +9,7 @@ import { previousTourStep, useTourStep } from '../lib/tour';
 import { colors } from '../theme';
 import { Text } from './Text';
 import { TourTip } from './TourOverlay';
+import { ALL_ORIENTATIONS } from '../lib/orientations';
 
 export interface SheetAction {
   label: string;
@@ -133,6 +134,7 @@ export function ActionSheet(props: Props) {
       transparent
       // Animated here instead: the system's slide would carry the backdrop up with the sheet.
       animationType="none"
+      supportedOrientations={ALL_ORIENTATIONS}
       onRequestClose={onClose}
       // After the slide away has finished and the modal has gone: iOS can now show another one.
       onDismiss={() => {

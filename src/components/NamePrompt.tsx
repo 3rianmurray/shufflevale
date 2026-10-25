@@ -5,6 +5,7 @@ import { answerName, MAX_NAME_LENGTH, titleCase, useNameRequest } from '../lib/n
 import { colors } from '../theme';
 import { Button } from './Button';
 import { MAX_TEXT_SCALE, Text } from './Text';
+import { ALL_ORIENTATIONS } from '../lib/orientations';
 
 /**
  * The app's prompt for a name (see `askName`), over every screen: a title, a field that keeps what's typed in
@@ -25,7 +26,7 @@ export function NamePrompt() {
   const save = () => answerName(draft);
 
   return (
-    <Modal visible={!!request} transparent animationType="fade" onRequestClose={() => answerName(null)}>
+    <Modal visible={!!request} transparent animationType="fade" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={() => answerName(null)}>
       <KeyboardAvoidingView behavior="padding" style={styles.backdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => answerName(null)} accessibilityLabel="Cancel" />
         <View style={styles.box}>

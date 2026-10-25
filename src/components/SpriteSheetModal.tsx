@@ -28,6 +28,7 @@ import { colors } from '../theme';
 import { Button } from './Button';
 import { TipToast } from './TipToast';
 import { MAX_TEXT_SCALE, Text } from './Text';
+import { ALL_ORIENTATIONS } from '../lib/orientations';
 
 const MAX_CELLS_PER_SIDE = 20;
 const PADDING = 16;
@@ -240,7 +241,7 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
   const busy = progress !== null;
 
   return (
-    <Modal visible={uri !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={onCancel} onDismiss={onClosed}>
+    <Modal visible={uri !== null} animationType="slide" presentationStyle="fullScreen" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={onCancel} onDismiss={onClosed}>
       <KeyboardAvoidingView style={styles.screen} behavior="padding">
         <ScrollView
           scrollEnabled={!painting}

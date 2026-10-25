@@ -18,6 +18,7 @@ import { CropModal } from './CropModal';
 import { SpriteSheetModal } from './SpriteSheetModal';
 import { TipToast } from './TipToast';
 import { Text } from './Text';
+import { ALL_ORIENTATIONS } from '../lib/orientations';
 
 /** A picture coming in, fitted to the card, and what it was cut from (to cut it again later). */
 export interface ImportPicture {
@@ -243,7 +244,7 @@ export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardR
   const pickedHasPair = pickedCard !== null && pickedCard !== -1 && cards[pickedCard].backAt !== undefined;
 
   return (
-    <Modal visible={pictures !== null} animationType="slide" presentationStyle="fullScreen" onRequestClose={cancel}>
+    <Modal visible={pictures !== null} animationType="slide" presentationStyle="fullScreen" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={cancel}>
       <View style={styles.screen}>
         <ScrollView contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 24, paddingHorizontal: PADDING, gap: 14 }}>
           <Text style={styles.title}>Check your cards</Text>

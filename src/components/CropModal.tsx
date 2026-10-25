@@ -10,6 +10,7 @@ import { colors } from '../theme';
 import { Button } from './Button';
 import { RoundnessSlider } from './RoundnessSlider';
 import { Text } from './Text';
+import { ALL_ORIENTATIONS } from '../lib/orientations';
 
 /** Furthest the user can zoom in, relative to the image just covering the frame. */
 const MAX_ZOOM = 6;
@@ -209,7 +210,7 @@ export function CropModal({ uris, ratio, roundness, onRoundness, onDone, onCance
   const isLast = index + 1 >= uris.length;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={cancel}>
+    <Modal visible={visible} animationType="slide" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={cancel}>
       <View style={[styles.screen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 12 }]}>
         <Text style={styles.title}>{uris.length > 1 ? `Crop card ${index + 1} of ${uris.length}` : 'Crop card'}</Text>
 

@@ -13,6 +13,7 @@ import { colors } from '../theme';
 import { Button } from './Button';
 import type { ImportPicture } from './ImportReview';
 import { Text } from './Text';
+import { ALL_ORIENTATIONS } from '../lib/orientations';
 
 const KINDS: [CardKind, string][] = [
   ['card', 'Rectangle'],
@@ -123,7 +124,7 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
   const last = [...shots].reverse().find((s) => s !== null);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={cancel} onDismiss={onClosed}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={cancel} onDismiss={onClosed}>
       <View style={styles.screen}>
         {!permission ? null : !permission.granted ? (
           <View style={[styles.ask, { paddingTop: insets.top + 40 }]}>

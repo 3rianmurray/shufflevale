@@ -9,6 +9,7 @@ import { colors } from '../theme';
 import { Button } from './Button';
 import { CardView } from './CardView';
 import { Text } from './Text';
+import { ALL_ORIENTATIONS } from '../lib/orientations';
 
 const COLUMNS = 4;
 const GAP = 10;
@@ -48,7 +49,7 @@ export function TrashModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={close}>
       <View style={[styles.screen, { paddingBottom: insets.bottom + 12 }]}>
         <View style={styles.header}>
           {shown.length > 1 ? (

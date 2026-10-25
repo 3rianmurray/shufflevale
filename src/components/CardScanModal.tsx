@@ -12,6 +12,7 @@ import * as haptics from '../lib/haptics';
 import { colors } from '../theme';
 import { Button } from './Button';
 import { Text } from './Text';
+import { ALL_ORIENTATIONS } from '../lib/orientations';
 
 /** How near a finger must land to a corner to pick it up. */
 const GRAB_RADIUS = 48;
@@ -168,6 +169,7 @@ export function CardScanModal({ uri, cardRatio, onDone, onCropByHand, onCancel, 
       visible={uri !== null}
       animationType="slide"
       presentationStyle="fullScreen"
+      supportedOrientations={ALL_ORIENTATIONS}
       onRequestClose={onCancel}
       onDismiss={onClosed}>
       <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
