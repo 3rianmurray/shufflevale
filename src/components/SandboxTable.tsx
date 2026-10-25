@@ -71,10 +71,9 @@ import {
   PIECE_SIZE,
   rotateItems,
   turnsFreely,
-  sameView,
+  doubleTapZoom,
   zoomInOn,
   zoomOnto,
-  ZOOMED_IN,
   normalizeAngle,
   artLevel,
   keepArtLevels,
@@ -3117,17 +3116,24 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     camX.set(withTiming(to.tx, t));
     camY.set(withTiming(to.ty, t));
   };
+  /** Where the last double tap zoomed in to, till it zooms out (see doubleTapZoom). */
+  const [zoomedTo] = useState(() => {
+    const box = { camera: null as Camera | null };
+    return { set: (camera: Camera | null) => Object.assign(box, { camera }), get: () => box.camera };
+  });
   /**
-   * A double tap's zoom: in on the spot tapped, or onto the thing tapped; back out to everything in view if
-   * the camera's in close already (or already on it). Glided there, and kept with the table.
+   * A double tap's zoom: in once, on the spot tapped or onto the thing tapped; the next goes out to everything in
+   * view (never in further). Glided there, and kept with the table.
    */
   const zoomToTarget = (target: ZoomTarget) => {
     if (!view || !table || table.lockCamera) return;
     const cam = readCamera();
     const space = fitSpace(view.w);
+    const fit = fitAllCamera(table, view.w);
     const onto = 'item' in target ? zoomOnto(cam, target.item, space) : zoomInOn(cam, target.at, space);
-    const to = cameraZoom(cam) >= ZOOMED_IN || sameView(cam, onto) ? fitAllCamera(table, view.w) : onto;
-    glideCamera(to);
+    const out = doubleTapZoom(cam, fit, onto, zoomedTo.get()) === 'out';
+    zoomedTo.set(out ? null : onto);
+    glideCamera(out ? fit : onto);
     haptics.tick();
     setTimeout(() => latest.get().saveCamera(), SPOT_MS + 50);
   };

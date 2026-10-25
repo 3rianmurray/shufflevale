@@ -1480,8 +1480,10 @@ export function fitCamera(bounds: Area, space: Area): Camera {
 
 // ---- Double taps that zoom (on iPad) ----
 
-/** Zoomed in this far or more, a double tap zooms back out to fit everything in view. */
-export const ZOOMED_IN = 1.6;
+/** Zoomed in this far or more (readable close up), a double tap zooms back out to fit everything in view. */
+export const ZOOMED_IN = 1.0;
+/** ...or this many times as close as everything fitted in view is (for a table that fits only when zoomed in already). */
+const ZOOMED_IN_BY = 1.5;
 /** A double tap on the table zooms in on that spot: to this at least (or twice as far as it was), up to the most. */
 const TAP_ZOOM = 1.25;
 const TAP_ZOOM_MAX = 2.4;
@@ -1517,6 +1519,16 @@ export function zoomOnto(c: Camera, it: { x: number; y: number; w: number; h: nu
 /** Whether two cameras show much the same (as near as makes no difference to the eye). */
 export function sameView(p: Camera, q: Camera): boolean {
   return Math.abs(cameraZoom(p) / cameraZoom(q) - 1) < 0.05 && Math.hypot(p.tx - q.tx, p.ty - q.ty) < 24;
+}
+
+/**
+ * What a double tap does: zoom `in` (once), or `out` to everything fitted in view. Out whenever the camera is
+ * already zoomed in (close enough to read, or well past what fits everything), or still on the spot the last
+ * double tap zoomed to, or already on what was tapped. So a second double tap never goes in further.
+ */
+export function doubleTapZoom(cam: Camera, fit: Camera, onto: Camera, last: Camera | null): 'in' | 'out' {
+  const zoomedIn = cameraZoom(cam) >= Math.max(ZOOMED_IN, cameraZoom(fit) * ZOOMED_IN_BY);
+  return zoomedIn || sameView(cam, onto) || (last !== null && sameView(cam, last)) ? 'out' : 'in';
 }
 
 /**

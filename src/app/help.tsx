@@ -44,7 +44,7 @@ const TIPS: { title: string; tips: [string, string][] }[] = [
     tips: [
       ['Move around', 'Slide with one finger. Pinch and twist with two to zoom and turn.'],
       ['Two-finger double tap', 'Tap twice with two fingers: everything on the table fitted in view.'],
-      ['Double-tap the table', 'Zooms in there. Double-tap a zone, or anything locked, to zoom onto it. Zoomed in close, it fits everything in view again.'],
+      ['Double-tap the table', 'Zooms in there. Double-tap a zone, or anything locked, to zoom onto it. Double-tap again to fit everything in view.'],
       ['Drag a stack', 'Takes its top card. Hold it a moment first to move the whole stack.'],
       ['Tap a card', 'Picks it out. Tap it again for its options.'],
       ['Double-tap a card', 'Flips it (a locked one, the camera zooms onto instead). Flipped onto a stack facing the same way, it joins it.'],

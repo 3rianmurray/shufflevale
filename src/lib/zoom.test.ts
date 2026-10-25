@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { cameraAngle, cameraLookingAt, cameraZoom, sameView, toScreen, zoomInOn, zoomOnto } from './sandbox.ts';
+import { cameraAngle, cameraLookingAt, cameraZoom, doubleTapZoom, sameView, toScreen, zoomInOn, zoomOnto } from './sandbox.ts';
 import type { Camera } from './sandbox.ts';
 
 const space = { x: 0, y: 100, w: 800, h: 600 };
@@ -43,4 +43,31 @@ test('two cameras showing much the same are the same view', () => {
   const c = zoomOnto(upright, { x: 500, y: 500, w: 400, h: 300, angle: 0 }, space);
   assert.ok(sameView(c, { ...c, tx: c.tx + 5 }));
   assert.ok(!sameView(c, upright));
+});
+
+test('a double tap zooms in once, and the next one zooms out (never in further)', () => {
+  const fit: Camera = { a: 0.3, b: 0, tx: 40, ty: 150 };
+  // Fitted: the first double tap goes in...
+  const first = zoomInOn(fit, { x: 1000, y: 700 }, space);
+  assert.equal(doubleTapZoom(fit, fit, first, null), 'in');
+  // ...and from there, tapped again (anywhere, a little panned or not), it goes out.
+  assert.equal(doubleTapZoom(first, fit, zoomInOn(first, { x: 1000, y: 700 }, space), first), 'out');
+  assert.equal(doubleTapZoom({ ...first, tx: first.tx + 300 }, fit, zoomInOn(first, { x: 0, y: 0 }, space), first), 'out');
+});
+
+test('a thing double-tapped is zoomed onto once, and the next double tap zooms out', () => {
+  const fit: Camera = { a: 0.3, b: 0, tx: 40, ty: 150 };
+  // A big zone, so the zoom onto it is not close up.
+  const zone = { x: 1500, y: 900, w: 2000, h: 1200, angle: 0 };
+  const onto = zoomOnto(fit, zone, space);
+  assert.ok(cameraZoom(onto) < 1);
+  assert.equal(doubleTapZoom(fit, fit, onto, null), 'in');
+  assert.equal(doubleTapZoom(onto, fit, zoomOnto(onto, zone, space), onto), 'out');
+});
+
+test('a small table that fits only zoomed in still goes in once, then out', () => {
+  const fit: Camera = { a: 1.5, b: 0, tx: 0, ty: 0 };
+  const first = zoomInOn(fit, { x: 100, y: 100 }, space);
+  assert.equal(doubleTapZoom(fit, fit, first, null), 'in');
+  assert.equal(doubleTapZoom(first, fit, first, first), 'out');
 });
