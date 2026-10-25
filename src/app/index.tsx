@@ -143,7 +143,44 @@ export default function HomeScreen() {
     if (duplicateDeck(id)) haptics.success();
   };
 
-  // Decks and sessions take things with them, so ask first. A group's decks are kept, so it just goes.
+  // Decks and sessions take things with them, so ask first. A group asks what's to become of its decks.
+  const confirmDeleteGroup = (id: string) => {
+    const group = groups.find((g) => g.id === id);
+    const inIt = decks.filter((d) => d.groupId === id);
+    if (!group) return;
+    // Empty: nothing to lose.
+    if (!inIt.length) {
+      deleteGroup(id);
+      swipeTipSoon();
+      return;
+    }
+    haptics.warn();
+    const n = inIt.length === 1 ? 'its deck' : `its ${inIt.length} decks`;
+    // Deleting them takes their cards off tables and out of sessions too: said if it would.
+    const used = inIt.some((d) => sessions.some((s) => s.deckIds.includes(d.id)) || sandboxes.some((t) => t.stacks.some((s) => s.cards.some((c) => c.deckId === d.id)) || t.hands.some((h) => h.some((c) => c.deckId === d.id))));
+    Alert.alert(
+      `Delete the group “${group.name}”?`,
+      `Keep ${n} (they stay in your decks, out of any group), or delete ${inIt.length === 1 ? 'it' : 'them'} too, card images and all.${used ? ' Deleting also takes their cards off any tables and out of any sessions.' : ''}`,
+      [
+        {
+          text: inIt.length === 1 ? 'Keep the deck' : 'Keep the decks',
+          onPress: () => {
+            deleteGroup(id);
+            swipeTipSoon();
+          },
+        },
+        {
+          text: inIt.length === 1 ? 'Delete the deck too' : `Delete all ${inIt.length} decks too`,
+          style: 'destructive',
+          onPress: () => {
+            for (const d of inIt) deleteDeck(d.id);
+            deleteGroup(id);
+          },
+        },
+        { text: 'Cancel', style: 'cancel', onPress: closeRows },
+      ],
+    );
+  };
   const confirmDeleteDeck = (id: string, name: string) => {
     haptics.warn();
     Alert.alert(`Delete "${name}"?`, deleteDeckWarning(id, sessions, sandboxes), [
@@ -244,7 +281,7 @@ export default function HomeScreen() {
           accessibilityLabel={`${group.name}, group of ${count} ${count === 1 ? 'deck' : 'decks'}, ${group.collapsed ? 'collapsed' : 'expanded'}`}
           {...rowActions([
             { name: 'options', label: 'Options', run: () => setGroupMenu(group.id) },
-            { name: 'delete', label: 'Delete group', run: () => deleteGroup(group.id) },
+            { name: 'delete', label: 'Delete group', run: () => confirmDeleteGroup(group.id) },
           ])}
           style={[styles.groupRow, lifted && styles.liftedRow]}>
           <Text style={styles.chevron}>{group.collapsed ? '▸' : '▾'}</Text>
@@ -260,7 +297,7 @@ export default function HomeScreen() {
       return lifted ? (
         <View style={styles.groupGap}>{groupRow}</View>
       ) : (
-        <SwipeRow style={styles.groupGap} radius={10} {...swipe(`group:${group.id}`, () => deleteGroup(group.id))}>
+        <SwipeRow style={styles.groupGap} radius={10} {...swipe(`group:${group.id}`, () => confirmDeleteGroup(group.id))}>
           {groupRow}
         </SwipeRow>
       );
@@ -619,13 +656,12 @@ export default function HomeScreen() {
                 // The group's decks in one file, to give to a friend or keep somewhere safe.
                 ...(decks.some((d) => d.groupId === menuGroup.id) ? fileActions('group', () => groupFile(menuGroup.id), true) : []),
                 {
-                  label: 'Delete group (keeps its decks)',
+                  label: 'Delete group…',
                   destructive: true,
                   groupStart: true,
-                  onPress: () => {
-                    deleteGroup(menuGroup.id);
-                    swipeTipSoon();
-                  },
+                  // It asks what's to become of the group's decks, once this menu has gone.
+                  opensModal: true,
+                  onPress: () => confirmDeleteGroup(menuGroup.id),
                 },
               ]
             : []
