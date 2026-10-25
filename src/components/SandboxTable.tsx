@@ -1813,6 +1813,24 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       if (touch.holdTimer) clearTimeout(touch.holdTimer);
       touch.holdTimer = null;
     };
+    /**
+     * The options of what's picked out: the group's (Selected) only for more than one thing. One card or piece
+     * gets its own menu, as a second tap on it does (and its selection lets go, as that does).
+     */
+    const openPickedMenu = () => {
+      const L = latest.get();
+      if (L.selected.length + L.pickedPieces.length === 1) {
+        if (L.selected.length) {
+          const id = L.selected[0];
+          L.setSelected([]);
+          L.setMenu({ kind: 'stack', id });
+        } else {
+          L.setMenu({ kind: 'piece', id: L.pickedPieces[0] });
+        }
+        return;
+      }
+      L.setMenu({ kind: 'selection' });
+    };
     /** A finger down on a piece (or an unlocked zone): a tap uses it, a drag moves it (and any picked out with it), a hold gives its options. */
     const pressPiece = (pressed: string, part: PiecePart, w: { x: number; y: number }) => {
       const L = latest.get();
@@ -1957,7 +1975,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             }
             else if (b === 'shuffle') L.shuffleSelection();
             else if (b === 'gather') L.gatherGroup(L.selected[L.selected.length - 1]);
-            else L.setMenu({ kind: 'selection' });
+            else openPickedMenu();
             return;
           }
         }
@@ -1993,7 +2011,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               touch.mode = 'button';
               touch.lastTap = null;
               haptics.lift();
-              latest.get().setMenu({ kind: 'selection' });
+              openPickedMenu();
             }, HOLD_PIECE_MS);
           } else {
             const pressedStack = hit.stack.id;
