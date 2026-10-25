@@ -27,6 +27,7 @@ const TIPS: { title: string; tips: [string, string][] }[] = [
       ['Hold a ticked card', 'While selecting, moves every ticked card together.'],
       ['Sprite sheets', 'Slide a finger across a number to change it. Tap or drag across cards to leave them out.'],
       ['Cards with their own backs', 'Scan each front, then its back (or all the fronts, then all the backs). When you check the cards, choose how under Backs, and they pair up. Or add a sheet of backs: each pairs with the card of the same number.'],
+      ['Cards with odd shapes', 'Photograph them on a plain background and add them together. When you check the cards, tap Cut out every card, or a card’s own Cut out. Custom art on the table can be cut out from its options too.'],
     ],
   },
   {

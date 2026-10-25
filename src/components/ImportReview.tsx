@@ -3,12 +3,14 @@ import { useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { fitInFrame } from '../lib/cardFit';
 import * as haptics from '../lib/haptics';
 import { rotateImage } from '../lib/images';
 import { frontCount, frontsAfterRemoving, pairingNote, pairUp, swapSides } from '../lib/importBatch';
 import type { Pairing } from '../lib/importBatch';
 import { pickFiles, pickImages } from '../lib/pickers';
 import type { Grid } from '../lib/spriteSheet';
+import { canCutOut, cutOut } from '../lib/subjectLift';
 import { cardRadius } from '../lib/types';
 import { colors } from '../theme';
 import { Button } from './Button';
@@ -21,6 +23,8 @@ import { Text } from './Text';
 export interface ImportPicture {
   uri: string;
   original: string;
+  /** The picture as it was before it was cut out (see subjectLift), to put back. */
+  uncut?: ImportPicture;
 }
 
 interface Props {
@@ -60,6 +64,8 @@ export function ImportReview({ pictures, sheetGrid, cardRatio, roundness, room, 
   /** The picture tapped (where it is in the list), whose options show at the bottom. */
   const [picked, setPicked] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  /** What's being done while busy, if it takes a while (e.g. "Cutting out 3 of 30…"). */
+  const [progress, setProgress] = useState<string | null>(null);
   /** The picture being cut again, in the cropper. */
   const [cropping, setCropping] = useState<number | null>(null);
   /**
@@ -128,6 +134,59 @@ export function ImportReview({ pictures, sheetGrid, cardRatio, roundness, room, 
     } finally {
       setBusy(false);
     }
+  };
+  /** A picture with its subject cut out (from what it was cut from), scaled into the card; or null if none's found. */
+  const cutOne = async (p: ImportPicture): Promise<ImportPicture | null> => {
+    const lifted = await cutOut(p.original);
+    if (!lifted) return null;
+    return { uri: await fitInFrame(lifted.uri, cardRatio), original: lifted.uri, uncut: p };
+  };
+  /** Cuts out the picture tapped, or puts it back as it was. */
+  const toggleCut = async (at: number) => {
+    const p = list[at];
+    if (p.uncut) {
+      replace(at, p.uncut);
+      haptics.tick();
+      return;
+    }
+    setBusy(true);
+    try {
+      const cut = await cutOne(p);
+      if (cut) {
+        replace(at, cut);
+        haptics.success();
+      } else {
+        haptics.warn();
+        Alert.alert('Nothing to cut out', 'No shape stood out from the background. A plain, contrasting background helps.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+  /** Cuts out every picture not cut out yet (for odd-shaped cards photographed on a table). */
+  const cutAll = async () => {
+    const todo = list.flatMap((p, i) => (p.uncut || /\.png$/i.test(p.uri) ? [] : [i]));
+    if (!todo.length) return;
+    setBusy(true);
+    let missed = 0;
+    try {
+      for (const [n, at] of todo.entries()) {
+        setProgress(`Cutting out ${n + 1} of ${todo.length}…`);
+        const cut = await cutOne(list[at]);
+        if (cut) replace(at, cut);
+        else missed++;
+      }
+    } finally {
+      setProgress(null);
+      setBusy(false);
+    }
+    if (missed) {
+      haptics.warn();
+      Alert.alert(
+        `${missed} ${missed === 1 ? 'picture wasn’t' : 'pictures weren’t'} cut out`,
+        'No shape stood out from the background in them, so they’re as they were.',
+      );
+    } else haptics.success();
   };
   const remove = (at: number) => {
     setList((l) => l.filter((_, i) => i !== at));
@@ -226,6 +285,13 @@ export function ImportReview({ pictures, sheetGrid, cardRatio, roundness, room, 
               />
             ) : null}
             {note ? <Text style={styles.note}>{note}</Text> : null}
+            {/* Odd-shaped cards photographed on a table: every one cut out of its background at once. */}
+            {canCutOut() && list.some((p) => !p.uncut && !/\.png$/i.test(p.uri)) ? (
+              <>
+                <Button label="Cut out every card" onPress={cutAll} disabled={busy} style={{ marginTop: 10 }} />
+                <Text style={styles.help}>For cards with odd shapes, photographed on a plain background.</Text>
+              </>
+            ) : null}
             {adding < cards.length ? (
               <Text style={styles.note}>
                 {adding
@@ -262,11 +328,19 @@ export function ImportReview({ pictures, sheetGrid, cardRatio, roundness, room, 
         <View style={[styles.actions, { paddingBottom: insets.bottom + 12 }]}>
           {picked !== null && picked < list.length ? (
             // What can be done to the picture tapped.
-            <View style={styles.pickedRow}>
-              <Button label="Turn 180°" onPress={() => turn(picked)} disabled={busy} style={{ flex: 1 }} />
-              <Button label="Crop" onPress={() => setCropping(picked)} disabled={busy} style={{ flex: 1 }} />
-              {pickedHasPair ? <Button label="Swap sides" onPress={() => swap(pickedCard!)} disabled={busy} style={{ flex: 1 }} /> : null}
-              <Button label="Take out" variant="danger" onPress={() => remove(picked)} disabled={busy} style={{ flex: 1 }} />
+            <View style={styles.pickedButtons}>
+              <Button label="Turn 180°" onPress={() => turn(picked)} disabled={busy} style={styles.pickedButton} />
+              <Button label="Crop" onPress={() => setCropping(picked)} disabled={busy} style={styles.pickedButton} />
+              {canCutOut() || list[picked].uncut ? (
+                <Button
+                  label={list[picked].uncut ? 'Uncut' : 'Cut out'}
+                  onPress={() => toggleCut(picked)}
+                  disabled={busy}
+                  style={styles.pickedButton}
+                />
+              ) : null}
+              {pickedHasPair ? <Button label="Swap sides" onPress={() => swap(pickedCard!)} disabled={busy} style={styles.pickedButton} /> : null}
+              <Button label="Take out" variant="danger" onPress={() => remove(picked)} disabled={busy} style={styles.pickedButton} />
             </View>
           ) : null}
           <View style={styles.pickedRow}>
@@ -283,6 +357,7 @@ export function ImportReview({ pictures, sheetGrid, cardRatio, roundness, room, 
         {busy ? (
           <View style={styles.busy} pointerEvents="none">
             <ActivityIndicator color={colors.accent} size="large" />
+            {progress ? <Text style={styles.progress}>{progress}</Text> : null}
           </View>
         ) : null}
       </View>
@@ -335,5 +410,9 @@ const styles = StyleSheet.create({
   noBackText: { color: colors.textMuted, fontSize: 12, textAlign: 'center' },
   actions: { gap: 10, paddingHorizontal: PADDING, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   pickedRow: { flexDirection: 'row', gap: 10 },
+  // Three to a row, so five fit on a phone.
+  pickedButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  pickedButton: { flexGrow: 1, flexBasis: '30%' },
+  progress: { color: colors.text, fontSize: 15, fontWeight: '600', marginTop: 12 },
   busy: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
 });

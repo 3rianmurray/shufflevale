@@ -136,7 +136,7 @@ import {
 import type { BagItem, Camera, CardSize, PieceKind, PiecePart, PieceShape, SandboxCard, SandboxStack, SandboxTable, Source, TablePiece } from '../lib/sandbox';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { artPicture, tokenPicture } from '../lib/images';
+import { artPicture, loadUpright, tokenPicture } from '../lib/images';
 import { deckLook, isPlayground, isProPiece, usePro } from '../lib/pro';
 import { updateSandbox, useSandbox } from '../lib/sandboxStore';
 import { clipSize, setClip, useClip } from '../lib/tableClipboard';
@@ -163,7 +163,8 @@ import { CardZoom } from './CardZoom';
 import type { TableControls } from './TableTopBar';
 import { WoodRail } from './Tabletop';
 import { TABLE_THEMES, THEME_KEYS, themeOf } from '../lib/tableThemes';
-import { importImage, isSeeThrough, loadSettings, saveSettings } from '../lib/storage';
+import { imageUri, importImage, isSeeThrough, loadSettings, saveSettings } from '../lib/storage';
+import { canCutOut, cutOut } from '../lib/subjectLift';
 import { Text } from './Text';
 
 /** Steps of undo kept. */
@@ -1056,6 +1057,45 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       else fresh.addPieceToTable('art', undefined, undefined, { image, ...size });
     } catch (e) {
       Alert.alert('Couldn’t use that picture', e instanceof Error ? e.message : String(e));
+    }
+  };
+  /**
+   * Custom art's subject cut out of its picture (a standee or token photographed on the table, say), lying just
+   * where it was in the picture, at the same scale. One undo puts it back.
+   */
+  const cutOutArt = async (id: string) => {
+    const art = latest.get().table?.pieces?.find((p) => p.id === id && p.kind === 'art');
+    if (!art?.image) return;
+    try {
+      const source = await loadUpright(imageUri(art.image));
+      const lifted = await cutOut(source.uri);
+      if (!lifted) {
+        haptics.warn();
+        Alert.alert('Nothing to cut out', 'No shape stood out from the background. A plain, contrasting background helps.');
+        return;
+      }
+      const picture = await artPicture(lifted.uri);
+      const fresh = latest.get();
+      const now = fresh.table?.pieces?.find((p) => p.id === id);
+      if (!fresh.table || !now) return;
+      // Its own size, and its middle, as the part of the picture it was: turned as the art lies.
+      const { w, h } = { w: now.w ?? PIECE_SIZE.art.w, h: now.h ?? PIECE_SIZE.art.h };
+      const k = now.scale ?? 1;
+      const dx = (lifted.x + lifted.w / 2 - 0.5) * w * k;
+      const dy = (lifted.y + lifted.h / 2 - 0.5) * h * k;
+      const r = ((now.angle ?? 0) * Math.PI) / 180;
+      fresh.commit(
+        setPiece(fresh.table, id, {
+          image: importImage(TOKEN_PICTURES, picture.uri),
+          w: Math.max(20, Math.round(w * lifted.w)),
+          h: Math.max(20, Math.round(h * lifted.h)),
+          x: Math.round(now.x + dx * Math.cos(r) - dy * Math.sin(r)),
+          y: Math.round(now.y + dx * Math.sin(r) + dy * Math.cos(r)),
+        }),
+      );
+      haptics.success();
+    } catch (e) {
+      Alert.alert('Couldn’t cut it out', e instanceof Error ? e.message : String(e));
     }
   };  /** A zone being resized by its grip: its own size for now (see resizeZone). */
   const [zoneSize, setZoneSize] = useState<{ id: string; w: number; h: number } | null>(null);
@@ -3481,6 +3521,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               scaleTile,
               // The system's menu, once this has gone (see choosePicture).
               tile('Picture', 'photo', 'image', () => setTimeout(() => choosePicture({ kind: 'art', id }), 450)),
+              // Its subject out of its background (where this iPhone can; not once it's see-through already).
+              ...(canCutOut() && piece.image && !isSeeThrough(piece.image) ? [tile('Cut out', 'scissors', 'content_cut', () => void cutOutArt(id))] : []),
             ],
             [
               // Among the cards, as a stack's Layer: under or over those it overlaps.
