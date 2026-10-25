@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { ActivityIndicator, Linking, Modal, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { cardFromPhoto } from '../lib/cardCapture';
@@ -33,10 +33,18 @@ interface Props {
   onClosed?: () => void;
 }
 
+/** One shot, kept by its own number (so one can be retaken or removed while others are still being made). */
+interface Shot {
+  id: number;
+  /** Its picture, or `working` while it's being made. */
+  card: CapturedCard | 'working';
+}
+
 /**
  * The app's own card camera: cards photographed one after another, each made into its picture as it's taken (a
  * plain card found and straightened, any other shape cut out: see cardFromPhoto), in true colors. With "Backs too",
- * it asks for each card's front and then its back, and they come paired.
+ * it asks for each card's front and then its back, and they come paired. The small picture in the corner opens
+ * everything taken so far, where any shot can be retaken or removed.
  */
 export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel, onClosed }: Props) {
   const insets = useSafeAreaInsets();
@@ -51,28 +59,44 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
     saveSettings({ ...loadSettings(), cameraKind: k === 'cutOut' ? 'cutOut' : undefined });
     haptics.tick();
   };
-  /** Each shot as it's worked on, then its picture (null if it couldn't be made). */
-  const [shots, setShots] = useState<(CapturedCard | null | 'working')[]>([]);
+  /** Every shot so far, in order. */
+  const [shots, setShots] = useState<Shot[]>([]);
   const [taking, setTaking] = useState(false);
+  /** The tray of shots is open, the shot picked in it, and the shot the next press of the shutter replaces. */
+  const [trayOpen, setTrayOpen] = useState(false);
+  const [picked, setPicked] = useState<number | null>(null);
+  const [retaking, setRetaking] = useState<number | null>(null);
+  /** The shot taken last (shown in the corner). */
+  const [latestId, setLatestId] = useState<number | null>(null);
   // One shot worked on at a time (each takes a moment, and pictures are big), in the order they were taken; and
-  // the pictures made, read once the last is ready. Kept outside React state, as the jobs outlive renders.
+  // the shots themselves, read once the last is ready. Kept outside React state, as the jobs outlive renders.
   const [queue] = useState(() => {
-    const box = { last: Promise.resolve() as Promise<unknown>, made: [] as (CapturedCard | null)[] };
+    const box = { last: Promise.resolve() as Promise<unknown>, list: [] as Shot[], nextId: 1 };
     return { get: () => box, set: (next: Partial<typeof box>) => Object.assign(box, next) };
   });
+  /** The shots changed: kept for the jobs, and shown. */
+  const setList = (list: Shot[]) => {
+    queue.set({ list });
+    setShots(list);
+  };
 
-  const working = shots.some((s) => s === 'working');
-  const done = shots.filter((s): s is CapturedCard => !!s && s !== 'working');
-  // What to take next: card n's front, or its back.
-  const n = shots.length;
+  const working = shots.some((s) => s.card === 'working');
+  const made = shots.flatMap((s) => (s.card === 'working' ? [] : [s.card]));
+  // What to take next: the shot being retaken, or one more at the end. Its place decides front or back.
+  const retakingAt = retaking === null ? -1 : shots.findIndex((s) => s.id === retaking);
+  const n = retakingAt >= 0 ? retakingAt : shots.length;
   const card = backs ? Math.floor(n / 2) + 1 : n + 1;
-  const prompt = backs ? `Card ${card} · ${n % 2 === 0 ? 'Front' : 'Now the back'}` : single ? 'The card' : `Card ${card}`;
+  const prompt = `${retakingAt >= 0 ? 'Retake ' : ''}${backs ? `card ${card} · ${n % 2 === 0 ? 'front' : 'back'}` : single ? 'the card' : `card ${card}`}`;
 
   const reset = () => {
     setShots([]);
     setReady(false);
     setTaking(false);
-    queue.set({ made: [], last: Promise.resolve() });
+    setTrayOpen(false);
+    setPicked(null);
+    setRetaking(null);
+    setLatestId(null);
+    queue.set({ list: [], last: Promise.resolve(), nextId: 1 });
   };
   const finish = (cards: CapturedCard[]) => {
     reset();
@@ -89,21 +113,25 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
     try {
       const photo = await camera.takePictureAsync({ quality: 0.92, shutterSound: false });
       if (!photo) return;
-      const { made: list, last } = queue.get();
-      const at = list.length;
-      queue.set({ made: [...list, null] });
-      setShots((s) => [...s, 'working']);
+      const { list, last, nextId } = queue.get();
+      // A retake takes the place of its shot; any other is one more at the end.
+      const replaced = retaking !== null && list.some((s) => s.id === retaking);
+      const id = replaced ? retaking : nextId;
+      setList(replaced ? list.map((s) => (s.id === id ? { id, card: 'working' } : s)) : [...list, { id, card: 'working' }]);
+      queue.set({ nextId: replaced ? nextId : nextId + 1 });
+      setRetaking(null);
+      setLatestId(id);
       const job = last.then(async () => {
-        let made: CapturedCard;
+        let result: CapturedCard;
         try {
-          made = await cardFromPhoto(photo.uri, ratioFor, kind);
+          result = await cardFromPhoto(photo.uri, ratioFor, kind);
         } catch {
           // The photo as it is (to fix on the checking screen), so the cards after it still pair up.
-          made = { uri: photo.uri, original: photo.uri, how: 'trimmed' };
+          result = { uri: photo.uri, original: photo.uri, how: 'trimmed' };
         }
-        queue.set({ made: queue.get().made.map((x, i) => (i === at ? made : x)) });
-        setShots((s) => s.map((x, i) => (i === at ? made : x)));
-        if (single) finish([made]);
+        // (By its number: others may have been retaken or removed meanwhile.)
+        setList(queue.get().list.map((s) => (s.id === id ? { id, card: result } : s)));
+        if (single) finish([result]);
       });
       queue.set({ last: job });
     } finally {
@@ -111,17 +139,39 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
     }
   };
 
+  /** The picked shot goes (with Backs too, only the last can: the others would shift every pair after them). */
+  const remove = (id: number) => {
+    const list = queue.get().list;
+    if (backs && list[list.length - 1]?.id !== id) return;
+    setList(list.filter((s) => s.id !== id));
+    setPicked(null);
+    if (retaking === id) setRetaking(null);
+    if (list.length <= 1) setTrayOpen(false);
+    haptics.drop();
+  };
+  /** The next press of the shutter replaces the picked shot. */
+  const retake = (id: number) => {
+    setRetaking(id);
+    setPicked(null);
+    setTrayOpen(false);
+    haptics.tick();
+  };
+
   const doneTaking = async () => {
     // The last shots still being worked on: once they're ready.
     await queue.get().last;
-    finish(queue.get().made.filter((c): c is CapturedCard => !!c));
+    finish(queue.get().list.flatMap((s) => (s.card === 'working' ? [] : [s.card])));
   };
   const cancel = () => {
     reset();
     onCancel();
   };
 
-  const last = [...shots].reverse().find((s) => s !== null);
+  // The corner shows the shot taken last (a retake counts), or the final one.
+  const last = shots.find((s) => s.id === latestId) ?? shots[shots.length - 1];
+  const pickedShot = shots.find((s) => s.id === picked);
+  /** A shot's name in the tray: its card's number (and front or back, with Backs too). */
+  const shotName = (i: number) => (backs ? `${Math.floor(i / 2) + 1}${i % 2 === 0 ? 'F' : 'B'}` : `${i + 1}`);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={cancel} onDismiss={onClosed}>
@@ -168,21 +218,71 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
                 </Pressable>
               ))}
             </View>
-            <View style={styles.promptBox} pointerEvents="none">
-              <Text style={styles.prompt}>{prompt}</Text>
+            <View style={styles.promptBox} pointerEvents={retakingAt >= 0 ? 'box-none' : 'none'}>
+              <Text style={styles.prompt}>{prompt.charAt(0).toUpperCase() + prompt.slice(1)}</Text>
               <Text style={styles.hint}>
-                {backs && n % 2 === 1 ? 'Turn it over where it lies.' : 'Lay it on a plain background, filling most of the screen.'}
+                {retakingAt >= 0
+                  ? 'The next picture replaces it.'
+                  : backs && n % 2 === 1
+                    ? 'Turn it over where it lies.'
+                    : 'Lay it on a plain background, filling most of the screen.'}
               </Text>
+              {retakingAt >= 0 ? <Button label="Don’t retake" onPress={() => setRetaking(null)} /> : null}
             </View>
+            {/* Everything taken so far: tap one for its options. */}
+            {trayOpen && shots.length ? (
+              <View style={[styles.tray, { bottom: insets.bottom + 120 }]}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trayRow}>
+                  {shots.map((s, i) => (
+                    <Pressable
+                      key={s.id}
+                      onPress={() => {
+                        setPicked(picked === s.id ? null : s.id);
+                        haptics.tick();
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Shot ${shotName(i)}`}
+                      accessibilityState={{ selected: picked === s.id }}
+                      style={[styles.trayShot, picked === s.id && styles.trayShotOn]}>
+                      {s.card === 'working' ? (
+                        <ActivityIndicator color={colors.accent} />
+                      ) : (
+                        <Image source={{ uri: s.card.uri }} style={styles.trayImage} contentFit="contain" />
+                      )}
+                      <Text style={styles.trayName}>{shotName(i)}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                {pickedShot ? (
+                  <View style={styles.trayButtons}>
+                    <Button label="Retake" variant="primary" onPress={() => retake(pickedShot.id)} disabled={pickedShot.card === 'working'} style={{ flex: 1 }} />
+                    {/* With Backs too, only the last can go (the others would shift every pair after them). */}
+                    {!backs || shots[shots.length - 1]?.id === pickedShot.id ? (
+                      <Button label="Delete" variant="danger" onPress={() => remove(pickedShot.id)} disabled={pickedShot.card === 'working'} style={{ flex: 1 }} />
+                    ) : null}
+                  </View>
+                ) : (
+                  <Text style={styles.trayHint}>Tap a shot to retake or delete it.</Text>
+                )}
+              </View>
+            ) : null}
             <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
-              <View style={styles.thumbBox}>
-                {last === 'working' ? (
+              <Pressable
+                onPress={() => {
+                  setTrayOpen(!trayOpen);
+                  setPicked(null);
+                }}
+                disabled={!shots.length || single}
+                accessibilityRole="button"
+                accessibilityLabel="Review the cards taken"
+                style={styles.thumbBox}>
+                {last?.card === 'working' ? (
                   <ActivityIndicator color={colors.accent} />
                 ) : last ? (
-                  <Image source={{ uri: last.uri }} style={styles.thumb} contentFit="contain" />
+                  <Image source={{ uri: last.card.uri }} style={[styles.thumb, trayOpen && styles.thumbOn]} contentFit="contain" />
                 ) : null}
-                {done.length ? <Text style={styles.count}>{done.length}</Text> : null}
-              </View>
+                {made.length ? <Text style={styles.count}>{made.length}</Text> : null}
+              </Pressable>
               <Pressable
                 onPress={take}
                 disabled={!ready || taking}
@@ -219,9 +319,18 @@ const styles = StyleSheet.create({
   promptBox: { position: 'absolute', left: 0, right: 0, top: '22%', alignItems: 'center', gap: 6 },
   prompt: { color: '#fff', fontSize: 20, fontWeight: '700', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, overflow: 'hidden' },
   hint: { color: 'rgba(255,255,255,0.85)', fontSize: 14, backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, overflow: 'hidden' },
+  tray: { position: 'absolute', left: 12, right: 12, backgroundColor: 'rgba(8,18,26,0.94)', borderRadius: 16, paddingVertical: 12, gap: 10 },
+  trayRow: { paddingHorizontal: 12, gap: 10 },
+  trayShot: { width: 64, alignItems: 'center', gap: 4, padding: 4, borderRadius: 10, borderWidth: 2, borderColor: 'transparent' },
+  trayShotOn: { borderColor: colors.accent },
+  trayImage: { width: 52, height: 72 },
+  trayName: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+  trayButtons: { flexDirection: 'row', gap: 10, paddingHorizontal: 12 },
+  trayHint: { color: colors.textMuted, fontSize: 13, textAlign: 'center' },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24 },
   thumbBox: { width: 64, height: 80, alignItems: 'center', justifyContent: 'center' },
-  thumb: { width: 56, height: 76 },
+  thumb: { width: 56, height: 76, borderRadius: 4 },
+  thumbOn: { borderWidth: 2, borderColor: colors.accent },
   count: { position: 'absolute', top: -6, right: -6, backgroundColor: colors.accent, color: colors.accentText, fontSize: 12, fontWeight: '700', paddingHorizontal: 6, borderRadius: 8, overflow: 'hidden' },
   shutter: { width: 76, height: 76, borderRadius: 38, borderWidth: 4, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   shutterInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff' },

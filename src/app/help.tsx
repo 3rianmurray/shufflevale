@@ -26,7 +26,7 @@ const TIPS: { title: string; tips: [string, string][] }[] = [
       ['Hold and drag a card', 'Reorder the deck. Tap other cards with a second finger to carry them too.'],
       ['Hold a ticked card', 'While selecting, moves every ticked card together.'],
       ['Sprite sheets', 'Slide a finger across a number to change it. Tap or drag across cards to leave them out.'],
-      ['Scanning cards', 'Lay each card on a plain background. Choose Rectangle to have each card found and straightened, or Cut out for cards of other shapes, cut out of the background.'],
+      ['Scanning cards', 'Lay each card on a plain background. Choose Rectangle to have each card found and straightened, or Cut out for cards of other shapes, cut out of the background. Tap the small picture in the corner to see every shot, and retake or delete any of them.'],
       ['Cards with their own backs', 'Turn on Backs too when scanning: it asks for each card’s front, then its back. Or add a sheet of backs when you check the cards: each pairs with the card of the same number.'],
       ['Cards with odd shapes', 'Scan them with Cut out chosen. Photos added together can be cut out when you check them: tap Cut out every card. Custom art on the table can be cut out from its options too.'],
     ],
