@@ -14,7 +14,7 @@ import type { SwipeSide } from '../components/SwipeRow';
 import { useDecks } from '../lib/DecksContext';
 import { askName } from '../lib/names';
 import { DeckFileError } from '../lib/deckFile';
-import { everythingFile, pickDeckFile, tableFile } from '../lib/deckExport';
+import { everythingFile, pickDeckFiles, readDeckFile, tableFile } from '../lib/deckExport';
 import type { FileContents } from '../lib/deckExport';
 import { backUpWithNotice, shareWithNotice } from '../lib/fileActions';
 import { useFileImport } from '../lib/useFileImport';
@@ -62,7 +62,7 @@ export default function HomeScreen() {
   } = useDecks();
   const insets = useSafeAreaInsets();
   const sandboxes = useSandboxes();
-  const addFile = useFileImport();
+  const { addFile, addParts } = useFileImport();
 
   // The walkthrough starts by itself the first time the app opens; after that, from the help button.
   useEffect(() => {
@@ -229,11 +229,16 @@ export default function HomeScreen() {
     name: groups.find((g) => g.id === groupId)?.name ?? 'Group',
     decks: decks.filter((d) => d.groupId === groupId),
   });
-  /** Opens a Shufflevale file: its decks go at the top of the list, and its tables (pointed at them) with the rest. */
+  /**
+   * Opens a Shufflevale file (or all the parts of one saved in parts): its decks go at the top of the list, and its
+   * tables (pointed at them) with the rest.
+   */
   const importFromFile = async () => {
     try {
-      const found = await pickDeckFile();
-      if (found) addFile(found);
+      const picked = await pickDeckFiles();
+      if (!picked) return;
+      if (picked.length > 1) await addParts(picked);
+      else addFile(await readDeckFile(picked[0]));
     } catch (e) {
       haptics.warn();
       Alert.alert('Couldn’t open that file', e instanceof DeckFileError ? e.message : 'Something went wrong reading it.');

@@ -24,7 +24,7 @@ export default function OpenFileScreen() {
   const { file } = useLocalSearchParams<{ file?: string }>();
   const insets = useSafeAreaInsets();
   const pro = usePro();
-  const addFile = useFileImport();
+  const { addFile } = useFileImport();
   const [found, setFound] = useState<UnpackedFile | null>(null);
   const [error, setError] = useState<string | null>(null);
 

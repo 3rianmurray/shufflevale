@@ -14,13 +14,18 @@ export async function shareWithNotice(contents: FileContents) {
   }
 }
 
-/** Saves the file into a folder picked in Files, and says where it went. */
+/** Saves the file (in parts, if it's too big for one) into a folder picked in Files, and says where it went. */
 export async function backUpWithNotice(contents: FileContents) {
   try {
-    const folder = await backUpFile(contents);
-    if (!folder) return;
+    const saved = await backUpFile(contents);
+    if (!saved) return;
     haptics.success();
-    Alert.alert('Backed up', `“${contents.name}” is saved in “${folder}” in the Files app.`);
+    Alert.alert(
+      'Backed up',
+      saved.parts > 1
+        ? `“${contents.name}” is saved in ${saved.parts} parts in “${saved.folder}” in the Files app.`
+        : `“${contents.name}” is saved in “${saved.folder}” in the Files app.`,
+    );
   } catch (e) {
     Alert.alert('Couldn’t back up', e instanceof Error ? e.message : String(e));
   }

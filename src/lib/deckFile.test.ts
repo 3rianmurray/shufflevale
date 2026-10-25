@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { DeckFileError, deckFileName, extOf, imagePixels, packDecks, remapTable, unpackDecks, unpackFile } from './deckFile.ts';
+import {
+  cardsByDeck,
+  DeckFileError,
+  deckFileName,
+  extOf,
+  imagePixels,
+  packDecks,
+  partFromHead,
+  planParts,
+  remapTable,
+  unpackDecks,
+  unpackFile,
+} from './deckFile.ts';
 import type { Deck } from './types.ts';
 
 const deck = (over: Partial<Deck> = {}): Deck => ({
@@ -211,4 +223,42 @@ test('a table’s cards from decks not in the file are left out; files from befo
   for (const c of old.decks[0].cards) delete c.id;
   assert.deepEqual(unpackFile(JSON.stringify(old)).tables, []);
   assert.equal(unpackDecks(JSON.stringify(old)).length, 1);
+});
+
+test('everything that fits in one part stays one file', () => {
+  const parts = planParts([deck(), deck({ id: 'd2' })], [], () => 10);
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0].decks.length, 2);
+});
+
+test('too much for one part is split between decks, tables last, a shared picture in each part that uses it', () => {
+  const charsOf = (p: string) => (p.startsWith('tokens/') ? 500 : 1000);
+  // Its own pictures, but for one (the first card's) shared with the first deck.
+  const own = (id: string) =>
+    deck({ id, backImage: `decks/${id}/back.png`, cards: deck().cards.map((c, i) => (i ? { ...c, image: c.image.replace('d1', id) } : c)) });
+  const table = { id: 't', name: 'T', createdAt: 0, updatedAt: 0, handNames: [], hands: [[], [], [], []], stacks: [],
+    pieces: [{ id: 'p', kind: 'art' as const, x: 0, y: 0, value: 0, image: 'tokens/art.png' }] };
+  // Each deck is 3,600 to 4,700 with its pictures (the shared one in each part), so two can't share a part of
+  // 5,500; the table fits beside the last.
+  const parts = planParts([deck(), own('d2'), own('d3')], [table], charsOf, 5500);
+  assert.deepEqual(parts.map((p) => [p.decks.map((d) => d.id), p.tables.length]), [[['d1'], 0], [['d2'], 0], [['d3'], 1]]);
+  // A deck too big for any part has one of its own.
+  assert.equal(planParts([deck()], [], charsOf, 100).length, 1);
+});
+
+test('a part says which it is at its very start, and its tables find cards in the other parts', () => {
+  const d1 = deck();
+  const d2 = deck({ id: 'd2', cards: [{ id: 'x', name: 'Ogre', image: 'decks/d2/x.jpg' }] });
+  const table = { id: 't', name: 'T', createdAt: 0, updatedAt: 0, handNames: [], hands: [[], [], [], []],
+    stacks: [{ id: 's', x: 0, y: 0, angle: 0, cards: [{ iid: 'a', deckId: 'd1', cardId: 'c2', faceUp: true }, { iid: 'b', deckId: 'd2', cardId: 'x', faceUp: true }] }] };
+  const first = JSON.stringify({ part: { n: 1, of: 2, set: 'abc' }, ...packDecks([d1], read) });
+  const second = JSON.stringify({ part: { n: 2, of: 2, set: 'abc' }, ...packDecks([d2], read, [table]) });
+  assert.deepEqual(partFromHead(second.slice(0, 100)), { n: 2, of: 2, set: 'abc' });
+  assert.equal(partFromHead(JSON.stringify(packDecks([d1], read)).slice(0, 100)), null);
+  assert.equal(partFromHead('{"part":{"n":3,"of":2,"set":"abc"}'), null);
+  const one = unpackFile(first);
+  assert.deepEqual(one.part, { n: 1, of: 2, set: 'abc' });
+  // By itself, only the card from its own deck; with the first part's decks, both.
+  assert.equal(unpackFile(second).tables[0].stacks[0].cards.length, 1);
+  assert.equal(unpackFile(second, cardsByDeck(one.decks)).tables[0].stacks[0].cards.length, 2);
 });

@@ -38,7 +38,18 @@ interface FileDeck {
   cards: FileCard[];
 }
 
+/**
+ * Which part of a file saved in parts it is (one too big to be a single file: see `planParts`): the nth of `of`,
+ * every part sharing `set`. Written first in the file, so it can be read without reading the rest.
+ */
+export interface FilePart {
+  n: number;
+  of: number;
+  set: string;
+}
+
 export interface DeckFile {
+  part?: FilePart;
   kind: typeof KIND;
   version: number;
   decks: FileDeck[];
@@ -59,6 +70,8 @@ export type FileTable = Omit<SandboxTable, 'id' | 'createdAt' | 'updatedAt'>;
  * pieces' pictures at `images`).
  */
 export interface UnpackedFile {
+  /** For a file saved in parts, which one this is. */
+  part?: FilePart;
   decks: UnpackedDeck[];
   tables: FileTable[];
   /** The pictures the tables' pieces use, by key. */
@@ -128,6 +141,93 @@ export function packDecks(decks: Deck[], read: (path: string) => string, tables:
       ? { tables: tables.map(({ id: _id, createdAt: _c, updatedAt: _u, ...t }) => (t.pieces ? { ...t, pieces: t.pieces.map(packPiece) } : t)) }
       : {}),
   };
+}
+
+/**
+ * The most a part of a file saved in parts holds, as text (pictures in base64): about 45 MB of pictures, well
+ * within what the phone can write or read in one go. (One file of everything can be far past what it can.)
+ */
+export const PART_CHARS = 60_000_000;
+
+/** What goes in one part of a file: some of its decks, and some of its tables. */
+export interface FilePlan {
+  decks: Deck[];
+  tables: SandboxTable[];
+}
+
+/** The pictures a table's pieces use (and the pieces in its bags). */
+function tablePictures(t: SandboxTable): string[] {
+  const found: string[] = [];
+  const item = (i: BagItem) => i.piece && piece(i.piece);
+  const piece = (p: TablePiece) => {
+    if (p.image) found.push(p.image);
+    p.items?.forEach(item);
+    if (p.supply) item(p.supply);
+  };
+  t.pieces?.forEach(piece);
+  return found;
+}
+
+/**
+ * Decks and tables split into parts, each under `limit` as text (one part, if it all fits), decks first and tables
+ * after, so a part's tables come once all their decks have (see `unpackFile`'s `earlier`). `charsOf` gives a
+ * saved picture's size in base64, by its path. A picture used in several parts goes in each; a deck or table too
+ * big for a part by itself has a part of its own.
+ */
+export function planParts(decks: Deck[], tables: SandboxTable[], charsOf: (path: string) => number, limit = PART_CHARS): FilePlan[] {
+  const parts: FilePlan[] = [];
+  let seen = new Set<string>();
+  let size = 0;
+  const add = (pictures: string[], overhead: number, put: (part: FilePlan) => void) => {
+    const fresh = (inPart: Set<string>) => [...new Set(pictures)].filter((p) => !inPart.has(p));
+    const cost = (inPart: Set<string>) => overhead + fresh(inPart).reduce((sum, p) => sum + charsOf(p), 0);
+    if (!parts.length || size + cost(seen) > limit) {
+      parts.push({ decks: [], tables: [] });
+      seen = new Set();
+      size = 0;
+    }
+    size += cost(seen);
+    for (const p of pictures) seen.add(p);
+    put(parts[parts.length - 1]);
+  };
+  // Besides its pictures, a little for each card's name and ids.
+  for (const d of decks) {
+    const pictures = [...(d.backImage ? [d.backImage] : []), ...d.cards.flatMap((c) => [c.image, ...(c.back ? [c.back] : [])])];
+    add(pictures, 200 + 150 * d.cards.length, (part) => part.decks.push(d));
+  }
+  for (const t of tables) add(tablePictures(t), JSON.stringify(t).length, (part) => part.tables.push(t));
+  return parts.length ? parts : [{ decks: [], tables: [] }];
+}
+
+/** A file's part, if it's one, from the start of its text (see `FilePart`), or null. */
+export function partFromHead(head: string): FilePart | null {
+  const found = head.match(/^\s*\{\s*"part"\s*:\s*(\{[^{}]*\})/);
+  if (!found) return null;
+  try {
+    return partFrom(JSON.parse(found[1]));
+  } catch {
+    return null;
+  }
+}
+
+/** The most parts a file can be saved in. */
+const MAX_PARTS = 999;
+
+function partFrom(v: unknown): FilePart | null {
+  if (!isObject(v)) return null;
+  const { n, of } = v;
+  const set = idFrom(v.set);
+  if (!Number.isInteger(n) || !Number.isInteger(of) || !set) return null;
+  return (n as number) >= 1 && (n as number) <= (of as number) && (of as number) <= MAX_PARTS ? { n: n as number, of: of as number, set } : null;
+}
+
+/** Each deck's cards, by their ids in the file, for a table's cards to be checked against. */
+export function cardsByDeck(decks: UnpackedDeck[]): Map<string, Set<string>> {
+  const known = new Map<string, Set<string>>();
+  for (const d of decks) {
+    if (d.fileId) known.set(d.fileId, new Set(d.cards.flatMap((c) => (c.fileId ? [c.fileId] : []))));
+  }
+  return known;
 }
 
 /** The cards in a bag (and in the bags in it), its supply's too. */
@@ -218,8 +318,10 @@ export const unpackDecks = (text: string): UnpackedDeck[] => unpackFile(text).de
 
 /**
  * Reads a deck file's contents back into decks and tables. Throws a DeckFileError if it isn't one, or can't be read.
+ * For a part of a file saved in parts, `earlier` gives the decks of its other parts (see `cardsByDeck`), which its
+ * tables' cards can come from too.
  */
-export function unpackFile(text: string): UnpackedFile {
+export function unpackFile(text: string, earlier?: Map<string, Set<string>>): UnpackedFile {
   let file: unknown;
   try {
     file = JSON.parse(text);
@@ -271,11 +373,8 @@ export function unpackFile(text: string): UnpackedFile {
       }),
     };
   });
-  // Tables: only cards from the file's own decks are kept.
-  const known = new Map<string, Set<string>>();
-  for (const d of decks) {
-    if (d.fileId) known.set(d.fileId, new Set(d.cards.flatMap((c) => (c.fileId ? [c.fileId] : []))));
-  }
+  // Tables: only cards from the file's own decks (and its other parts') are kept.
+  const known = new Map([...(earlier ?? []), ...cardsByDeck(decks)]);
   // A piece's picture: kept if it's a sound one (a damaged one is just left off the piece, as it isn't a card).
   const tableImages: Record<string, FileImage> = {};
   const pieceImage = (key: string) => {
@@ -288,7 +387,8 @@ export function unpackFile(text: string): UnpackedFile {
     }
   };
   const tables = hasTables ? (file.tables as unknown[]).slice(0, MAX_TABLES).flatMap((t) => tableFrom(t, known, pieceImage)) : [];
-  return { decks, tables, images: tableImages };
+  const part = partFrom(file.part);
+  return { ...(part ? { part } : {}), decks, tables, images: tableImages };
 }
 
 /** The most tables a file is opened with, and the most cards each can hold (as `MAX_TABLE_CARDS` in sandbox.ts). */
