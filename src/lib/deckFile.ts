@@ -1,19 +1,42 @@
-// Deck files: one or more decks, pictures and all, and any tables laid out with them, in a single file to back up,
-// move to another phone, or give to a friend. Plain JSON with the pictures inside (as base64), so it survives being
-// mailed, AirDropped or kept in Files. Only the packing and unpacking is here; reading and writing the files is in
-// deckExport.ts.
+// Deck files: one or more decks, pictures and all, their groups, and any tables laid out with them, in a single
+// file to back up, move to another phone, or give to a friend. A zip (from version 2): what's in it as JSON
+// (`MANIFEST`), and each picture as it is, beside it (see `picturePath`), so a file of any size can be written and
+// read a picture at a time. Older files are plain JSON with the pictures inside (as base64), and still open. Only
+// the packing and unpacking is here; reading and writing the files is in deckExport.ts (and zip.ts).
+import type { DeckGroup } from './groups';
 import type { BagItem, PieceKind, PieceShape, SandboxCard, SandboxStack, SandboxTable, TablePiece, ZoneLook } from './sandbox';
 import type { CardShape, Deck, PlayMode } from './types';
 
-/** Marks a file as ours, and which version of the format it's in. */
+/** Marks a file as ours, and which version of the format it's in (1: JSON, 2: a zip). */
 const KIND = 'shufflevale-decks';
-const VERSION = 1;
+const VERSION = 2;
 
-/** A picture in the file: its type (from the file name it had) and its bytes, as base64. */
+/** What's in a zipped file, as JSON: a `DeckFile`, its pictures' bytes beside it. */
+export const MANIFEST = 'shufflevale.json';
+
+/** Where a picture's bytes are in a zipped file. */
+export const picturePath = (key: string, ext: string) => `pictures/${key}.${ext}`;
+
+/** A picture in the file: its type (from the file name it had), and in older files its bytes, as base64. */
 interface FileImage {
   ext: string;
-  data: string;
+  data?: string;
 }
+
+/**
+ * A picture read back from a file, ready to be saved: its type, and its bytes as base64 (an older file's), or a
+ * way to read them (a zipped file's, named for where they are in it).
+ */
+export type FilePicture = { ext: string; data: string } | { ext: string; name: string; bytes: () => Uint8Array };
+
+/** A picture's bytes, to be saved: as base64, or as they are. */
+export const pictureData = (p: FilePicture): string | Uint8Array => ('data' in p ? p.data : p.bytes());
+
+/** What tells one picture from another (the same for two cards using the same one). */
+export const pictureId = (p: FilePicture) => ('data' in p ? p.data : p.name);
+
+/** A group in a file: its decks say they're in it. Where it lies among the decks is by their ids in the file. */
+type FileGroup = Pick<DeckGroup, 'id' | 'name' | 'collapsed' | 'before'>;
 
 interface FileCard {
   /** The card's id, for a table's cards to point at (files from before tables had none). */
@@ -36,6 +59,8 @@ interface FileDeck {
   /** Key into the file's `images`, or null for the built-in back. */
   back: string | null;
   cards: FileCard[];
+  /** The id of the group it's in, among the file's `groups`. */
+  group?: string;
 }
 
 /**
@@ -57,6 +82,8 @@ export interface DeckFile {
   images: Record<string, FileImage>;
   /** Tables, as they lie, their cards pointing at the file's decks and cards by id (older files have none). */
   tables?: FileTable[];
+  /** The decks' groups, in order (older files have none). */
+  groups?: FileGroup[];
 }
 
 /**
@@ -70,15 +97,26 @@ export type FileTable = Omit<SandboxTable, 'id' | 'createdAt' | 'updatedAt'>;
  * pieces' pictures at `images`).
  */
 export interface UnpackedFile {
-  /** For a file saved in parts, which one this is. */
+  /** For a file saved in parts (as big backups were, briefly), which one this is. */
   part?: FilePart;
   decks: UnpackedDeck[];
   tables: FileTable[];
+  /** The decks' groups, in order: each with at least one of its decks. */
+  groups: UnpackedGroup[];
   /** The pictures the tables' pieces use, by key. */
-  images: Record<string, FileImage>;
+  images: Record<string, FilePicture>;
 }
 
-/** A deck read back from a file, ready to be added: its pictures still as base64, to be written out. */
+/** A group read back from a file: its id in the file (which its decks' `fileGroup` is), and the deck it lies above. */
+export interface UnpackedGroup {
+  fileId: string;
+  name: string;
+  collapsed?: boolean;
+  /** The file's id for the deck it lies just above (see `DeckGroup.before`). */
+  before?: string;
+}
+
+/** A deck read back from a file, ready to be added: its pictures still to be written out. */
 export interface UnpackedDeck {
   /** Its id in the file, which a table's cards point at. */
   fileId?: string;
@@ -86,8 +124,10 @@ export interface UnpackedDeck {
   cardShape?: CardShape;
   roundness?: number;
   playMode?: PlayMode;
-  back: FileImage | null;
-  cards: { fileId?: string; name: string; copies?: number; image: FileImage; back?: FileImage }[];
+  back: FilePicture | null;
+  cards: { fileId?: string; name: string; copies?: number; image: FilePicture; back?: FilePicture }[];
+  /** The group it's in (its `fileId`, among the file's groups). */
+  fileGroup?: string;
 }
 
 /** The type of a picture, from its saved path (e.g. `decks/abc/123.png` is png). */
@@ -95,19 +135,29 @@ export function extOf(path: string): string {
   return path.match(/\.(\w{2,5})$/)?.[1]?.toLowerCase() ?? 'jpg';
 }
 
+/** A picture to go in a zipped file: where it is in the file, and where it's saved (its path, as on a card). */
+export interface PackedPicture {
+  name: string;
+  path: string;
+}
+
 /**
- * Packs decks, and any tables, into a file's contents. `read` gives a saved picture's bytes as base64, by its path.
- * A table's decks must be among `decks` (see `decksOnTable`).
+ * Packs decks, any tables, and the decks' groups into what's in a zipped file: its `DeckFile` (as `MANIFEST`), and
+ * the pictures to go beside it. A table's decks must be among `decks` (see `decksOnTable`); only groups some of
+ * the decks are in go in.
  */
-export function packDecks(decks: Deck[], read: (path: string) => string, tables: SandboxTable[] = []): DeckFile {
+export function packManifest(decks: Deck[], tables: SandboxTable[] = [], groups: DeckGroup[] = []): { file: DeckFile; pictures: PackedPicture[] } {
   const images: Record<string, FileImage> = {};
+  const pictures: PackedPicture[] = [];
   const keys = new Map<string, string>();
   const keyOf = (path: string) => {
     const known = keys.get(path);
     if (known) return known;
     const key = `i${keys.size + 1}`;
+    const ext = extOf(path);
     keys.set(path, key);
-    images[key] = { ext: extOf(path), data: read(path) };
+    images[key] = { ext };
+    pictures.push({ name: picturePath(key, ext), path });
     return key;
   };
   // A piece's picture, and those of the pieces in a bag, go in the file with the cards'.
@@ -118,7 +168,10 @@ export function packDecks(decks: Deck[], read: (path: string) => string, tables:
     ...(p.items ? { items: p.items.map(packItem) } : {}),
     ...(p.supply ? { supply: packItem(p.supply) } : {}),
   });
-  return {
+  const ids = new Set(decks.map((d) => d.id));
+  const used = groups.filter((g) => decks.some((d) => d.groupId === g.id));
+  const inFile = new Set(used.map((g) => g.id));
+  const file: DeckFile = {
     kind: KIND,
     version: VERSION,
     decks: decks.map((d) => ({
@@ -135,68 +188,35 @@ export function packDecks(decks: Deck[], read: (path: string) => string, tables:
         image: keyOf(c.image),
         ...(c.back ? { back: keyOf(c.back) } : {}),
       })),
+      ...(d.groupId && inFile.has(d.groupId) ? { group: d.groupId } : {}),
     })),
     images,
     ...(tables.length
       ? { tables: tables.map(({ id: _id, createdAt: _c, updatedAt: _u, ...t }) => (t.pieces ? { ...t, pieces: t.pieces.map(packPiece) } : t)) }
       : {}),
+    ...(used.length
+      ? {
+          groups: used.map((g) => ({
+            id: g.id,
+            name: g.name,
+            ...(g.collapsed ? { collapsed: true } : {}),
+            ...(g.before && ids.has(g.before) ? { before: g.before } : {}),
+          })),
+        }
+      : {}),
   };
+  return { file, pictures };
 }
 
 /**
- * The most a part of a file saved in parts holds, as text (pictures in base64): about 45 MB of pictures, well
- * within what the phone can write or read in one go. (One file of everything can be far past what it can.)
+ * Packs decks, and any tables, into an older (version 1) file: plain JSON, the pictures in it as base64 (`read`
+ * gives a saved picture's, by its path). Only made now to check older files still open.
  */
-export const PART_CHARS = 60_000_000;
-
-/** What goes in one part of a file: some of its decks, and some of its tables. */
-export interface FilePlan {
-  decks: Deck[];
-  tables: SandboxTable[];
-}
-
-/** The pictures a table's pieces use (and the pieces in its bags). */
-function tablePictures(t: SandboxTable): string[] {
-  const found: string[] = [];
-  const item = (i: BagItem) => i.piece && piece(i.piece);
-  const piece = (p: TablePiece) => {
-    if (p.image) found.push(p.image);
-    p.items?.forEach(item);
-    if (p.supply) item(p.supply);
-  };
-  t.pieces?.forEach(piece);
-  return found;
-}
-
-/**
- * Decks and tables split into parts, each under `limit` as text (one part, if it all fits), decks first and tables
- * after, so a part's tables come once all their decks have (see `unpackFile`'s `earlier`). `charsOf` gives a
- * saved picture's size in base64, by its path. A picture used in several parts goes in each; a deck or table too
- * big for a part by itself has a part of its own.
- */
-export function planParts(decks: Deck[], tables: SandboxTable[], charsOf: (path: string) => number, limit = PART_CHARS): FilePlan[] {
-  const parts: FilePlan[] = [];
-  let seen = new Set<string>();
-  let size = 0;
-  const add = (pictures: string[], overhead: number, put: (part: FilePlan) => void) => {
-    const fresh = (inPart: Set<string>) => [...new Set(pictures)].filter((p) => !inPart.has(p));
-    const cost = (inPart: Set<string>) => overhead + fresh(inPart).reduce((sum, p) => sum + charsOf(p), 0);
-    if (!parts.length || size + cost(seen) > limit) {
-      parts.push({ decks: [], tables: [] });
-      seen = new Set();
-      size = 0;
-    }
-    size += cost(seen);
-    for (const p of pictures) seen.add(p);
-    put(parts[parts.length - 1]);
-  };
-  // Besides its pictures, a little for each card's name and ids.
-  for (const d of decks) {
-    const pictures = [...(d.backImage ? [d.backImage] : []), ...d.cards.flatMap((c) => [c.image, ...(c.back ? [c.back] : [])])];
-    add(pictures, 200 + 150 * d.cards.length, (part) => part.decks.push(d));
-  }
-  for (const t of tables) add(tablePictures(t), JSON.stringify(t).length, (part) => part.tables.push(t));
-  return parts.length ? parts : [{ decks: [], tables: [] }];
+export function packDecks(decks: Deck[], read: (path: string) => string, tables: SandboxTable[] = []): DeckFile {
+  const { file, pictures } = packManifest(decks, tables);
+  const paths = new Map(pictures.map((p) => [p.name, p.path]));
+  const images = Object.fromEntries(Object.entries(file.images).map(([key, { ext }]) => [key, { ext, data: read(paths.get(picturePath(key, ext))!) }]));
+  return { ...file, version: 1, images };
 }
 
 /** A file's part, if it's one, from the start of its text (see `FilePart`), or null. */
@@ -236,10 +256,15 @@ function bagCards(p: TablePiece): SandboxCard[] {
   return items.flatMap((i) => (i.card ? [i.card] : i.piece ? bagCards(i.piece) : []));
 }
 
-/** The decks a table's cards come from (on it, in its hands, its trash and its bags), in the order given. */
-export function decksOnTable(table: SandboxTable, decks: Deck[]): Deck[] {
+/** The ids of the decks a table's cards come from (on it, in its hands, its trash and its bags). */
+export function deckIdsOn(table: Pick<SandboxTable, 'stacks' | 'hands' | 'trash' | 'pieces'>): Set<string> {
   const cards = [...table.stacks.flatMap((s) => s.cards), ...table.hands.flat(), ...(table.trash ?? []), ...(table.pieces ?? []).flatMap(bagCards)];
-  const used = new Set(cards.map((c) => c.deckId));
+  return new Set(cards.map((c) => c.deckId));
+}
+
+/** The decks a table's cards come from, in the order given. */
+export function decksOnTable(table: SandboxTable, decks: Deck[]): Deck[] {
+  const used = deckIdsOn(table);
   return decks.filter((d) => used.has(d.id));
 }
 
@@ -256,7 +281,8 @@ const MAX_COPIES = 99;
 const MAX_ROUNDNESS = 0.25;
 /** The longest a name can be (as `MAX_NAME_LENGTH` in names.ts). */
 const MAX_NAME = 60;
-/** The biggest a single picture in a file can be, as base64 (about 15 MB of picture). */
+/** The biggest a single picture in a file can be (15 MB), and the same as base64. */
+const MAX_IMAGE_BYTES = 15_000_000;
 const MAX_IMAGE_CHARS = 20_000_000;
 /** Picture types the app can show. */
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'heic', 'webp']);
@@ -269,13 +295,19 @@ const MAX_IMAGE_SIDE = 6000;
  * null if it can't be told from there.
  */
 export function imagePixels(base64: string): { w: number; h: number } | null {
-  let bytes: Uint8Array;
   try {
     const head = atob(base64.slice(0, 262_144).replace(/=+$/, '').slice(0, Math.floor(Math.min(base64.length, 262_144) / 4) * 4));
-    bytes = Uint8Array.from(head, (ch) => ch.charCodeAt(0));
+    return pixelsOf(Uint8Array.from(head, (ch) => ch.charCodeAt(0)));
   } catch {
     return null;
   }
+}
+
+/** How much of a picture's start `pixelsOf` needs (a JPEG's frame marker can come after a big thumbnail). */
+export const PICTURE_HEAD = 196_608;
+
+/** A picture's size in pixels, from its first bytes (see `imagePixels`), or null if it can't be told from them. */
+export function pixelsOf(bytes: Uint8Array): { w: number; h: number } | null {
   const u16 = (i: number) => (bytes[i] << 8) | bytes[i + 1];
   const u32 = (i: number) => ((bytes[i] << 24) >>> 0) + (bytes[i + 1] << 16) + (bytes[i + 2] << 8) + bytes[i + 3];
   // PNG: the header chunk comes first.
@@ -294,7 +326,18 @@ export function imagePixels(base64: string): { w: number; h: number } | null {
   return null;
 }
 
-const nameFrom = (v: unknown, fallback: string) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, MAX_NAME).trim() : fallback);
+/**
+ * Checks a picture in a zipped file, from its first bytes (see `PICTURE_HEAD`) and its size: throws a
+ * DeckFileError if it's too big to open.
+ */
+export function checkPicture(head: Uint8Array, size: number) {
+  const pixels = pixelsOf(head);
+  if (size > MAX_IMAGE_BYTES || (pixels && Math.max(pixels.w, pixels.h) > MAX_IMAGE_SIDE)) {
+    throw new DeckFileError('This deck file has a picture that’s too big to open.');
+  }
+}
+
+const nameFrom =(v: unknown, fallback: string) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, MAX_NAME).trim() : fallback);
 const positive = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
 /** A card size from a file, if it's one the app knows; anything else is left out (the deck is standard size). */
@@ -316,12 +359,8 @@ function shapeFrom(v: unknown, nested = false): CardShape | undefined {
 /** Reads a deck file's contents back into decks (see `unpackFile` for its tables too). */
 export const unpackDecks = (text: string): UnpackedDeck[] => unpackFile(text).decks;
 
-/**
- * Reads a deck file's contents back into decks and tables. Throws a DeckFileError if it isn't one, or can't be read.
- * For a part of a file saved in parts, `earlier` gives the decks of its other parts (see `cardsByDeck`), which its
- * tables' cards can come from too.
- */
-export function unpackFile(text: string, earlier?: Map<string, Set<string>>): UnpackedFile {
+/** A file's JSON, if it's a Shufflevale file one this version can read. */
+function fileFrom(text: string): Record<string, unknown> {
   let file: unknown;
   try {
     file = JSON.parse(text);
@@ -332,25 +371,85 @@ export function unpackFile(text: string, earlier?: Map<string, Set<string>>): Un
   if (typeof file.version !== 'number' || file.version > VERSION) {
     throw new DeckFileError('This deck was saved by a newer version of Shufflevale. Update the app to open it.');
   }
+  return file;
+}
+
+const missingPictures = () => new DeckFileError('This deck file is damaged: some of its pictures are missing.');
+
+/** A picture's type from a file, if it's one the app can show. */
+function extFrom(found: Record<string, unknown>): string {
+  if (typeof found.ext !== 'string') throw missingPictures();
+  const ext = found.ext.toLowerCase();
+  if (!IMAGE_EXTS.has(ext)) throw new DeckFileError('This deck file has a picture Shufflevale can’t show.');
+  return ext;
+}
+
+/**
+ * Reads an older (JSON) deck file's contents back into decks, groups and tables. Throws a DeckFileError if it isn't
+ * one, or can't be read. For a part of a file saved in parts, `earlier` gives the decks of its other parts (see
+ * `cardsByDeck`), which its tables' cards can come from too.
+ */
+export function unpackFile(text: string, earlier?: Map<string, Set<string>>): UnpackedFile {
+  const file = fileFrom(text);
   const images = isObject(file.images) ? file.images : {};
+  return unpackWith(
+    file,
+    (key) => {
+      const found = images[key];
+      if (!isObject(found) || typeof found.data !== 'string' || !found.data) throw missingPictures();
+      const ext = extFrom(found);
+      const pixels = imagePixels(found.data);
+      if (found.data.length > MAX_IMAGE_CHARS || (pixels && Math.max(pixels.w, pixels.h) > MAX_IMAGE_SIDE)) {
+        throw new DeckFileError('This deck file has a picture that’s too big to open.');
+      }
+      return { ext, data: found.data };
+    },
+    earlier,
+  );
+}
+
+/**
+ * Reads a zipped deck file's `MANIFEST` back into decks, groups and tables. `picture` gives a picture in the zip,
+ * by where it is (see `picturePath`), checked (see `checkPicture`); it throws a DeckFileError if it's missing or
+ * unsound, as this does if the file isn't one or can't be read.
+ */
+export function unpackManifest(text: string, picture: (name: string, ext: string) => FilePicture): UnpackedFile {
+  const file = fileFrom(text);
+  const images = isObject(file.images) ? file.images : {};
+  return unpackWith(file, (key) => {
+    const found = images[key];
+    if (!isObject(found)) throw missingPictures();
+    const ext = extFrom(found);
+    return picture(picturePath(key, ext), ext);
+  });
+}
+
+/** The most groups a file is opened with. */
+const MAX_GROUPS = 200;
+
+/** A file's decks, groups and tables, checked; `picture` gives its pictures, by key, checked. */
+function unpackWith(file: Record<string, unknown>, picture: (key: string) => FilePicture, earlier?: Map<string, Set<string>>): UnpackedFile {
+  // Each picture checked once, however many cards use it.
+  const checked = new Map<string, FilePicture>();
+  const image = (key: unknown): FilePicture => {
+    if (typeof key !== 'string' || !key) throw missingPictures();
+    if (!checked.has(key)) checked.set(key, picture(key));
+    return checked.get(key)!;
+  };
   // A table's file may hold no decks at all (a table of just components); otherwise it needs some.
   const hasTables = Array.isArray(file.tables) && file.tables.length > 0;
-  const image = (key: unknown): FileImage => {
-    const found = typeof key === 'string' ? images[key] : undefined;
-    if (!isObject(found) || typeof found.data !== 'string' || typeof found.ext !== 'string' || !found.data) {
-      throw new DeckFileError('This deck file is damaged: some of its pictures are missing.');
-    }
-    const ext = found.ext.toLowerCase();
-    if (!IMAGE_EXTS.has(ext)) throw new DeckFileError('This deck file has a picture Shufflevale can’t show.');
-    const pixels = imagePixels(found.data);
-    if (found.data.length > MAX_IMAGE_CHARS || (pixels && Math.max(pixels.w, pixels.h) > MAX_IMAGE_SIDE)) {
-      throw new DeckFileError('This deck file has a picture that’s too big to open.');
-    }
-    return { ext, data: found.data };
-  };
+  // Groups, once: only those some deck is in are kept (below).
+  const allGroups = new Map<string, UnpackedGroup>();
+  for (const g of Array.isArray(file.groups) ? file.groups.slice(0, MAX_GROUPS) : []) {
+    const id = isObject(g) ? idFrom(g.id) : undefined;
+    if (!isObject(g) || !id || allGroups.has(id)) continue;
+    const before = idFrom(g.before);
+    allGroups.set(id, { fileId: id, name: nameFrom(g.name, 'Group'), ...(g.collapsed === true ? { collapsed: true } : {}), ...(before ? { before } : {}) });
+  }
   if (!Array.isArray(file.decks) || (!file.decks.length && !hasTables)) throw new DeckFileError('This file has no decks in it.');
   const decks: UnpackedDeck[] = file.decks.map((d: unknown) => {
     if (!isObject(d) || !Array.isArray(d.cards)) throw new DeckFileError('This deck file is damaged.');
+    const group = idFrom(d.group);
     return {
       ...(idFrom(d.id) ? { fileId: idFrom(d.id) } : {}),
       name: nameFrom(d.name, 'Imported deck'),
@@ -371,12 +470,18 @@ export function unpackFile(text: string, earlier?: Map<string, Set<string>>): Un
           ...(c.back ? { back: image(c.back) } : {}),
         };
       }),
+      ...(group && allGroups.has(group) ? { fileGroup: group } : {}),
     };
   });
+  // Each kept group lies above a deck of the file's, or none.
+  const deckIds = new Set(decks.flatMap((d) => (d.fileId ? [d.fileId] : [])));
+  const groups = [...allGroups.values()]
+    .filter((g) => decks.some((d) => d.fileGroup === g.fileId))
+    .map(({ before, ...g }) => (before && deckIds.has(before) ? { ...g, before } : g));
   // Tables: only cards from the file's own decks (and its other parts') are kept.
   const known = new Map([...(earlier ?? []), ...cardsByDeck(decks)]);
   // A piece's picture: kept if it's a sound one (a damaged one is just left off the piece, as it isn't a card).
-  const tableImages: Record<string, FileImage> = {};
+  const tableImages: Record<string, FilePicture> = {};
   const pieceImage = (key: string) => {
     if (tableImages[key]) return key;
     try {
@@ -388,7 +493,7 @@ export function unpackFile(text: string, earlier?: Map<string, Set<string>>): Un
   };
   const tables = hasTables ? (file.tables as unknown[]).slice(0, MAX_TABLES).flatMap((t) => tableFrom(t, known, pieceImage)) : [];
   const part = partFrom(file.part);
-  return { ...(part ? { part } : {}), decks, tables, images: tableImages };
+  return { ...(part ? { part } : {}), decks, tables, groups, images: tableImages };
 }
 
 /** The most tables a file is opened with, and the most cards each can hold (as `MAX_TABLE_CARDS` in sandbox.ts). */

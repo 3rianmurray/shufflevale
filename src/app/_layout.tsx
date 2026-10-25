@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { BusyOverlay } from '../components/BusyOverlay';
 import { NamePrompt } from '../components/NamePrompt';
 import { TipToast } from '../components/TipToast';
 import { TourOverlay } from '../components/TourOverlay';
@@ -72,6 +73,8 @@ export default function RootLayout() {
         <NamePrompt />
         {/* Now-and-then tips, over every screen. */}
         <TipToast />
+        {/* Backing up or opening a big file, over every screen. */}
+        <BusyOverlay />
       </DecksProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

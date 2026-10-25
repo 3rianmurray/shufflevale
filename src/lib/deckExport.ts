@@ -1,22 +1,27 @@
-// Shufflevale files (decks, and any tables laid out with them; the format is in deckFile.ts): shared through the
-// share sheet (Messages, AirDrop, Mail…), backed up into a folder in Files, and opened to add what's in them. A
-// backup too big for one file is saved in parts (see `planParts`), and opened by picking them all together.
+// Shufflevale files (decks, their groups, and any tables laid out with them; the format is in deckFile.ts): shared
+// through the share sheet (Messages, AirDrop, Mail…), backed up into a folder in Files, and opened to add what's in
+// them. Written and read a picture at a time (they're zips: see zip.ts), so a file of any size is never all in
+// memory. Older files (JSON), and the parts big backups were briefly saved in, still open.
 import * as DocumentPicker from 'expo-document-picker';
-import { Directory, File, Paths } from 'expo-file-system';
+import { Directory, File, FileMode, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import { strFromU8, strToU8 } from 'fflate';
 
-import { DeckFileError, decksOnTable, FILE_EXT, fileNameFor, packDecks, partFromHead, planParts, unpackFile } from './deckFile';
-import type { FilePart, FilePlan, UnpackedFile } from './deckFile';
-import { newId } from './id';
+import { checkPicture, DeckFileError, decksOnTable, FILE_EXT, fileNameFor, MANIFEST, packManifest, partFromHead, PICTURE_HEAD, unpackFile, unpackManifest } from './deckFile';
+import type { FilePart, UnpackedFile } from './deckFile';
+import type { DeckGroup } from './groups';
 import type { SandboxTable } from './sandbox';
-import { readImageData } from './storage';
+import { readImageBytes } from './storage';
 import type { Deck } from './types';
+import { entryBytes, entryHead, isZip, ZipError, zipEntries, ZipWriter } from './zip';
+import type { ReadAt } from './zip';
 
-/** What goes in a file: decks, any tables (whose decks must be among them), and the file's name. */
+/** What goes in a file: decks, any tables (whose decks must be among them), the decks' groups, and its name. */
 export interface FileContents {
   name: string;
   decks: Deck[];
   tables?: SandboxTable[];
+  groups?: DeckGroup[];
 }
 
 /** A file for one table: the table, and the decks its cards come from. */
@@ -26,47 +31,54 @@ export const tableFile = (table: SandboxTable, allDecks: Deck[]): FileContents =
   tables: [table],
 });
 
-/** Everything: every deck and every table, named by today's date. */
-export const everythingFile = (decks: Deck[], tables: SandboxTable[]): FileContents => ({
+/** Everything: every deck, group and table, named by today's date. */
+export const everythingFile = (decks: Deck[], tables: SandboxTable[], groups: DeckGroup[]): FileContents => ({
   name: `Shufflevale backup ${new Date().toISOString().slice(0, 10)}`,
   decks,
   tables,
+  groups,
 });
-
-/** A saved picture's size once it's in a file (as base64). */
-const charsOf = (path: string) => {
-  try {
-    return Math.ceil(new File(Paths.document, path).size / 3) * 4;
-  } catch {
-    return 0;
-  }
-};
-
-/** The parts a file's contents are saved in: one, unless it's too big to be a single file. */
-const partsOf = ({ decks, tables }: FileContents) => planParts(decks, tables ?? [], charsOf);
-
-/** A part's text, saying which part it is when there are several (first, so it's read without the rest). */
-const textOf = (plan: FilePlan, part?: FilePart) => JSON.stringify({ ...(part ? { part } : {}), ...packDecks(plan.decks, readImageData, plan.tables) });
 
 /**
  * The app's own file type (registered in app.json), so Files, Messages and the rest show its icon (not a preview of
- * its text) and offer to open it in Shufflevale.
+ * its contents) and offer to open it in Shufflevale.
  */
 export const FILE_UTI = 'com.3rianmurray.shufflevale.file';
 const FILE_MIME = 'application/x-shufflevale';
 
-/**
- * Opens the share sheet with the file, to send (Messages, AirDrop, Mail…) or save. Resolves once the sheet has
- * closed. Throws, saying so, if it's too big to be one file (it can be backed up, in parts).
- */
-export async function shareFile(contents: FileContents): Promise<void> {
-  if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing isn’t available on this device.');
-  const parts = partsOf(contents);
-  if (parts.length > 1) throw new Error('It’s too big to share as one file. Back it up instead: it’s saved in parts.');
+/** Writes the file at `target`: what's in it, then each picture, one at a time. */
+function writeFile(target: File, { decks, tables, groups }: FileContents) {
+  const { file, pictures } = packManifest(decks, tables ?? [], groups ?? []);
+  if (target.exists) target.delete();
+  target.create();
+  const handle = target.open(FileMode.WriteOnly);
+  try {
+    const zip = new ZipWriter((bytes) => handle.writeBytes(bytes));
+    zip.add(MANIFEST, strToU8(JSON.stringify(file)));
+    for (const p of pictures) zip.add(p.name, readImageBytes(p.path));
+    zip.finish();
+  } catch (e) {
+    handle.close();
+    target.delete();
+    throw e;
+  }
+  handle.close();
+}
+
+/** The file, written in the cache: only for handing over (to the share sheet, or a folder in Files). */
+function fileInCache(contents: FileContents): File {
   const file = new File(Paths.cache, fileNameFor(contents.name));
-  if (file.exists) file.delete();
-  file.create();
-  file.write(textOf(parts[0]));
+  writeFile(file, contents);
+  return file;
+}
+
+/**
+ * Opens the share sheet with the file, to send (Messages, AirDrop, Mail…) or save. `busy` runs the writing (to show
+ * that it's under way). Resolves once the sheet has closed.
+ */
+export async function shareFile(contents: FileContents, busy: <T>(work: () => T) => Promise<T>): Promise<void> {
+  if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing isn’t available on this device.');
+  const file = await busy(() => fileInCache(contents));
   try {
     await Sharing.shareAsync(file.uri, { UTI: FILE_UTI, mimeType: FILE_MIME, dialogTitle: 'Share' });
   } finally {
@@ -77,10 +89,10 @@ export async function shareFile(contents: FileContents): Promise<void> {
 
 /**
  * Saves the file into a folder the player picks in Files (iCloud Drive, On My iPhone…), beside anything already
- * there (numbered if the name's taken): in parts, if it's too big to be one file ("… (part 1 of 3)" and so on).
- * Returns the folder's name and how many parts, or null if they didn't pick a folder.
+ * there (numbered if the name's taken). `busy` runs the writing (to show that it's under way). Returns the folder's
+ * name, or null if they didn't pick one.
  */
-export async function backUpFile(contents: FileContents): Promise<{ folder: string; parts: number } | null> {
+export async function backUpFile(contents: FileContents, busy: <T>(work: () => T) => Promise<T>): Promise<string | null> {
   let folder: Directory;
   try {
     folder = await Directory.pickDirectoryAsync();
@@ -88,30 +100,31 @@ export async function backUpFile(contents: FileContents): Promise<{ folder: stri
     // Closed without picking a folder.
     return null;
   }
-  const parts = partsOf(contents);
-  const base = fileNameFor(contents.name).slice(0, -(FILE_EXT.length + 1));
-  const named = (b: string) => parts.map((_, i) => new File(folder, `${b}${parts.length > 1 ? ` (part ${i + 1} of ${parts.length})` : ''}.${FILE_EXT}`));
-  let files = named(base);
-  for (let n = 2; files.some((f) => f.exists); n++) files = named(`${base} (${n})`);
-  const set = newId();
-  // One part at a time, so only one is ever in memory.
-  parts.forEach((plan, i) => {
-    files[i].create();
-    files[i].write(textOf(plan, parts.length > 1 ? { n: i + 1, of: parts.length, set } : undefined));
+  await busy(() => {
+    const base = fileNameFor(contents.name).slice(0, -(FILE_EXT.length + 1));
+    let target = new File(folder, `${base}.${FILE_EXT}`);
+    for (let n = 2; target.exists; n++) target = new File(folder, `${base} (${n}).${FILE_EXT}`);
+    // Written here first, then copied over whole: a folder in iCloud Drive (or elsewhere) gets a finished file.
+    const file = fileInCache(contents);
+    try {
+      file.copySync(target);
+    } finally {
+      file.delete();
+    }
   });
-  return { folder: folder.name, parts: parts.length };
+  return folder.name;
 }
 
-/** The biggest file that's opened: far more than any real deck needs. */
+/** The biggest older (JSON) file that's opened: it's read all at once. */
 const MAX_FILE_BYTES = 250 * 1024 * 1024;
 
 /**
- * Asks for Shufflevale files (from Files, iCloud Drive…): one, or every part of one saved in parts. Gives where
+ * Asks for Shufflevale files (from Files, iCloud Drive…): one, or every part of a backup saved in parts. Gives where
  * the copies of them are (to be read with `readDeckFile`, or `checkParts` for several), or null if none was chosen.
  */
 export async function pickDeckFiles(): Promise<string[] | null> {
   const result = await DocumentPicker.getDocumentAsync({
-    type: [FILE_UTI, 'application/json', 'public.json', '*/*'],
+    type: [FILE_UTI, 'application/json', 'public.json', 'public.zip-archive', '*/*'],
     copyToCacheDirectory: true,
     multiple: true,
   });
@@ -131,7 +144,7 @@ export function dropCopies(uris: string[]) {
   }
 }
 
-/** Reads a Shufflevale file (or a part of one), leaving it where it is. See `unpackFile` for `earlier`. */
+/** Reads an older (JSON) Shufflevale file, or a part of one, leaving it where it is. See `unpackFile` for `earlier`. */
 export async function readFileAt(uri: string, earlier?: Map<string, Set<string>>): Promise<UnpackedFile> {
   const file = new File(uri);
   if (!file.exists) throw new DeckFileError('That file couldn’t be found.');
@@ -140,27 +153,84 @@ export async function readFileAt(uri: string, earlier?: Map<string, Set<string>>
   return unpackFile(await file.text(), earlier);
 }
 
+/** A file read, its pictures still to be read from it as they're saved: `done` once they have been. */
+export type OpenedFile = UnpackedFile & { done: () => void };
+
+const damaged = () => new DeckFileError('This deck file is damaged.');
+
+/** Reads a zipped Shufflevale file: what's in it, its pictures checked (from their starts), to be read as they're saved. */
+function readZip(readAt: ReadAt, size: number): UnpackedFile {
+  try {
+    const entries = new Map(zipEntries(size, readAt).map((e) => [e.name, e]));
+    const manifest = entries.get(MANIFEST);
+    if (!manifest) throw new DeckFileError("This file isn't a Shufflevale deck.");
+    return unpackManifest(strFromU8(entryBytes(manifest, readAt)), (name, ext) => {
+      const entry = entries.get(name);
+      if (!entry) throw new DeckFileError('This deck file is damaged: some of its pictures are missing.');
+      checkPicture(entryHead(entry, readAt, PICTURE_HEAD), entry.size);
+      return {
+        ext,
+        name,
+        bytes: () => {
+          try {
+            return entryBytes(entry, readAt);
+          } catch (e) {
+            throw e instanceof ZipError ? damaged() : e;
+          }
+        },
+      };
+    });
+  } catch (e) {
+    throw e instanceof ZipError ? damaged() : e;
+  }
+}
+
 /** What to do with a part opened by itself. */
 const partAlone = (part: FilePart) => `This is part ${part.n} of ${part.of}. Open all the parts together from Import decks or tables.`;
 
 /**
- * Reads a Shufflevale file's decks and tables from where it is (a copy of it, which goes once it's read: one
- * picked, or one opened in the app from elsewhere). Throws a DeckFileError, with a message for the player, if it
- * isn't one, or is only a part of one.
+ * Reads a Shufflevale file's decks, groups and tables from where it is (a copy of it, which goes once it's `done`
+ * with: one picked, or one opened in the app from elsewhere). Throws a DeckFileError, with a message for the
+ * player, if it isn't one, or is only a part of one.
  */
-export async function readDeckFile(uri: string): Promise<UnpackedFile> {
+export async function readDeckFile(uri: string): Promise<OpenedFile> {
+  const file = new File(uri);
+  let handle: ReturnType<File['open']> | null = null;
+  const done = () => {
+    try {
+      handle?.close();
+    } catch {
+      // Closed already.
+    }
+    handle = null;
+    dropCopies([uri]);
+  };
   try {
+    if (!file.exists) throw new DeckFileError('That file couldn’t be found.');
+    const opened = file.open(FileMode.ReadOnly);
+    handle = opened;
+    const size = opened.size ?? file.size;
+    const readAt: ReadAt = (offset, length) => {
+      opened.offset = offset;
+      return opened.readBytes(Math.max(0, Math.min(length, size - offset)));
+    };
+    if (isZip(readAt(0, 4))) return { ...readZip(readAt, size), done };
+    // An older file.
+    opened.close();
+    handle = null;
     const found = await readFileAt(uri);
     if (found.part && found.part.of > 1) throw new DeckFileError(partAlone(found.part));
-    return found;
-  } finally {
-    dropCopies([uri]);
+    done();
+    return { ...found, done: () => {} };
+  } catch (e) {
+    done();
+    throw e;
   }
 }
 
 /** The start of a file, enough to say which part it is. */
 function headOf(uri: string): string {
-  const handle = new File(uri).open();
+  const handle = new File(uri).open(FileMode.ReadOnly);
   try {
     return String.fromCharCode(...handle.readBytes(Math.min(256, handle.size ?? 256)));
   } finally {
@@ -169,7 +239,7 @@ function headOf(uri: string): string {
 }
 
 /**
- * Picked files that should be every part of one file saved in parts, in order (each read only as far as which
+ * Picked files that should be every part of a backup saved in parts, in order (each read only as far as which
  * part it is). Throws a DeckFileError, with a message for the player, if they aren't.
  */
 export function checkParts(uris: string[]): string[] {

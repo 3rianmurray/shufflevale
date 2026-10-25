@@ -176,19 +176,23 @@ export function importImage(deckId: string, sourceUri: string): string {
   return `decks/${deckId}/${name}`;
 }
 
-/** Saves a picture given as base64 (e.g. from a deck file) into the deck's folder, and returns its relative path. */
-export function saveImageData(deckId: string, ext: string, base64: string): string {
+/**
+ * Saves a picture given as base64 or as its bytes (e.g. from a deck file) into the deck's folder, and returns its
+ * relative path.
+ */
+export function saveImageData(deckId: string, ext: string, data: string | Uint8Array): string {
   const dir = deckDir(deckId);
   if (!dir.exists) dir.create({ intermediates: true });
   const name = `${newId()}.${ext.replace(/\W/g, '').toLowerCase() || 'jpg'}`;
   const file = new File(dir, name);
   file.create();
-  file.write(base64, { encoding: 'base64' });
+  if (typeof data === 'string') file.write(data, { encoding: 'base64' });
+  else file.write(data);
   return `decks/${deckId}/${name}`;
 }
 
-/** A saved picture's bytes, as base64 (for a deck file). */
-export const readImageData = (relativePath: string): string => new File(Paths.document, relativePath).base64Sync();
+/** A saved picture's bytes (for a deck file). */
+export const readImageBytes = (relativePath: string): Uint8Array => new File(Paths.document, relativePath).bytesSync();
 
 /**
  * Whether a saved picture has see-through parts: only those are kept as PNG (see lib/images), so it's drawn with

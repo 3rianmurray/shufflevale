@@ -8,12 +8,15 @@ import {
   extOf,
   imagePixels,
   packDecks,
+  packManifest,
   partFromHead,
-  planParts,
+  pictureData,
   remapTable,
   unpackDecks,
   unpackFile,
+  unpackManifest,
 } from './deckFile.ts';
+import type { FilePicture } from './deckFile.ts';
 import type { Deck } from './types.ts';
 
 const deck = (over: Partial<Deck> = {}): Deck => ({
@@ -42,7 +45,7 @@ test('a deck survives being packed into a file and read back', () => {
   assert.equal(back.playMode, 'reveal');
   assert.deepEqual(back.back, { ext: 'png', data: 'data-of-decks/d1/back.png' });
   assert.deepEqual(
-    back.cards.map((c) => [c.name, c.copies, c.image.ext, c.image.data]),
+    back.cards.map((c) => [c.name, c.copies, c.image.ext, pictureData(c.image)]),
     [
       ['Goblin', 3, 'jpg', 'data-of-decks/d1/a.jpg'],
       ['Troll', undefined, 'jpeg', 'data-of-decks/d1/b.jpeg'],
@@ -171,7 +174,7 @@ test('a table’s components, custom art and card sizes come with it', () => {
   const map = new Map([['d1', { id: 'D', cards: new Map([['c1', 'X'], ['c2', 'Y'], ['c3', 'Z']]) }]]);
   let n = 0;
   const saved: string[] = [];
-  const t = remapTable(read.tables[0], map, () => `n${n++}`, (key) => (saved.push(read.images[key].data), `decks/tokens/new-${key}`));
+  const t = remapTable(read.tables[0], map, () => `n${n++}`, (key) => (saved.push(pictureData(read.images[key]) as string),`decks/tokens/new-${key}`));
   assert.equal(t.hideHands, true);
   assert.equal(t.stacks[0].cards[0].scale, 1.5);
   const [die, art, bag, zone] = t.pieces!;
@@ -225,27 +228,6 @@ test('a table’s cards from decks not in the file are left out; files from befo
   assert.equal(unpackDecks(JSON.stringify(old)).length, 1);
 });
 
-test('everything that fits in one part stays one file', () => {
-  const parts = planParts([deck(), deck({ id: 'd2' })], [], () => 10);
-  assert.equal(parts.length, 1);
-  assert.equal(parts[0].decks.length, 2);
-});
-
-test('too much for one part is split between decks, tables last, a shared picture in each part that uses it', () => {
-  const charsOf = (p: string) => (p.startsWith('tokens/') ? 500 : 1000);
-  // Its own pictures, but for one (the first card's) shared with the first deck.
-  const own = (id: string) =>
-    deck({ id, backImage: `decks/${id}/back.png`, cards: deck().cards.map((c, i) => (i ? { ...c, image: c.image.replace('d1', id) } : c)) });
-  const table = { id: 't', name: 'T', createdAt: 0, updatedAt: 0, handNames: [], hands: [[], [], [], []], stacks: [],
-    pieces: [{ id: 'p', kind: 'art' as const, x: 0, y: 0, value: 0, image: 'tokens/art.png' }] };
-  // Each deck is 3,600 to 4,700 with its pictures (the shared one in each part), so two can't share a part of
-  // 5,500; the table fits beside the last.
-  const parts = planParts([deck(), own('d2'), own('d3')], [table], charsOf, 5500);
-  assert.deepEqual(parts.map((p) => [p.decks.map((d) => d.id), p.tables.length]), [[['d1'], 0], [['d2'], 0], [['d3'], 1]]);
-  // A deck too big for any part has one of its own.
-  assert.equal(planParts([deck()], [], charsOf, 100).length, 1);
-});
-
 test('a part says which it is at its very start, and its tables find cards in the other parts', () => {
   const d1 = deck();
   const d2 = deck({ id: 'd2', cards: [{ id: 'x', name: 'Ogre', image: 'decks/d2/x.jpg' }] });
@@ -261,4 +243,41 @@ test('a part says which it is at its very start, and its tables find cards in th
   // By itself, only the card from its own deck; with the first part's decks, both.
   assert.equal(unpackFile(second).tables[0].stacks[0].cards.length, 1);
   assert.equal(unpackFile(second, cardsByDeck(one.decks)).tables[0].stacks[0].cards.length, 2);
+});
+
+test('a zipped file lists each picture once beside what is in it, and its decks keep their groups', () => {
+  const groups = [
+    { id: 'g1', name: 'Monsters', collapsed: true, before: 'd2' },
+    // No deck of the file's is in it, so it stays out.
+    { id: 'g2', name: 'Empty' },
+  ];
+  const decks = [deck({ groupId: 'g1' }), deck({ id: 'd2', name: 'Loot', backImage: null }), deck({ id: 'd3', groupId: 'g2-gone' })];
+  const { file, pictures } = packManifest(decks, [], groups);
+  assert.deepEqual(
+    pictures.map((p) => p.path).sort(),
+    ['decks/d1/a.jpg', 'decks/d1/b.jpeg', 'decks/d1/back.png'],
+  );
+  assert.ok(Object.values(file.images).every((i) => !('data' in i)));
+  // Each picture, as the zip would hand it over: by where it is in it.
+  const names = new Set(pictures.map((p) => p.name));
+  const asked: string[] = [];
+  const picture = (name: string, ext: string): FilePicture => {
+    asked.push(name);
+    if (!names.has(name)) throw new DeckFileError('missing');
+    return { ext, name, bytes: () => new Uint8Array([1]) };
+  };
+  const read = unpackManifest(JSON.stringify(file), picture);
+  assert.deepEqual(read.groups, [{ fileId: 'g1', name: 'Monsters', collapsed: true, before: 'd2' }]);
+  assert.deepEqual(read.decks.map((d) => d.fileGroup), ['g1', undefined, undefined]);
+  // Asked for once each, however many cards (and decks) use it.
+  assert.equal(asked.length, 3);
+  assert.equal(read.decks[0].cards[0].image, read.decks[0].cards[2].image);
+  // A picture missing from the zip.
+  assert.throws(() => unpackManifest(JSON.stringify(file), () => { throw new DeckFileError('missing'); }), DeckFileError);
+});
+
+test('a group lying above a deck not in the file keeps its decks, lying with the rest instead', () => {
+  const { file } = packManifest([deck({ groupId: 'g' })], [], [{ id: 'g', name: 'G', before: 'elsewhere' }]);
+  const read = unpackManifest(JSON.stringify(file), (name, ext) => ({ ext, name, bytes: () => new Uint8Array() }));
+  assert.deepEqual(read.groups, [{ fileId: 'g', name: 'G' }]);
 });

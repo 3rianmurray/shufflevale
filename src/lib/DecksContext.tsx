@@ -18,7 +18,8 @@ import {
   saveSessions,
   saveTables,
 } from './storage';
-import type { UnpackedDeck } from './deckFile';
+import { pictureData, pictureId } from './deckFile';
+import type { FilePicture, UnpackedDeck, UnpackedGroup } from './deckFile';
 import { withoutDeck } from './groups';
 import type { DeckGroup } from './groups';
 import { moveItems } from './order';
@@ -35,10 +36,11 @@ interface DecksApi {
   /** Copies a deck, art and all, placing the copy right after it. Returns the copy. */
   duplicateDeck: (id: string) => Deck | undefined;
   /**
-   * Adds decks read from a deck file (see deckFile.ts), pictures and all, at the top of the list: filed in a new
-   * group of `groupName`, if given (lying at the top of the list too).
+   * Adds decks read from a deck file (see deckFile.ts), pictures and all, at the top of the list: all filed in a new
+   * group of `groupName`, if given, or otherwise in new groups as the file's `groups` (lying at the top of the list
+   * too).
    */
-  importDecks: (decks: UnpackedDeck[], groupName?: string) => Deck[];
+  importDecks: (decks: UnpackedDeck[], options?: { groupName?: string; groups?: UnpackedGroup[] }) => Deck[];
   renameDeck: (id: string, name: string) => void;
   deleteDeck: (id: string) => void;
   /** Empties a deck to start it again: no cards, no back, default settings, no saved tables, under a new name. */
@@ -212,28 +214,32 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         setDecks((all) => [deck, ...all]);
         return deck;
       },
-      importDecks(incoming, groupName) {
+      importDecks(incoming, { groupName, groups: fileGroups } = {}) {
         const now = Date.now();
-        // Above the first ungrouped deck (or, with none, first of the groups at the bottom).
+        // Above the first ungrouped deck (or, with none, first of the groups at the bottom): below the added
+        // decks, above those already here.
         const firstLoose = decks.find((d) => !d.groupId || !groups.some((g) => g.id === d.groupId));
-        const group: DeckGroup | undefined =
-          groupName && incoming.length ? { id: newId(), name: groupName, ...(firstLoose ? { before: firstLoose.id } : {}) } : undefined;
-        if (group) setGroups((all) => [group, ...all]);
+        const top = firstLoose ? { before: firstLoose.id } : {};
+        const group: DeckGroup | undefined = groupName && incoming.length ? { id: newId(), name: groupName, ...top } : undefined;
+        // Otherwise the file's own groups, each new (even if one here has its name), by their ids in the file.
+        const made = new Map((group ? [] : (fileGroups ?? [])).map((g) => [g.fileId, { id: newId(), name: g.name, ...(g.collapsed ? { collapsed: true } : {}) }]));
         const added = incoming.map((u): Deck => {
           const id = newId();
           // A picture several cards share is saved once.
           const saved = new Map<string, string>();
-          const save = (img: { ext: string; data: string }) => {
-            if (!saved.has(img.data)) saved.set(img.data, saveImageData(id, img.ext, img.data));
-            return saved.get(img.data)!;
+          const save = (img: FilePicture) => {
+            const same = pictureId(img);
+            if (!saved.has(same)) saved.set(same, saveImageData(id, img.ext, pictureData(img)));
+            return saved.get(same)!;
           };
+          const groupId = group?.id ?? (u.fileGroup ? made.get(u.fileGroup)?.id : undefined);
           return {
             id,
             name: u.name,
             ...(u.cardShape ? { cardShape: u.cardShape } : {}),
             ...(u.roundness !== undefined ? { roundness: u.roundness } : {}),
             ...(u.playMode ? { playMode: u.playMode } : {}),
-            ...(group ? { groupId: group.id } : {}),
+            ...(groupId ? { groupId } : {}),
             backImage: u.back ? save(u.back) : null,
             cards: u.cards.map((c) => ({
               id: newId(),
@@ -246,6 +252,16 @@ export function DecksProvider({ children }: { children: ReactNode }) {
             updatedAt: now,
           };
         });
+        // Each of the file's groups lies above the added deck it lay above in the file, or with the rest at the top.
+        const newIds = new Map(incoming.flatMap((u, i) => (u.fileId ? [[u.fileId, added[i].id] as const] : [])));
+        const placed: DeckGroup[] = group
+          ? [group]
+          : (fileGroups ?? []).flatMap((g) => {
+              const fresh = made.get(g.fileId);
+              const before = g.before ? newIds.get(g.before) : undefined;
+              return fresh ? [{ ...fresh, ...(before ? { before } : top) }] : [];
+            });
+        if (placed.length) setGroups((all) => [...placed, ...all]);
         setDecks((all) => [...added, ...all]);
         return added;
       },

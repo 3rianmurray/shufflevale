@@ -5,7 +5,7 @@
 import { Alert } from 'react-native';
 
 import { useDecks } from './DecksContext';
-import { cardsByDeck, remapTable } from './deckFile';
+import { cardsByDeck, deckIdsOn, pictureData, remapTable } from './deckFile';
 import type { DeckIdMap, UnpackedDeck, UnpackedFile } from './deckFile';
 import { checkParts, dropCopies, readFileAt } from './deckExport';
 import * as haptics from './haptics';
@@ -27,6 +27,17 @@ export function fileSummary(found: UnpackedFile): string {
 }
 
 /**
+ * A table's file (one table, and only decks its cards come from, in no groups of their own): the group its decks
+ * are kept together in, named for it (e.g. “Zombicide Decks”). None for anything else.
+ */
+function tableGroup(found: UnpackedFile): string | undefined {
+  const [table, more] = found.tables;
+  if (!table || more || !found.decks.length || found.groups.length) return undefined;
+  const onTable = deckIdsOn(table);
+  return found.decks.every((d) => !d.fileId || onTable.has(d.fileId)) ? `${table.name} Decks` : undefined;
+}
+
+/**
  * Adding a file's decks and tables, saying what was added: `addFile` for one file, read; `addParts` for every part
  * of a file saved in parts, picked together. (A function of the screen's decks, so a hook.)
  */
@@ -34,8 +45,8 @@ export function useFileImport() {
   const { importDecks } = useDecks();
 
   /** Adds decks, noting in `map` where each of them (and its cards) went, for tables' cards to point at. */
-  const addDecks = (decks: UnpackedDeck[], map: DeckIdMap, groupName?: string) => {
-    const added = importDecks(decks, groupName);
+  const addDecks = (decks: UnpackedDeck[], map: DeckIdMap, options?: Parameters<typeof importDecks>[1]) => {
+    const added = importDecks(decks, options);
     decks.forEach((d, i) => {
       if (!d.fileId) return;
       const cards = new Map<string, string>();
@@ -53,17 +64,16 @@ export function useFileImport() {
     const picture = (key: string) => {
       const image = found.images[key];
       if (!image) return undefined;
-      if (!saved.has(key)) saved.set(key, saveImageData(TOKEN_PICTURES, image.ext, image.data));
+      if (!saved.has(key)) saved.set(key, saveImageData(TOKEN_PICTURES, image.ext, pictureData(image)));
       return saved.get(key);
     };
     for (const t of found.tables) createSandboxWith(t.name, (empty) => ({ ...empty, ...remapTable(t, map, newId, picture) }));
   };
 
   const addFile = (found: UnpackedFile) => {
-    // A table's file: its decks kept together, in a group named for it (e.g. “Zombicide Decks”).
-    const groupName = found.tables.length === 1 && found.decks.length ? `${found.tables[0].name} Decks` : undefined;
+    const groupName = tableGroup(found);
     const map: DeckIdMap = new Map();
-    addDecks(found.decks, map, groupName);
+    addDecks(found.decks, map, { groupName, groups: found.groups });
     addTables(found, map);
     haptics.success();
     Alert.alert(

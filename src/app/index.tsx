@@ -16,6 +16,7 @@ import { askName } from '../lib/names';
 import { DeckFileError } from '../lib/deckFile';
 import { everythingFile, pickDeckFiles, readDeckFile, tableFile } from '../lib/deckExport';
 import type { FileContents } from '../lib/deckExport';
+import { whileBusy } from '../lib/busy';
 import { backUpWithNotice, shareWithNotice } from '../lib/fileActions';
 import { useFileImport } from '../lib/useFileImport';
 import { deleteDeckWarning } from '../lib/deckInUse';
@@ -228,6 +229,7 @@ export default function HomeScreen() {
   const groupFile = (groupId: string): FileContents => ({
     name: groups.find((g) => g.id === groupId)?.name ?? 'Group',
     decks: decks.filter((d) => d.groupId === groupId),
+    groups: groups.filter((g) => g.id === groupId),
   });
   /**
    * Opens a Shufflevale file (or all the parts of one saved in parts): its decks go at the top of the list, and its
@@ -237,8 +239,15 @@ export default function HomeScreen() {
     try {
       const picked = await pickDeckFiles();
       if (!picked) return;
-      if (picked.length > 1) await addParts(picked);
-      else addFile(await readDeckFile(picked[0]));
+      await whileBusy('Opening')(async () => {
+        if (picked.length > 1) return addParts(picked);
+        const found = await readDeckFile(picked[0]);
+        try {
+          addFile(found);
+        } finally {
+          found.done();
+        }
+      });
     } catch (e) {
       haptics.warn();
       Alert.alert('Couldn’t open that file', e instanceof DeckFileError ? e.message : 'Something went wrong reading it.');
@@ -631,7 +640,7 @@ export default function HomeScreen() {
                   label: 'Back up everything',
                   pro: !pro,
                   opensModal: pro,
-                  onPress: pro ? () => backUpWithNotice(everythingFile(decks, sandboxes)) : () => openPro('files'),
+                  onPress: pro ? () => backUpWithNotice(everythingFile(decks, sandboxes, groups)) : () => openPro('files'),
                 },
               ]
             : []),
