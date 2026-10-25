@@ -9,6 +9,7 @@ import { colors } from '../theme';
 import type { SheetTile } from './ActionSheet';
 import { Text } from './Text';
 import { ALL_ORIENTATIONS } from '../lib/orientations';
+import { inTileRows } from '../lib/tileRows';
 import { placeWindow } from '../lib/windowSpot';
 import type { Point, Rect } from '../lib/windowSpot';
 
@@ -189,22 +190,27 @@ export function CardFocus(props: Props) {
   // Its options: as round buttons, then a quiet list (or, instead, the panel given).
   const options = panel ?? (
       <>
+      {/* In even rows of up to four, each centered (see tileRows). */}
       <View style={styles.tiles}>
-        {tiles.map((t) => (
-          <Pressable
-            key={t.label}
-            onPress={() => choose(t)}
-            disabled={t.disabled}
-            accessibilityRole="button"
-            accessibilityLabel={t.label}
-            style={({ pressed }) => [styles.tile, pressed && { opacity: 0.6 }, t.disabled && { opacity: 0.35 }]}>
-            <View style={styles.tileIcon}>
-              <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
-            </View>
-            <Text style={[styles.tileText, t.destructive && { color: colors.danger }]} numberOfLines={1}>
-              {t.label}
-            </Text>
-          </Pressable>
+        {inTileRows(tiles).map((row, r) => (
+          <View key={r} style={styles.tileRow}>
+            {row.map((t) => (
+              <Pressable
+                key={t.label}
+                onPress={() => choose(t)}
+                disabled={t.disabled}
+                accessibilityRole="button"
+                accessibilityLabel={t.label}
+                style={({ pressed }) => [styles.tile, pressed && { opacity: 0.6 }, t.disabled && { opacity: 0.35 }]}>
+                <View style={styles.tileIcon}>
+                  <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
+                </View>
+                <Text style={[styles.tileText, t.destructive && { color: colors.danger }]} numberOfLines={1}>
+                  {t.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         ))}
       </View>
       {rows?.length ? (
@@ -339,8 +345,8 @@ export function CardFocus(props: Props) {
 }
 
 const ICON = 52;
-/** The compact panel (on iPad): its width, and its gap from the thing it's beside. */
-const COMPACT_W = 320;
+/** The compact panel (on iPad): its width (four buttons to a row, with room round them), and its gap from the thing it's beside. */
+const COMPACT_W = 372;
 const COMPACT_GAP = 16;
 const ROW_H = 44;
 
@@ -399,7 +405,8 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
     textShadowOffset: { width: 0, height: 1 },
   },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 14, paddingHorizontal: 16, maxWidth: 380 },
+  tiles: { alignItems: 'center', gap: 14, paddingHorizontal: 16 },
+  tileRow: { flexDirection: 'row', justifyContent: 'center', gap: 14 },
   tile: { width: 72, alignItems: 'center', gap: 6 },
   // The quiet list of other options under the buttons.
   list: {

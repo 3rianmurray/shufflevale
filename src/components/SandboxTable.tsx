@@ -302,6 +302,8 @@ const TOOLS_HOLD_MS = 200;
 const TOOLS_DRAG_SLOP = 8;
 
 const FLIP_ICON = { ios: 'arrow.trianglehead.2.clockwise.rotate.90', android: 'flip', web: 'flip' } as const;
+/** Copy's button, the last in every menu that has it. */
+const COPY_ICON = { ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' } as const;
 
 /** What a menu is open on. */
 type Menu =
@@ -3291,6 +3293,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // Side by side, as custom art's are.
         { label: 'Rotate', icon: { ios: 'rotate.right', android: 'rotate_right', web: 'rotate_right' }, onPress: () => openRotate([menuStack.id], []) },
         { label: 'Scale', icon: { ios: 'arrow.up.left.and.arrow.down.right', android: 'open_in_full', web: 'open_in_full' }, onPress: () => openScale([menuStack.id], []) },
+        // Last, as in every menu.
+        { label: 'Copy', icon: COPY_ICON, onPress: () => copyThese([menuStack.id], []) },
       ];
       const rows: FocusRow[] = [
         // Dealing: how many off the top, and to whom (see DealPanel).
@@ -3321,7 +3325,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // A single card can be kept from stacking: nothing goes onto it, and it goes onto nothing.
         ...(n === 1 ? [{ kind: 'toggle' as const, label: 'Never stack', value: !!top.solo, onChange: (on: boolean) => commit(setSolo(table, menuStack.id, on)) }] : []),
         ...(top.faceUp ? [{ kind: 'action' as const, label: 'Full size', keepsOpen: true, onPress: () => setZoomed(top) }] : []),
-        { kind: 'action', label: 'Copy', onPress: () => copyThese([menuStack.id], []) },
         { kind: 'action', label: 'Take off the table', destructive: true, onPress: () => commit(removeStacks(table, [menuStack.id])) },
       ];
       return {
@@ -3424,7 +3427,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // (Not what's locked in place.)
         { label: 'Scale', icon: icon('arrow.up.left.and.arrow.down.right', 'open_in_full'), onPress: () => openScale(chosen, pieces.filter((p) => !p.locked).map((p) => p.id)) },
         ...(pieces.length ? [{ label: 'Color', icon: icon('paintpalette', 'palette'), onPress: () => setTimeout(() => setMenu({ kind: 'pieceColor' }), 250) }] : []),
-        { label: 'Copy', icon: icon('doc.on.doc', 'content_copy'), onPress: () => copyThese(chosen, pieces.map((p) => p.id)) },
+        { label: 'Copy', icon: COPY_ICON, onPress: () => copyThese(chosen, pieces.map((p) => p.id)) },
       ];
       const rows: FocusRow[] = [
         ...(dice.length
@@ -3488,13 +3491,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           </View>
         </View>
       );
-      // Copy, last but one (taking it off the table is last).
-      const copyRow: FocusRow = { kind: 'action', label: 'Copy', onPress: () => copyThese([], [id]) };
+      // Copy, the last of its buttons, as in every menu.
+      const copyTile: SheetTile = { label: 'Copy', icon: COPY_ICON, onPress: () => copyThese([], [id]) };
       const focus = (title: string, tiles: SheetTile[], rows: FocusRow[]) => ({
         title,
         header,
-        tiles,
-        rows: [...rows.slice(0, -1), copyRow, ...rows.slice(-1)],
+        tiles: [...tiles, copyTile],
+        rows,
         actions: [] as SheetAction[],
       });
       const named = (title: string, current: string) =>

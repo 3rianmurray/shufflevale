@@ -6,6 +6,7 @@ import { Animated, Easing, KeyboardAvoidingView, Modal, PanResponder, Platform, 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { previousTourStep, useTourStep } from '../lib/tour';
+import { inTileRows } from '../lib/tileRows';
 import { placeWindow } from '../lib/windowSpot';
 import type { Point, Rect } from '../lib/windowSpot';
 import { colors } from '../theme';
@@ -67,8 +68,8 @@ interface Props {
 /** How long the sheet takes to come up, and to go. */
 const IN_MS = 260;
 const OUT_MS = 200;
-/** A window's width; the dropped panel's width. */
-const WINDOW_W = 340;
+/** A window's width (as the table's other windows are: see CardFocus); the dropped panel's width. */
+const WINDOW_W = 372;
 const DROP_W = 440;
 
 /**
@@ -217,32 +218,36 @@ export function ActionSheet(props: Props) {
       {title && place?.kind !== 'window' ? <Text style={styles.title}>{title}</Text> : null}
       {banner}
       {tiles?.length ? (
+        // In even rows of up to four, each centered (see tileRows), every tile as wide as the fullest row's.
         <View style={styles.tiles}>
-          {tiles.map((t) => (
-            // Three to a row, or four when there are more than six, so the rows stay even.
-            <View key={t.label} style={[styles.tileCell, { width: tiles.length > 6 ? '25%' : '33.333%' }]}>
-              <Pressable
-                onPress={() => run(t)}
-                disabled={t.disabled || isOff(t)}
-                accessibilityRole="button"
-                accessibilityLabel={t.label}
-                accessibilityState={{ disabled: t.disabled || isOff(t) }}
-                style={({ pressed }) => [
-                  styles.tile,
-                  isGuided(t) && styles.guided,
-                  pressed && styles.pressed,
-                  (t.disabled || isOff(t)) && styles.tileDisabled,
-                ]}>
-                <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
-                <Text style={[styles.tileText, t.destructive && { color: colors.danger }]} numberOfLines={1}>
-                  {t.label}
-                </Text>
-                {t.pro ? (
-                  <View style={[styles.proTag, styles.tileProTag]}>
-                    <Text style={styles.proTagText}>PRO</Text>
-                  </View>
-                ) : null}
-              </Pressable>
+          {inTileRows(tiles).map((row, r, rows) => (
+            <View key={r} style={styles.tileRow}>
+              {row.map((t) => (
+                <View key={t.label} style={[styles.tileCell, { width: `${100 / Math.max(...rows.map((x) => x.length))}%` }]}>
+                  <Pressable
+                    onPress={() => run(t)}
+                    disabled={t.disabled || isOff(t)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t.label}
+                    accessibilityState={{ disabled: t.disabled || isOff(t) }}
+                    style={({ pressed }) => [
+                      styles.tile,
+                      isGuided(t) && styles.guided,
+                      pressed && styles.pressed,
+                      (t.disabled || isOff(t)) && styles.tileDisabled,
+                    ]}>
+                    <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
+                    <Text style={[styles.tileText, t.destructive && { color: colors.danger }]} numberOfLines={1}>
+                      {t.label}
+                    </Text>
+                    {t.pro ? (
+                      <View style={[styles.proTag, styles.tileProTag]}>
+                        <Text style={styles.proTagText}>PRO</Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                </View>
+              ))}
             </View>
           ))}
         </View>
@@ -429,7 +434,8 @@ const styles = StyleSheet.create({
   proTag: { backgroundColor: colors.accent, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
   proTagText: { color: colors.accentText, fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
   // Each tile sits in a cell with a little padding all round, so the gaps between them stay even.
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', margin: -3 },
+  tiles: { margin: -3 },
+  tileRow: { flexDirection: 'row', justifyContent: 'center' },
   tileCell: { padding: 3 },
   tile: {
     backgroundColor: colors.surfaceRaised,
