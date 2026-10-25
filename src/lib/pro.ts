@@ -1,8 +1,6 @@
 // Shufflevale Pro: a one-time purchase from the App Store (StoreKit, through expo-iap), which takes away the free
 // version's card limit and opens up deck files. Owning it is remembered on the phone, so it works offline; the
-// App Store is asked again each time the app opens (which also catches a refund).
-//
-// TestFlight and development builds have a tester switch (in About) to act as free or as Pro without buying.
+// App Store is asked again each time the app opens (which also catches a refund). The purchase is the only way in.
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useSyncExternalStore } from 'react';
 import { Alert } from 'react-native';
@@ -30,8 +28,6 @@ function iap(): Iap | null {
   return iapModule;
 }
 
-export type ProOverride = 'free' | 'pro';
-
 export interface ProState {
   /** Bought (or restored) on this Apple Account. */
   owned: boolean;
@@ -39,10 +35,6 @@ export interface ProState {
   price: string | null;
   /** The App Store can be used here (not Expo Go). */
   available: boolean;
-  /** A TestFlight or development build, where the tester switch is offered. */
-  testing: boolean;
-  /** The tester switch: acting as free or as Pro (only in testing builds). */
-  override: ProOverride | null;
   /** A purchase or restore is under way. */
   busy: boolean;
 }
@@ -51,8 +43,6 @@ let state: ProState = {
   owned: !!loadSettings().proOwned,
   price: null,
   available: true,
-  testing: __DEV__,
-  override: loadSettings().proOverride ?? null,
   busy: false,
 };
 const listeners = new Set<() => void>();
@@ -65,16 +55,8 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 
-/**
- * A build that comes with Pro on (`extra.unlockPro` in its app config: the iPad test build's, for testing; never
- * one for the App Store).
- */
-const UNLOCKED = !!(Constants.expoConfig?.extra as { unlockPro?: boolean } | undefined)?.unlockPro;
-
-/** Whether Pro is on: owned, or switched on for testing. Where there's no App Store (Expo Go), everything's open. */
+/** Whether Pro is on: bought (or restored). Where there's no App Store at all (Expo Go, in development), everything's open. */
 export function isPro(s: ProState = state): boolean {
-  if (UNLOCKED) return true;
-  if (s.testing && s.override) return s.override === 'pro';
   return s.owned || !s.available;
 }
 
@@ -89,18 +71,11 @@ const setOwned = (owned: boolean) => {
   set({ owned });
 };
 
-/** The tester switch: act as free, as Pro, or (null) as the real purchase says. Only in testing builds. */
-export function setProOverride(override: ProOverride | null) {
-  const { proOverride: _old, ...rest } = loadSettings();
-  saveSettings(override ? { ...rest, proOverride: override } : rest);
-  set({ override });
-}
-
 let started = false;
 
 /**
- * Connects to the App Store once, as the app opens: listens for purchases, looks up Pro's price, checks whether
- * it's owned, and whether this is a TestFlight build.
+ * Connects to the App Store once, as the app opens: listens for purchases, looks up Pro's price, and checks whether
+ * it's owned.
  */
 export async function startPro() {
   if (started) return;
@@ -135,14 +110,6 @@ export async function startPro() {
     }
     Alert.alert('Purchase didn’t go through', error.message || 'Please try again in a moment.');
   });
-  // TestFlight runs against Apple's test store ("Sandbox"); the App Store is "Production". Asked on its own, so a
-  // price or past purchases that are slow to come (or never do, on a device not signed in to the App Store) can't
-  // keep the tester switch away.
-  m.getAppTransactionIOS()
-    .then((app) => {
-      if (app && app.environment !== 'Production') set({ testing: true });
-    })
-    .catch(() => {});
   const [products, purchases] = await Promise.allSettled([m.fetchProducts({ skus: [PRO_PRODUCT_ID], type: 'in-app' }), m.getAvailablePurchases()]);
   if (products.status === 'fulfilled') {
     const product = (products.value ?? []).find((p) => p.id === PRO_PRODUCT_ID);
