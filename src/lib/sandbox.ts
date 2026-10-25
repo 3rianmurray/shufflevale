@@ -601,17 +601,17 @@ export function resizeZone(p: TablePiece, w: number, h: number): Pick<TablePiece
 const ZONE_FIT_ROOM = 12;
 
 /**
- * A zone fitted to what's in it: every stack and piece of custom art whose middle lies in it, with a little room
- * round them (its scale kept). The table as it was if there's nothing in it.
+ * A zone fitted to what's in it: every stack and piece whose middle lies in it (not text, which labels it, nor
+ * other zones), with a little room round them (its scale kept). The table as it was if there's nothing in it.
  */
 export function fitZone(t: SandboxTable, zoneId: string, size: CardSize): SandboxTable {
   const zone = t.pieces?.find((p) => p.id === zoneId && p.kind === 'zone');
   if (!zone) return t;
   const stacks = t.stacks.filter((s) => onPiece(zone, s.x, s.y));
-  const art = (t.pieces ?? []).filter((p) => p.kind === 'art' && onPiece(zone, p.x, p.y));
+  const inside = (t.pieces ?? []).filter((p) => p.kind !== 'zone' && p.kind !== 'text' && onPiece(zone, p.x, p.y));
   const corners = [
     ...stacks.flatMap((s) => stackCorners(s, size)),
-    ...art.flatMap((p) => {
+    ...inside.flatMap((p) => {
       const { w, h } = pieceSizeOf(p);
       const r = ((p.angle ?? 0) * Math.PI) / 180;
       return [
@@ -960,11 +960,21 @@ export function pieceName(p: TablePiece): string {
 /** Where custom art lies among the stacks: the index of the stack it's just over (-1 under them all). */
 export const artLevel = (t: SandboxTable, art: TablePiece) => (art.over ? t.stacks.findIndex((s) => s.id === art.over) : -1);
 
-/** Custom art turned (by degrees clockwise), as a stack is; locked art stays as it is. */
-export const turnArt = (t: SandboxTable, ids: string[], by: number): SandboxTable => ({
-  ...t,
-  pieces: (t.pieces ?? []).map((p) => (p.kind === 'art' && !p.locked && ids.includes(p.id) ? { ...p, angle: normalizeAngle((p.angle ?? 0) + by) } : p)),
-});
+/** The pieces that turn to any angle, as cards do: custom art, and dice. */
+export const turnsFreely = (p: Pick<TablePiece, 'kind'>) => p.kind === 'art' || p.kind === 'die';
+
+/**
+ * Stacks and pieces (those that turn: see turnsFreely) turned to an angle, as the rotation slider sets it. A locked
+ * stack still turns where it lies (as it still flips); a locked piece stays as it is.
+ */
+export function rotateItems(t: SandboxTable, stackIds: string[], pieceIds: string[], deg: number): SandboxTable {
+  const angle = normalizeAngle(deg);
+  return {
+    ...t,
+    stacks: t.stacks.map((s) => (stackIds.includes(s.id) ? { ...s, angle } : s)),
+    ...(t.pieces ? { pieces: t.pieces.map((p) => (pieceIds.includes(p.id) && turnsFreely(p) && !p.locked ? { ...p, angle } : p)) } : {}),
+  };
+}
 
 /** Custom art brought over every card (as a stack moved is). */
 export const raiseArt = (t: SandboxTable, ids: string[]): SandboxTable => {

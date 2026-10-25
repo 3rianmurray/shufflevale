@@ -249,7 +249,7 @@ test('a copy is pasted laid out as it was, round a point, everything new; dice k
   assert.ok(bagItems(bag)[0].card!.iid.startsWith('new'));
   assert.equal(tableCardCount(pasted), 6);
 });
-test('a zone fits snugly round the cards and art whose middles are in it', () => {
+test('a zone fits snugly round the cards and pieces whose middles are in it', () => {
   const size = () => ({ w: 100, h: 140 });
   const card = (iid: string) => ({ iid, deckId: 'd', cardId: iid, faceUp: true });
   let t = { ...table(), stacks: [{ id: 'S', x: 500, y: 500, angle: 0, cards: [card('a')] }] };
@@ -259,7 +259,15 @@ test('a zone fits snugly round the cards and art whose middles are in it', () =>
   const z = fitZone(t, 'z', size).pieces!.find((p) => p.id === 'z')!;
   // Cards 450–550 × 430–570, art 650–750 × 450–550: with 12 of room round them.
   assert.deepEqual([z.x, z.y, z.w, z.h], [600, 500, 324, 164]);
-  const empty = addPiece(table(), newPiece('zone', 'e', { x: 100, y: 100 }));
+  // Text (its label) and other zones inside it are left out; any other piece is fitted round.
+  let labeled = addPiece(t, { ...newPiece('text', 'words', { x: 300, y: 300 }), label: 'Discard' });
+  labeled = addPiece(labeled, { ...newPiece('zone', 'inner', { x: 780, y: 780 }), w: 50, h: 50 });
+  const same = fitZone(labeled, 'z', size).pieces!.find((p) => p.id === 'z')!;
+  assert.deepEqual([same.x, same.y, same.w, same.h], [600, 500, 324, 164]);
+  const withDie = addPiece(t, newPiece('die', 'd', { x: 500, y: 700 }));
+  const fz = fitZone(withDie, 'z', size).pieces!.find((p) => p.id === 'z')!;
+  assert.ok(fz.y + fz.h! / 2 > 700);
+  const empty =addPiece(table(), newPiece('zone', 'e', { x: 100, y: 100 }));
   assert.equal(fitZone(empty, 'e', size), empty);
 });
 test('a small piece is caught a little way off it, but not over one right under the finger', () => {

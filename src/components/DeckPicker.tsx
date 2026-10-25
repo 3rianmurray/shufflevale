@@ -4,6 +4,7 @@ import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { CardView } from './CardView';
 import { useDecks } from '../lib/DecksContext';
 import { buildRows } from '../lib/groups';
+import type { Row } from '../lib/groups';
 import { deckSize } from '../lib/types';
 import { colors } from '../theme';
 import { Text } from './Text';
@@ -26,7 +27,8 @@ export function DeckPicker({ picked, onChange, header, footer }: Props) {
   const toggle = (deckId: string) =>
     onChange(picked.includes(deckId) ? picked.filter((d) => d !== deckId) : [...picked, deckId]);
 
-  const rows = buildRows(decks, groups.map((g) => ({ ...g, collapsed: false })));
+  // (Nothing's dragged here, so groups need no end.)
+  const rows = buildRows(decks, groups.map((g) => ({ ...g, collapsed: false }))).filter((r): r is Exclude<Row, { kind: 'end' }> => r.kind !== 'end');
   const groupDecks = (groupId: string) => decks.filter((d) => d.groupId === groupId).map((d) => d.id);
   /** Picks every deck in a group (in its order, after anything already picked), or unpicks them all if they all are. */
   const toggleGroup = (groupId: string) => {

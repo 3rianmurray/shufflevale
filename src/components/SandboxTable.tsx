@@ -69,7 +69,8 @@ import {
   copyItems,
   pasteItems,
   PIECE_SIZE,
-  turnArt,
+  rotateItems,
+  turnsFreely,
   normalizeAngle,
   artLevel,
   keepArtLevels,
@@ -121,7 +122,6 @@ import {
   dealToHand,
   toScreen,
   toTable,
-  turnStack,
   moveLayer,
   reorderStack,
   fanStack,
@@ -308,8 +308,8 @@ type Menu =
   /** Where a token's picture comes from: for a new token, or (with an id) to change one's. */
   /** Scaling stacks and pieces (changing as the slider moves). */
   | { kind: 'scale'; stacks: string[]; pieces: string[] }
-  /** Turning custom art (changing as the slider moves). */
-  | { kind: 'rotate'; pieces: string[] };
+  /** Turning stacks, custom art and dice (changing as the slider moves). */
+  | { kind: 'rotate'; stacks: string[]; pieces: string[] };
 
 /** Counters and dice being dragged: the one under the finger, all of them, and how far they've gone (table units). */
 interface PieceDrag {
@@ -544,16 +544,15 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     // Once the menu it's chosen from has gone.
     setTimeout(() => setMenu({ kind: 'scale', stacks, pieces }), 300);
   };
-  /** Custom art turned as the rotation slider moves (locked art stays as it is): one undo, as scaling is. */
-  const openRotate = (pieces: string[]) => {
+  /** Stacks, custom art and dice turned as the rotation slider moves (see rotateItems): one undo, as scaling is. */
+  const openRotate = (stacks: string[], pieces: string[]) => {
     if (!table) return;
     setScaleBase(table);
-    setTimeout(() => setMenu({ kind: 'rotate', pieces }), 300);
+    setTimeout(() => setMenu({ kind: 'rotate', stacks, pieces }), 300);
   };
   const previewRotate = (deg: number) => {
     if (!scaleBase || menu?.kind !== 'rotate') return;
-    const ids = menu.pieces;
-    updateSandbox({ ...scaleBase, pieces: (scaleBase.pieces ?? []).map((p) => (ids.includes(p.id) && p.kind === 'art' && !p.locked ? { ...p, angle: deg } : p)) });
+    updateSandbox(rotateItems(scaleBase, menu.stacks, menu.pieces, deg));
   };
   const previewScale = (k: number) => {
     if (!scaleBase || menu?.kind !== 'scale') return;
@@ -2048,9 +2047,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         touch.pinch = { at: Date.now(), dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) };
         return;
       }
-      // A second finger on custom art being pressed or dragged (alone): it twists it, as a card's is.
+      // A second finger on custom art or a die being pressed or dragged (alone): it twists it, as a card's is.
       if (touch.mode === 'piece' && touch.piece) {
-        const art = L.table?.pieces?.find((p) => p.id === touch.piece!.id && p.kind === 'art' && !p.locked);
+        const art = L.table?.pieces?.find((p) => p.id === touch.piece!.id && turnsFreely(p) && !p.locked);
         const first = touch.fingers.get(touch.first);
         const c = changed.find((t) => t.id !== touch.first);
         if (art && first && c && touch.piece.group.length === 1 && !touch.piece.twist) {
@@ -2920,7 +2919,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     }
     if (spotPiece) {
       const { w, h } = pieceSizeOf(spotPiece);
-      return { key: `p:${spotPiece.id}`, x: spotPiece.x, y: spotPiece.y, w, h, angle: spotPiece.kind === 'art' ? (spotPiece.angle ?? 0) : 0 };
+      return { key: `p:${spotPiece.id}`, x: spotPiece.x, y: spotPiece.y, w, h, angle: turnsFreely(spotPiece) ? (spotPiece.angle ?? 0) : 0 };
     }
     return null;
   })();
@@ -3052,18 +3051,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               },
             ]
           : []),
+        // Side by side, as custom art's are.
+        { label: 'Rotate', icon: { ios: 'rotate.right', android: 'rotate_right', web: 'rotate_right' }, onPress: () => openRotate([menuStack.id], []) },
+        { label: 'Scale', icon: { ios: 'arrow.up.left.and.arrow.down.right', android: 'open_in_full', web: 'open_in_full' }, onPress: () => openScale([menuStack.id], []) },
       ];
       const rows: FocusRow[] = [
         // Dealing: how many off the top, and to whom (see DealPanel).
         { kind: 'action', label: 'Deal…', more: true, keepsOpen: true, onPress: () => setDealingFrom(menuStack.id) },
-        {
-          kind: 'pair',
-          label: 'Turn',
-          options: [
-            { label: '⟲ Left', onPress: () => commit(turnStack(table, menuStack.id, -90)) },
-            { label: 'Right ⟳', onPress: () => commit(turnStack(table, menuStack.id)) },
-          ],
-        },
         // Spread out, every card showing, as close as the grid allows.
         ...(n > 1
           ? [
@@ -3087,7 +3081,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           })),
         },
         { kind: 'toggle', label: 'Lock', value: !!menuStack.locked, onChange: (on) => commit(setStack(table, menuStack.id, { locked: on })) },
-        { kind: 'action', label: 'Scale…', onPress: () => openScale([menuStack.id], []) },
         // A single card can be kept from stacking: nothing goes onto it, and it goes onto nothing.
         ...(n === 1 ? [{ kind: 'toggle' as const, label: 'Never stack', value: !!top.solo, onChange: (on: boolean) => commit(setSolo(table, menuStack.id, on)) }] : []),
         ...(top.faceUp ? [{ kind: 'action' as const, label: 'Full size', keepsOpen: true, onPress: () => setZoomed(top) }] : []),
@@ -3171,6 +3164,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const n = chosen.length;
       const pieces = (table.pieces ?? []).filter((p) => pickedPieces.includes(p.id));
       const dice = pieces.filter((p) => p.kind === 'die');
+      const turning = pieces.filter((p) => turnsFreely(p) && !p.locked);
       const total = n + pieces.length;
       const allLocked = chosen.every((id) => table.stacks.find((s) => s.id === id)?.locked);
       const shufflable = chosen.filter((id) => (table.stacks.find((s) => s.id === id)?.cards.length ?? 0) > 1);
@@ -3203,18 +3197,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             : []),
           ...(pieces.some((p) => p.kind === 'meeple') ? [{ label: 'Change the shape…', onPress: () => setTimeout(() => setMenu({ kind: 'pieceShape' }), 250) }] : []),
           ...(pieces.length ? [{ label: 'Color…', onPress: () => setTimeout(() => setMenu({ kind: 'pieceColor' }), 250) }] : []),
-          // Custom art picked out on its own (no cards): turned as cards are.
-          ...(!n && pieces.some((p) => p.kind === 'art' && !p.locked)
-            ? [
-                { label: 'Rotate…', onPress: () => openRotate(pieces.filter((p) => p.kind === 'art' && !p.locked).map((p) => p.id)) },
-              ]
-            : []),
           ...(shufflable.length ? [{ label: shufflable.length === 1 ? 'Shuffle' : `Shuffle all ${shufflable.length}`, onPress: () => shuffleStacks(shufflable) }] : []),
+          // Cards, custom art and dice all turn to one angle (not what's locked in place).
+          ...(n || turning.length ? [{ label: 'Rotate…', onPress: () => openRotate(chosen, turning.map((p) => p.id)) }] : []),
           ...(n
             ? [
-                // Custom art picked out with them turns too.
-                { label: 'Turn left', onPress: () => commit(turnArt(chosen.reduce((t, id) => turnStack(t, id, -90), table), pieces.map((p) => p.id), -90)) },
-                { label: 'Turn right', onPress: () => commit(turnArt(chosen.reduce((t, id) => turnStack(t, id), table), pieces.map((p) => p.id), 90)) },
                 {
                   label: allLocked ? 'Unlock' : 'Lock',
                   onPress: () => commit(chosen.reduce((t, id) => setStack(t, id, { locked: !allLocked }), table)),
@@ -3245,6 +3232,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const colorTile = tile('Color', 'paintpalette', 'palette', next({ kind: 'pieceColor', id }));
       // Not for what's locked in place (it's meant to stay as it is).
       const scaleTile = tile('Scale', 'arrow.up.left.and.arrow.down.right', 'open_in_full', () => openScale([], [id]), !!piece.locked);
+      // For what turns to any angle (see turnsFreely): beside Scale.
+      const rotateTile = tile('Rotate', 'rotate.right', 'rotate_right', () => openRotate([], [id]), !!piece.locked);
       // For what usually sits in one place through a game: locked, it stays put (dragging it moves the table).
       const lockRow: FocusRow = { kind: 'toggle', label: 'Lock', value: !!piece.locked, onChange: (on) => commit(setPiece(table, id, { locked: on || undefined })) };
       const takeOffRow: FocusRow = { kind: 'action', label: 'Take off the table', destructive: true, onPress: () => commit(removePiece(table, id)) };
@@ -3300,8 +3289,20 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             `d${piece.sides ?? 6}`,
             [
               tile('Roll', 'dice', 'casino', () => rollDice([id])),
+              // Set to a face, as if put down that way up.
+              tile(
+                'Number',
+                'number',
+                'pin',
+                askNum(`Set the number (1 to ${piece.sides ?? 6})`, String(piece.value), (text) => {
+                  const v = parseInt(text.replace(/\D/g, ''), 10);
+                  if (v >= 1 && v <= (piece.sides ?? 6)) commit(setPiece(table, id, { value: v }));
+                  else haptics.warn();
+                }),
+              ),
               tile('Kind', 'die.face.6', 'casino', next({ kind: 'dieKind', id })),
               colorTile,
+              rotateTile,
               scaleTile,
             ],
             [{ kind: 'toggle', label: 'Roll in place', value: !!piece.rollInPlace, onChange: (on) => commit(setPiece(table, id, { rollInPlace: on || undefined })) }, takeOffRow],
@@ -3407,7 +3408,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               },
               {
                 kind: 'action',
-                // Snug round the cards and custom art lying in it.
+                // Snug round the cards and pieces lying in it (not text, nor other zones).
                 label: 'Auto fit',
                 onPress: () => {
                   const fitted = fitZone(table, id, size);
@@ -3476,7 +3477,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           return focus(
             'Custom art',
             [
-              tile('Rotate', 'rotate.right', 'rotate_right', () => openRotate([id]), !!piece.locked),
+              rotateTile,
               scaleTile,
               // The system's menu, once this has gone (see choosePicture).
               tile('Picture', 'photo', 'image', () => setTimeout(() => choosePicture({ kind: 'art', id }), 450)),
@@ -3573,11 +3574,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       };
     }
     if (menu.kind === 'rotate') {
-      const first = table.pieces?.find((p) => menu.pieces.includes(p.id));
+      const n = menu.stacks.length + menu.pieces.length;
+      // Where the first of them is turned now.
+      const angle = table.stacks.find((s) => menu.stacks.includes(s.id))?.angle ?? table.pieces?.find((p) => menu.pieces.includes(p.id))?.angle ?? 0;
       return {
-        title: menu.pieces.length === 1 ? 'Rotation' : `Rotate ${menu.pieces.length}`,
+        title: n === 1 ? 'Rotation' : `Rotate ${n} things`,
         tiles: [],
-        banner: <RotationControl value={first?.angle ?? 0} onChange={previewRotate} />,
+        banner: <RotationControl value={angle} onChange={previewRotate} />,
         actions: [],
       };
     }

@@ -200,7 +200,9 @@ export default function HomeScreen() {
     try {
       const found = await pickDeckFile();
       if (!found) return;
-      const added = importDecks(found.decks);
+      // A table's file: its decks kept together, in a group named for it (e.g. “Zombicide Decks”).
+      const groupName = found.tables.length === 1 && found.decks.length ? `${found.tables[0].name} Decks` : undefined;
+      const added = importDecks(found.decks, groupName);
       // Where each of the file's decks (and its cards) went, for its tables' cards to point at.
       const map: DeckIdMap = new Map();
       found.decks.forEach((d, i) => {
@@ -215,7 +217,7 @@ export default function HomeScreen() {
       haptics.success();
       const decksText = added.length === 1 ? `“${added[0].name}”` : `${added.length} decks`;
       const tablesText = found.tables.length ? ` and ${found.tables.length === 1 ? `the table “${found.tables[0].name}”` : `${found.tables.length} tables`}` : '';
-      Alert.alert(`Added ${decksText}${tablesText}`, 'New decks are at the top of your decks.');
+      Alert.alert(`Added ${decksText}${tablesText}`, groupName ? `Its decks are in the group “${groupName}”, at the top of your decks.` : 'New decks are at the top of your decks.');
     } catch (e) {
       haptics.warn();
       Alert.alert('Couldn’t open that file', e instanceof DeckFileError ? e.message : 'Something went wrong reading it.');
@@ -225,12 +227,11 @@ export default function HomeScreen() {
   const newGroup = () => askName('New group', `Group ${groups.length + 1}`, (name) => createGroup(name));
 
   const drop = (row: Row, at: number) => {
-    if (row.kind === 'deck') {
-      const { order, groupOf } = dropDeck(decks, groups, row.id, at);
-      arrangeDecks(order, groupOf);
-    } else {
-      setGroupOrder(dropGroup(decks, groups, row.id, at));
-    }
+    if (row.kind === 'end') return;
+    // Either way, the decks' order and groups, and where each group lies among them.
+    const next = row.kind === 'deck' ? dropDeck(decks, groups, row.id, at) : dropGroup(decks, groups, row.id, at);
+    arrangeDecks(next.order, next.groupOf);
+    setGroupOrder(next.groups);
   };
 
   /**
@@ -243,6 +244,8 @@ export default function HomeScreen() {
   });
 
   const renderRow = (row: Row, lifted = false) => {
+    // A group's end: a line under its decks. A deck dropped above it goes in the group; below it, out of it.
+    if (row.kind === 'end') return <View style={styles.groupEnd} />;
     if (row.kind === 'group') {
       const group = groups.find((g) => g.id === row.id);
       if (!group) return null;
@@ -527,7 +530,7 @@ export default function HomeScreen() {
         renderRow={(r) => <View style={r.kind === 'heading' ? undefined : styles.rowWrap}>{renderHome(r)}</View>}
         renderLifted={(r) => <View style={styles.liftedWrap}>{renderHome(r, true)}</View>}
         // Headings stay put, and a row swiped open can't be picked up: a press on it closes it instead.
-        canLift={(r, x, width) => r.kind !== 'heading' && openRow?.key !== `${r.kind}:${r.id}` && x < width - BUTTON_ZONE}
+        canLift={(r, x, width) => r.kind !== 'heading' && r.kind !== 'end' && openRow?.key !== `${r.kind}:${r.id}` && x < width - BUTTON_ZONE}
         dropRange={dropRange}
         onDrop={dropHome}
         bottomInset={insets.bottom + 92}
@@ -728,6 +731,7 @@ const styles = StyleSheet.create({
   },
   // Decks in a group sit slightly indented under its header.
   inGroup: { marginLeft: 14 },
+  groupEnd: { marginLeft: 14, height: 2, borderRadius: 1, backgroundColor: colors.border },
   liftedRow: { backgroundColor: colors.surfaceRaised },
   // Outside the row itself, so a swiped-open group's Delete button is only as tall as the group row.
   groupGap: { marginTop: 6 },

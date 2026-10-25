@@ -565,7 +565,15 @@ export default function DeckEditorScreen() {
           </View>
         }        renderItem={(item) => (
           <View>
-            <CardView deck={deck} card={item} width={cardWidth} />
+            <View>
+              <CardView deck={deck} card={item} width={cardWidth} />
+              {/* A card with its own back shows it, small, tucked into its corner. */}
+              {item.back ? (
+                <View pointerEvents="none" style={styles.ownBack}>
+                  <CardView deck={deck} card={item} faceUp={false} width={Math.round(cardWidth * 0.3)} />
+                </View>
+              ) : null}
+            </View>
             {choosing ? (
               <View style={[styles.tick, chosen.includes(item.id) && styles.ticked]}>
                 {chosen.includes(item.id) ? <Text style={styles.tickMark}>✓</Text> : null}
@@ -790,6 +798,11 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   copiesBadgeText: { color: colors.accentText, fontSize: 12, fontWeight: '700' },
+  ownBack: {
+    position: 'absolute',
+    right: 4,
+    bottom: 4,
+  },
   copiesRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
   copiesLabel: { color: colors.text, fontSize: 16 },
   copiesInput: {

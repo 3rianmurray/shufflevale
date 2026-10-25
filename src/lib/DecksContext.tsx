@@ -19,6 +19,7 @@ import {
   saveTables,
 } from './storage';
 import type { UnpackedDeck } from './deckFile';
+import { withoutDeck } from './groups';
 import type { DeckGroup } from './groups';
 import { moveItems } from './order';
 import { createTable, pruneTable } from './table';
@@ -33,8 +34,11 @@ interface DecksApi {
   createReadyDeck: (name: string, cards: { uri: string; name: string }[], back: string) => Deck;
   /** Copies a deck, art and all, placing the copy right after it. Returns the copy. */
   duplicateDeck: (id: string) => Deck | undefined;
-  /** Adds decks read from a deck file (see deckFile.ts), pictures and all, at the top of the list. */
-  importDecks: (decks: UnpackedDeck[]) => Deck[];
+  /**
+   * Adds decks read from a deck file (see deckFile.ts), pictures and all, at the top of the list: filed in a new
+   * group of `groupName`, if given (lying at the top of the list too).
+   */
+  importDecks: (decks: UnpackedDeck[], groupName?: string) => Deck[];
   renameDeck: (id: string, name: string) => void;
   deleteDeck: (id: string) => void;
   /** Empties a deck to start it again: no cards, no back, default settings, no saved tables, under a new name. */
@@ -201,8 +205,13 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         setDecks((all) => [deck, ...all]);
         return deck;
       },
-      importDecks(incoming) {
+      importDecks(incoming, groupName) {
         const now = Date.now();
+        // Above the first ungrouped deck (or, with none, first of the groups at the bottom).
+        const firstLoose = decks.find((d) => !d.groupId || !groups.some((g) => g.id === d.groupId));
+        const group: DeckGroup | undefined =
+          groupName && incoming.length ? { id: newId(), name: groupName, ...(firstLoose ? { before: firstLoose.id } : {}) } : undefined;
+        if (group) setGroups((all) => [group, ...all]);
         const added = incoming.map((u): Deck => {
           const id = newId();
           // A picture several cards share is saved once.
@@ -217,6 +226,7 @@ export function DecksProvider({ children }: { children: ReactNode }) {
             ...(u.cardShape ? { cardShape: u.cardShape } : {}),
             ...(u.roundness !== undefined ? { roundness: u.roundness } : {}),
             ...(u.playMode ? { playMode: u.playMode } : {}),
+            ...(group ? { groupId: group.id } : {}),
             backImage: u.back ? save(u.back) : null,
             cards: u.cards.map((c) => ({
               id: newId(),
@@ -272,6 +282,8 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         updateDeck(id, (d) => ({ ...d, name }));
       },
       deleteDeck(id) {
+        // A group lying just above it stays where it was.
+        setGroups((all) => withoutDeck(all, decks, id));
         setDecks((all) => all.filter((d) => d.id !== id));
         tables.drop((key) => key === id || key.endsWith(`:${id}`));
         setSessions((all) => all.map((s) => ({ ...s, deckIds: s.deckIds.filter((d) => d !== id) })));
