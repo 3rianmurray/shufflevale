@@ -32,6 +32,8 @@ interface SubjectLiftModule {
   liftSubject(uri: string): Promise<Lifted | null>;
   /** Missing from 2.1.0's build. */
   findCard?: (uri: string) => Promise<FoundCard | null>;
+  /** Missing before 2.3.0's build. */
+  zoomFor?: (factor: number) => number | null;
 }
 
 const native = requireOptionalNativeModule<SubjectLiftModule>('SubjectLift');
@@ -44,6 +46,18 @@ export async function cutOut(uri: string): Promise<Lifted | null> {
   if (!native?.isAvailable()) return null;
   try {
     return await native.liftSubject(uri);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The setting for the camera's zoom (what CameraView's `zoom` takes: 0 to 1) that zooms the camera itself to
+ * `factor` times (2 for 2x), or null if this camera can't (or this build can't say: before 2.3.0).
+ */
+export function zoomSettingFor(factor: number): number | null {
+  try {
+    return native?.zoomFor?.(factor) ?? null;
   } catch {
     return null;
   }

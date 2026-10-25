@@ -1,5 +1,6 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
+import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +10,7 @@ import type { CapturedCard, CardKind } from '../lib/cardCapture';
 import * as haptics from '../lib/haptics';
 import type { Pairing } from '../lib/importBatch';
 import { loadSettings, saveSettings } from '../lib/storage';
+import { zoomSettingFor } from '../lib/subjectLift';
 import { colors } from '../theme';
 import { Button } from './Button';
 import type { ImportPicture } from './ImportReview';
@@ -52,6 +54,14 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
   const [camera, setCamera] = useState<CameraView | null>(null);
   const [ready, setReady] = useState(false);
   const [backs, setBacks] = useState(false);
+  /** The flash fires with each shot: off to start with, every time (never automatic). */
+  const [flashOn, setFlashOn] = useState(false);
+  /**
+   * The camera's own zoom to 2x: the setting for it (known once the camera's running, and only if this camera and
+   * build can do it), and whether it's on (off to start with, every time).
+   */
+  const [twoXSetting, setTwoXSetting] = useState<number | null>(null);
+  const [twoX, setTwoX] = useState(false);
   /** What the cards are: remembered from last time (a game's cards are all one or the other). Rectangles to start. */
   const [kind, setKind] = useState<CardKind>(() => (loadSettings().cameraKind === 'cutOut' ? 'cutOut' : 'card'));
   const chooseKind = (k: CardKind) => {
@@ -96,6 +106,9 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
     setPicked(null);
     setRetaking(null);
     setLatestId(null);
+    setFlashOn(false);
+    setTwoX(false);
+    setTwoXSetting(null);
     queue.set({ list: [], last: Promise.resolve(), nextId: 1 });
   };
   const finish = (cards: CapturedCard[]) => {
@@ -189,7 +202,20 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
           </View>
         ) : visible ? (
           <>
-            <CameraView ref={setCamera} style={StyleSheet.absoluteFill} facing="back" animateShutter onCameraReady={() => setReady(true)} />
+            <CameraView
+              ref={setCamera}
+              style={StyleSheet.absoluteFill}
+              facing="back"
+              flash={flashOn ? 'on' : 'off'}
+              // The camera's own zoom (preview and picture both), not a crop of it.
+              zoom={twoX && twoXSetting !== null ? twoXSetting : 0}
+              animateShutter
+              onCameraReady={() => {
+                setReady(true);
+                // Read now that the camera has set itself up: its most it can zoom depends on how it's set.
+                setTwoXSetting(zoomSettingFor(2));
+              }}
+            />
             <View style={[styles.top, { paddingTop: insets.top + 8 }]}>
               <Button label="Cancel" onPress={cancel} />
               {single ? null : (
@@ -205,18 +231,50 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
                 </View>
               )}
             </View>
-            {/* What the cards are: straightened as rectangles, or cut out as other shapes. */}
-            <View style={styles.kinds}>
-              {KINDS.map(([k, label]) => (
+            <View style={styles.controls}>
+              {/* What the cards are: straightened as rectangles, or cut out as other shapes. */}
+              <View style={styles.kinds}>
+                {KINDS.map(([k, label]) => (
+                  <Pressable
+                    key={k}
+                    onPress={() => chooseKind(k)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: kind === k }}
+                    style={[styles.kind, kind === k && styles.kindOn]}>
+                    <Text style={[styles.kindText, kind === k && { color: colors.accentText }]}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              {/* Zoomed in to 2x by the camera itself (only where it can). */}
+              {twoXSetting !== null ? (
                 <Pressable
-                  key={k}
-                  onPress={() => chooseKind(k)}
+                  onPress={() => {
+                    setTwoX(!twoX);
+                    haptics.tick();
+                  }}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: kind === k }}
-                  style={[styles.kind, kind === k && styles.kindOn]}>
-                  <Text style={[styles.kindText, kind === k && { color: colors.accentText }]}>{label}</Text>
+                  accessibilityLabel="2x zoom"
+                  accessibilityState={{ selected: twoX }}
+                  style={[styles.flash, twoX && styles.flashOn]}>
+                  <Text style={[styles.zoomText, twoX && { color: colors.accentText }]}>2×</Text>
                 </Pressable>
-              ))}
+              ) : null}
+              {/* The flash, with each shot: on or off, never automatic. */}
+              <Pressable
+                onPress={() => {
+                  setFlashOn(!flashOn);
+                  haptics.tick();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Flash"
+                accessibilityState={{ selected: flashOn }}
+                style={[styles.flash, flashOn && styles.flashOn]}>
+                <SymbolView
+                  name={flashOn ? { ios: 'bolt.fill', android: 'flash_on', web: 'flash_on' } : { ios: 'bolt.slash.fill', android: 'flash_off', web: 'flash_off' }}
+                  size={18}
+                  tintColor={flashOn ? colors.accentText : '#fff'}
+                />
+              </Pressable>
             </View>
             <View style={styles.promptBox} pointerEvents={retakingAt >= 0 ? 'box-none' : 'none'}>
               <Text style={styles.prompt}>{prompt.charAt(0).toUpperCase() + prompt.slice(1)}</Text>
@@ -312,7 +370,11 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16 },
   backsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, paddingLeft: 14, paddingRight: 6, paddingVertical: 4 },
   backsLabel: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  kinds: { flexDirection: 'row', alignSelf: 'center', marginTop: 12, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, padding: 3 },
+  controls: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 10, marginTop: 12 },
+  kinds: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, padding: 3 },
+  flash: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.55)' },
+  flashOn: { backgroundColor: colors.accent },
+  zoomText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   kind: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 17 },
   kindOn: { backgroundColor: colors.accent },
   kindText: { color: '#fff', fontSize: 14, fontWeight: '600' },

@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreImage
 import ExpoModulesCore
 import UIKit
@@ -9,6 +10,19 @@ import Vision
 public class SubjectLiftModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SubjectLift")
+
+    /// The setting for expo-camera's `zoom` (0 to 1) that makes the back camera it uses zoom to `factor` (2 for 2x):
+    /// the camera's own zoom, not a crop of the picture. expo-camera zooms to maxZoom^setting, so this reads the
+    /// camera's real maximum (as the live camera has set it) and works the setting back. Nil if the camera can't
+    /// zoom that far, or there's none.
+    Function("zoomFor") { (factor: Double) -> Double? in
+      guard factor >= 1,
+            let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+      else { return nil }
+      let most = Double(device.activeFormat.videoMaxZoomFactor)
+      guard most > 1, most >= factor else { return nil }
+      return log(factor) / log(most)
+    }
 
     /// The card in a photo: its corners (in the photo's pixels, upright, clockwise from the top left) and how sure
     /// the finder is of it. Nil if there's none to be found.
