@@ -9,6 +9,8 @@ import { colors } from '../theme';
 import type { SheetTile } from './ActionSheet';
 import { Text } from './Text';
 import { ALL_ORIENTATIONS } from '../lib/orientations';
+import { placeWindow } from '../lib/windowSpot';
+import type { Point, Rect } from '../lib/windowSpot';
 
 /** How long it takes to come and go. */
 const IN_MS = 180;
@@ -55,7 +57,12 @@ interface Props {
    */
   near?: { x: number; y: number; w: number; h: number };
   /** The compact panel says where it is (its corner and size) as it opens and wherever it's let go. */
-  onPlace?: (rect: { x: number; y: number; w: number; h: number }) => void;
+  onPlace?: (rect: Rect) => void;
+  /**
+   * Compact, placed (on iPad), for what isn't one thing (several picked out): directly above the finger, or where
+   * the last window was and off what it's for (see placeWindow).
+   */
+  place?: { at?: Point; from?: Rect; avoid?: Rect };
 }
 
 /**
@@ -72,7 +79,7 @@ export function CardFocus(props: Props) {
     return { keep: (p: Props) => Object.assign(box, { last: p }), get: () => box.last };
   }, []);
   if (visible) kept.keep(props);
-  const { card, title, tiles, rows, panel, overlay, spotlight, near } = visible ? props : (kept.get() ?? props);
+  const { card, title, tiles, rows, panel, overlay, spotlight, near, place } = visible ? props : (kept.get() ?? props);
   const { onOptionsTop } = props;
   const { width: screenW } = useWindowDimensions();
   /** The compact panel's height, once laid out (it's placed beside the thing by it). */
@@ -124,42 +131,52 @@ export function CardFocus(props: Props) {
     }),
   );
 
-  // Where the compact panel is (its place beside the thing, and how far it has been dragged), kept outside React
-  // state: its drag is made once.
+  // Where the compact panel is (its place, and how far it has been dragged: counted here from the finger, not read
+  // back from the animation, which runs natively and reports late), kept outside React state: its drag is made once.
   const [spotBox] = useState(() => {
-    const box = { x: 0, y: 0, w: 0, h: 0, panX: 0, panY: 0, onPlace: undefined as Props['onPlace'] };
+    const box = { x: 0, y: 0, w: 0, h: 0, offX: 0, offY: 0, startX: 0, startY: 0, onPlace: undefined as Props['onPlace'] };
     return { set: (next: Partial<typeof box>) => Object.assign(box, next), get: () => box };
   });
   useEffect(() => {
-    const id = anim.pan.addListener(({ x, y }) => spotBox.set({ panX: x, panY: y }));
-    return () => anim.pan.removeListener(id);
-  }, [anim, spotBox]);
+    if (visible) spotBox.set({ offX: 0, offY: 0, startX: 0, startY: 0 });
+  }, [visible, spotBox]);
   // The compact panel, dragged by its title or its corner grip: it stays where it's let go (and says where).
   const [panelTouches] = useState(() => {
     const told = () => {
       const b = spotBox.get();
-      b.onPlace?.({ x: b.x + b.panX, y: b.y + b.panY, w: b.w, h: b.h });
+      b.onPlace?.({ x: b.x + b.offX, y: b.y + b.offY, w: b.w, h: b.h });
     };
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => anim.pan.extractOffset(),
-      onPanResponderMove: (_, g) => anim.pan.setValue({ x: g.dx, y: g.dy }),
-      onPanResponderRelease: () => {
-        anim.pan.flattenOffset();
-        told();
+      onPanResponderGrant: () => {
+        const b = spotBox.get();
+        spotBox.set({ startX: b.offX, startY: b.offY });
       },
-      onPanResponderTerminate: () => {
-        anim.pan.flattenOffset();
-        told();
+      onPanResponderMove: (_, g) => {
+        const b = spotBox.get();
+        spotBox.set({ offX: b.startX + g.dx, offY: b.startY + g.dy });
+        anim.pan.setValue({ x: b.startX + g.dx, y: b.startY + g.dy });
       },
+      onPanResponderRelease: told,
+      onPanResponderTerminate: told,
     });
   });
+  // Where the compact panel goes: placed as asked (above a finger, or where the last window was), or beside the thing.
+  const compactAt = (h: number) =>
+    place
+      ? placeWindow({ screen: { w: screenW, h: height }, insets, size: { w: COMPACT_W, h }, ...place })
+      : near
+        ? compactSpot(near, h, screenW, height, insets)
+        : null;
   // Told where it settles, once it's measured and placed.
-  const settledX = near && panelH !== null ? Math.round(compactSpot(near, panelH, screenW, height, insets).x) : null;
-  const settledY = near && panelH !== null ? Math.round(compactSpot(near, panelH, screenW, height, insets).y) : null;
+  const settled = panelH !== null ? compactAt(panelH) : null;
+  const settledX = settled ? Math.round(settled.x) : null;
+  const settledY = settled ? Math.round(settled.y) : null;
   useEffect(() => {
     if (!visible || settledX === null || settledY === null || panelH === null) return;
-    props.onPlace?.({ x: settledX, y: settledY, w: COMPACT_W, h: panelH });
+    // (Wherever it's been dragged since it opened, too.)
+    const { offX, offY } = spotBox.get();
+    props.onPlace?.({ x: settledX + offX, y: settledY + offY, w: COMPACT_W, h: panelH });
     // Only when it settles somewhere, not whenever the caller's function is new.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, settledX, settledY, panelH]);
@@ -242,9 +259,10 @@ export function CardFocus(props: Props) {
       </>
   );
 
-  if (near) {
-    // Beside it (see compactSpot).
-    const { x, y } = compactSpot(near, panelH ?? 0, screenW, height, insets);
+  const compact = compactAt(panelH ?? 0);
+  if (compact) {
+    // Beside it (see compactSpot), or placed as asked.
+    const { x, y } = compact;
     spotBox.set({ x, y, w: COMPACT_W, h: panelH ?? 0, onPlace: props.onPlace });
     return (
       <Modal visible={mounted} transparent animationType="none" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={onClose}>

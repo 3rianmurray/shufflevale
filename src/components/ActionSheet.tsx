@@ -88,33 +88,31 @@ export function ActionSheet(props: Props) {
   // A window, dragged by its title or its grip: it stays where it's let go (back to its place, each time it opens).
   const [pan] = useState(() => new Animated.ValueXY());
   // Where it is, kept outside React state (its drag is made once): its place before it's dragged, how far it has
-  // been, and who to tell where it ends up.
+  // been dragged (counted here from the finger, not read back from the animation, which runs natively and reports
+  // late), and who to tell where it ends up.
   const [spotBox] = useState(() => {
-    const box = { x: 0, y: 0, w: 0, h: 0, panX: 0, panY: 0, onPlace: undefined as ((r: Rect) => void) | undefined };
+    const box = { x: 0, y: 0, w: 0, h: 0, offX: 0, offY: 0, startX: 0, startY: 0, onPlace: undefined as ((r: Rect) => void) | undefined };
     return { set: (next: Partial<typeof box>) => Object.assign(box, next), get: () => box };
   });
-  useEffect(() => {
-    const id = pan.addListener(({ x, y }) => spotBox.set({ panX: x, panY: y }));
-    return () => pan.removeListener(id);
-  }, [pan, spotBox]);
   const [windowTouches] = useState(() => {
     const told = () => {
       const b = spotBox.get();
-      b.onPlace?.({ x: b.x + b.panX, y: b.y + b.panY, w: b.w, h: b.h });
+      b.onPlace?.({ x: b.x + b.offX, y: b.y + b.offY, w: b.w, h: b.h });
     };
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => pan.extractOffset(),
-      onPanResponderMove: (_, g) => pan.setValue({ x: g.dx, y: g.dy }),
-      onPanResponderRelease: () => {
-        pan.flattenOffset();
-        told();
+      onPanResponderGrant: () => {
+        const b = spotBox.get();
+        spotBox.set({ startX: b.offX, startY: b.offY });
       },
-      onPanResponderTerminate: () => {
-        pan.flattenOffset();
-        told();
+      onPanResponderMove: (_, g) => {
+        const b = spotBox.get();
+        spotBox.set({ offX: b.startX + g.dx, offY: b.startY + g.dy });
+        pan.setValue({ x: b.startX + g.dx, y: b.startY + g.dy });
       },
+      onPanResponderRelease: told,
+      onPanResponderTerminate: told,
     });
   });
   // What the sheet shows, kept from when it was last open: while it slides away, whatever it was showing may
@@ -154,12 +152,13 @@ export function ActionSheet(props: Props) {
   // Everything else is grayed out and can't be pressed meanwhile (Cancel still closes the menu).
   const isOff = (a: SheetAction) => !!guided && !isGuided(a);
 
-  // A window opens by its point, wherever the last one was dragged.
+  // A window opens in its own place (not dragged), wherever the last one was dragged to.
   useEffect(() => {
     if (!visible) return;
+    spotBox.set({ offX: 0, offY: 0, startX: 0, startY: 0 });
     pan.setOffset({ x: 0, y: 0 });
     pan.setValue({ x: 0, y: 0 });
-  }, [visible, pan]);
+  }, [visible, pan, spotBox]);
 
   // Where a window goes: directly above the finger that opened it, or (a follow-up) where the last window was, off
   // what it's for. Told to whoever's asked, whenever it settles (and, by its drag, wherever it's let go).
@@ -173,7 +172,9 @@ export function ActionSheet(props: Props) {
   const winY = winSpot?.y;
   useEffect(() => {
     if (!visible || !measured || winX === undefined || winY === undefined) return;
-    onPlace?.({ x: winX, y: winY, w: winW, h: winH });
+    // (Wherever it's been dragged since it opened, too.)
+    const { offX, offY } = spotBox.get();
+    onPlace?.({ x: winX + offX, y: winY + offY, w: winW, h: winH });
     // Only when it settles somewhere, not whenever the caller's function is new.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, measured, winX, winY, winW, winH]);

@@ -3354,46 +3354,48 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         selectStacks([]);
         haptics.drop();
       };
+      const icon = (ios: string, android: string) => ({ ios, android, web: android }) as SheetTile['icon'];
+      const rollables = pieces.filter(rollable);
+      // Laid out as every other menu is (see CardFocus): what's done most as round buttons, the rest in a list.
+      const tiles: SheetTile[] = [
+        // Dice, coins and spinners: rolled, flipped and spun together.
+        ...(rollables.length ? [{ label: 'Roll', icon: icon('dice', 'casino'), onPress: () => rollDice(rollables.map((p) => p.id)) }] : []),
+        ...(shufflable.length ? [{ label: 'Shuffle', icon: icon('shuffle', 'shuffle'), onPress: () => shuffleStacks(shufflable) }] : []),
+        // Cards, custom art and dice all turn to one angle (not what's locked in place); side by side with Scale.
+        ...(n || turning.length ? [{ label: 'Rotate', icon: icon('rotate.right', 'rotate_right'), onPress: () => openRotate(chosen, turning.map((p) => p.id)) }] : []),
+        // (Not what's locked in place.)
+        { label: 'Scale', icon: icon('arrow.up.left.and.arrow.down.right', 'open_in_full'), onPress: () => openScale(chosen, pieces.filter((p) => !p.locked).map((p) => p.id)) },
+        ...(pieces.length ? [{ label: 'Color', icon: icon('paintpalette', 'palette'), onPress: () => setTimeout(() => setMenu({ kind: 'pieceColor' }), 250) }] : []),
+        { label: 'Copy', icon: icon('doc.on.doc', 'content_copy'), onPress: () => copyThese(chosen, pieces.map((p) => p.id)) },
+      ];
+      const rows: FocusRow[] = [
+        ...(dice.length
+          ? [{ kind: 'action' as const, label: dice.length === 1 ? 'Change the die' : 'Change the dice', more: true, onPress: () => setTimeout(() => setMenu({ kind: 'dieKind' }), 250) }]
+          : []),
+        ...(pieces.some((p) => p.kind === 'meeple')
+          ? [{ kind: 'action' as const, label: 'Change the shape', more: true, onPress: () => setTimeout(() => setMenu({ kind: 'pieceShape' }), 250) }]
+          : []),
+        // All of them one way: on if every one rolls in place.
+        ...(dice.length
+          ? [
+              {
+                kind: 'toggle' as const,
+                label: 'Roll in place',
+                value: dice.every((d) => d.rollInPlace),
+                onChange: (on: boolean) => commit(dice.reduce((t, d) => setPiece(t, d.id, { rollInPlace: on || undefined }), table)),
+              },
+            ]
+          : []),
+        ...(n
+          ? [{ kind: 'toggle' as const, label: 'Lock', value: allLocked, onChange: (on: boolean) => commit(chosen.reduce((t, id) => setStack(t, id, { locked: on }), table)) }]
+          : []),
+        { kind: 'action', label: total === 1 ? 'Take off the table' : `Take all ${total} off the table`, destructive: true, onPress: takeAllOff },
+      ];
       return {
         title: total === 1 ? 'Selected' : `${total} selected`,
-        tiles: [],
-        actions: [
-          ...(dice.length
-            ? [
-                { label: dice.length === 1 ? 'Roll it' : `Roll all ${dice.length} dice`, onPress: () => rollDice(dice.map((d) => d.id)) },
-                { label: dice.length === 1 ? 'Change the die…' : 'Change the dice…', onPress: () => setTimeout(() => setMenu({ kind: 'dieKind' }), 250) },
-                {
-                  // All of them one way: rolling in place if any rolls across.
-                  label: dice.every((d) => d.rollInPlace) ? 'Roll across the table' : 'Roll in place',
-                  onPress: () => {
-                    const inPlace = !dice.every((d) => d.rollInPlace);
-                    commit(dice.reduce((t, d) => setPiece(t, d.id, { rollInPlace: inPlace || undefined }), table));
-                  },
-                },
-              ]
-            : []),
-          // Coins and spinners (alone, or with dice): one to flip and spin them all, dice and all.
-          ...(pieces.some((p) => p.kind === 'coin' || p.kind === 'spinner')
-            ? [{ label: dice.length ? 'Roll, flip and spin them all' : 'Flip and spin them all', onPress: () => rollDice(pieces.filter(rollable).map((p) => p.id)) }]
-            : []),
-          ...(pieces.some((p) => p.kind === 'meeple') ? [{ label: 'Change the shape…', onPress: () => setTimeout(() => setMenu({ kind: 'pieceShape' }), 250) }] : []),
-          ...(pieces.length ? [{ label: 'Color…', onPress: () => setTimeout(() => setMenu({ kind: 'pieceColor' }), 250) }] : []),
-          ...(shufflable.length ? [{ label: shufflable.length === 1 ? 'Shuffle' : `Shuffle all ${shufflable.length}`, onPress: () => shuffleStacks(shufflable) }] : []),
-          // Cards, custom art and dice all turn to one angle (not what's locked in place).
-          ...(n || turning.length ? [{ label: 'Rotate…', onPress: () => openRotate(chosen, turning.map((p) => p.id)) }] : []),
-          ...(n
-            ? [
-                {
-                  label: allLocked ? 'Unlock' : 'Lock',
-                  onPress: () => commit(chosen.reduce((t, id) => setStack(t, id, { locked: !allLocked }), table)),
-                },
-              ]
-            : []),
-          // (Not what's locked in place.)
-          { label: 'Scale…', onPress: () => openScale(chosen, pieces.filter((p) => !p.locked).map((p) => p.id)) },
-          { label: total === 1 ? 'Copy' : `Copy all ${total}`, onPress: () => copyThese(chosen, pieces.map((p) => p.id)) },
-          { label: total === 1 ? 'Take it off the table' : `Take all ${total} off the table`, destructive: true, onPress: takeAllOff },
-        ],
+        tiles,
+        rows,
+        actions: [],
       };
     }
     if (menu.kind === 'piece') {
@@ -4527,12 +4529,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
 
       {/* A card or stack's menu: the card brought up close, its options under it. */}
       <CardFocus
-        visible={!!sheet && (menu?.kind === 'stack' || menu?.kind === 'hand' || menuIsPiece)}
+        visible={!!sheet && (menu?.kind === 'stack' || menu?.kind === 'hand' || menu?.kind === 'selection' || menuIsPiece)}
         card={sheet && 'header' in sheet ? sheet.header : null}
         spotlight={spotlight}
         onOptionsTop={setOptionsTop}
         // On iPad, a window beside it; a card in the hand's beside where it was tapped.
         near={spotNear ?? (IS_PAD && menu?.kind === 'hand' && menuSpot?.at ? { x: menuSpot.at.x, y: menuSpot.at.y, w: 0, h: 0 } : undefined)}
+        // Several picked out (on iPad): a window above the finger, or (a follow-up) where the last one was.
+        place={IS_PAD && menu?.kind === 'selection' ? { at: menuSpot?.at, from: menuSpot?.from, avoid: menuSpot?.from ? menuTarget : undefined } : undefined}
         onPlace={(rect) => lastWindow.set({ rect })}
         title={sheet?.title}
         tiles={sheet?.tiles ?? []}
@@ -4580,7 +4584,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       <AddCardsModal visible={addingCards} decks={decks} onAdd={addCardsToTable} onClose={() => setAddingCards(false)} />
       {/* The table's menu, and choosing a deck to add. */}
       <ActionSheet
-        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'selection' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'addCards')}
+        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'addCards')}
         title={sheet?.title}
         banner={sheet && 'banner' in sheet ? sheet.banner : undefined}
         tiles={sheet?.tiles}
