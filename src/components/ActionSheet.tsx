@@ -6,6 +6,8 @@ import { Animated, Easing, KeyboardAvoidingView, Modal, PanResponder, Platform, 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { previousTourStep, useTourStep } from '../lib/tour';
+import { placeWindow } from '../lib/windowSpot';
+import type { Point, Rect } from '../lib/windowSpot';
 import { colors } from '../theme';
 import { Text } from './Text';
 import { TourTip } from './TourOverlay';
@@ -57,15 +59,16 @@ interface Props {
    * panel dropped from the top, in the middle, that stays put. Either closes with a tap anywhere else, so has no
    * Cancel (only a `closeLabel` of its own, e.g. Done).
    */
-  place?: { kind: 'window'; at: { x: number; y: number } } | { kind: 'drop' };
+  place?: { kind: 'window'; at?: Point; from?: Rect; avoid?: Rect } | { kind: 'drop' };
+  /** A window says where it is (its corner and size) as it opens and wherever it's let go, for a follow-up to open there. */
+  onPlace?: (rect: Rect) => void;
 }
 
 /** How long the sheet takes to come up, and to go. */
 const IN_MS = 260;
 const OUT_MS = 200;
-/** A window's width, and its gap from the point it's by; the dropped panel's width. */
+/** A window's width; the dropped panel's width. */
 const WINDOW_W = 340;
-const WINDOW_GAP = 16;
 const DROP_W = 440;
 
 /**
@@ -82,18 +85,38 @@ export function ActionSheet(props: Props) {
   const { height: screenHeight, width: screenWidth } = useWindowDimensions();
   const [sheetHeight, setSheetHeight] = useState(screenHeight);
   const [measured, setMeasured] = useState(false);
-  // A window, dragged by its title or its grip: it stays where it's let go (back by its point, each time it opens).
+  // A window, dragged by its title or its grip: it stays where it's let go (back to its place, each time it opens).
   const [pan] = useState(() => new Animated.ValueXY());
-  const [windowTouches] = useState(() =>
-    PanResponder.create({
+  // Where it is, kept outside React state (its drag is made once): its place before it's dragged, how far it has
+  // been, and who to tell where it ends up.
+  const [spotBox] = useState(() => {
+    const box = { x: 0, y: 0, w: 0, h: 0, panX: 0, panY: 0, onPlace: undefined as ((r: Rect) => void) | undefined };
+    return { set: (next: Partial<typeof box>) => Object.assign(box, next), get: () => box };
+  });
+  useEffect(() => {
+    const id = pan.addListener(({ x, y }) => spotBox.set({ panX: x, panY: y }));
+    return () => pan.removeListener(id);
+  }, [pan, spotBox]);
+  const [windowTouches] = useState(() => {
+    const told = () => {
+      const b = spotBox.get();
+      b.onPlace?.({ x: b.x + b.panX, y: b.y + b.panY, w: b.w, h: b.h });
+    };
+    return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => pan.extractOffset(),
       onPanResponderMove: (_, g) => pan.setValue({ x: g.dx, y: g.dy }),
-      onPanResponderRelease: () => pan.flattenOffset(),
-      onPanResponderTerminate: () => pan.flattenOffset(),
-    }),
-  );
+      onPanResponderRelease: () => {
+        pan.flattenOffset();
+        told();
+      },
+      onPanResponderTerminate: () => {
+        pan.flattenOffset();
+        told();
+      },
+    });
+  });
   // What the sheet shows, kept from when it was last open: while it slides away, whatever it was showing may
   // already be gone (the card just moved, the group just deleted), and it should leave as it was.
   const shown = useMemo(() => {
@@ -102,7 +125,7 @@ export function ActionSheet(props: Props) {
   }, []);
   if (visible) shown.keep(props);
   const showing = visible ? props : (shown.get() ?? props);
-  const { title, header, banner, tiles, actions, overlay, place } = showing;
+  const { title, header, banner, tiles, actions, overlay, place, onPlace } = showing;
   // A window or a dropped panel closes with a tap elsewhere: no Cancel, only a close button of its own (Done).
   const closeLabel = showing.closeLabel ?? (place ? null : 'Cancel');
   // The modal stays up after `visible` goes false until the sheet has slid away.
@@ -137,6 +160,23 @@ export function ActionSheet(props: Props) {
     pan.setOffset({ x: 0, y: 0 });
     pan.setValue({ x: 0, y: 0 });
   }, [visible, pan]);
+
+  // Where a window goes: directly above the finger that opened it, or (a follow-up) where the last window was, off
+  // what it's for. Told to whoever's asked, whenever it settles (and, by its drag, wherever it's let go).
+  const winW = Math.min(WINDOW_W, screenWidth - 24);
+  const winH = measured ? sheetHeight : 0;
+  const winSpot =
+    place?.kind === 'window'
+      ? placeWindow({ screen: { w: screenWidth, h: screenHeight }, insets, size: { w: winW, h: winH }, at: place.at, from: place.from, avoid: place.avoid })
+      : null;
+  const winX = winSpot?.x;
+  const winY = winSpot?.y;
+  useEffect(() => {
+    if (!visible || !measured || winX === undefined || winY === undefined) return;
+    onPlace?.({ x: winX, y: winY, w: winW, h: winH });
+    // Only when it settles somewhere, not whenever the caller's function is new.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, measured, winX, winY, winW, winH]);
 
   useEffect(() => {
     if (visible && !measured) return;
@@ -255,18 +295,10 @@ export function ActionSheet(props: Props) {
   );
   const room = screenHeight - insets.top - insets.bottom - 16;
 
-  if (place?.kind === 'window') {
-    // By its point: to the right of it if there's room (else the left, else over it), a little above it, on screen.
-    const w = Math.min(WINDOW_W, screenWidth - 24);
-    const h = measured ? sheetHeight : 0;
-    const { at } = place;
-    const x =
-      at.x + WINDOW_GAP + w <= screenWidth - 12
-        ? at.x + WINDOW_GAP
-        : at.x - WINDOW_GAP - w >= 12
-          ? at.x - WINDOW_GAP - w
-          : Math.max(12, Math.min(screenWidth - w - 12, at.x - w / 2));
-    const y = Math.max(insets.top + 8, Math.min(screenHeight - insets.bottom - h - 8, at.y - 40));
+  if (place?.kind === 'window' && winSpot) {
+    const { x, y } = winSpot;
+    const w = winW;
+    spotBox.set({ x, y, w, h: winH, onPlace });
     return modal(
       <>
         {/* Nothing darkened: a tap anywhere else closes it. */}

@@ -155,6 +155,7 @@ import { DealPanel } from './DealPanel';
 import { Riffle } from './Riffle';
 import { StackSearchPanel } from './StackSearchPanel';
 import { TablePieceView } from './TablePieceView';
+import { NumberSlider } from './NumberSlider';
 import { ScaleControl } from './ScaleControl';
 import { RotationControl } from './RotationControl';
 import { CountStepper } from './CountStepper';
@@ -166,6 +167,8 @@ import { TABLE_THEMES, THEME_KEYS, themeOf } from '../lib/tableThemes';
 import { imageUri, importImage, isSeeThrough, loadSettings, saveSettings } from '../lib/storage';
 import { canCutOut, cutOut } from '../lib/subjectLift';
 import { isExampleTable, useExamples } from '../lib/examples';
+import { unionOf } from '../lib/windowSpot';
+import type { Point, Rect } from '../lib/windowSpot';
 import { Text } from './Text';
 
 /** Steps of undo kept. */
@@ -211,6 +214,10 @@ const SPOT_MS = 280;
  * finger's tap on empty table turns over what's carried (no reaching for the flip button on a big screen).
  */
 const IS_PAD = Platform.OS === 'ios' && Platform.isPad;
+/** How long after a menu window closes the menu that follows is counted its follow-up (the pause before it opens, and some). */
+const FOLLOW_MS = 700;
+/** The time now (read in events, never as a screen is drawn). */
+const timeNow = () => Date.now();
 const SPOT_FILL = 0.7;
 const SPOT_MAX_ZOOM = 2.5;
 /** Hand cards sliding to new places (one gone, one coming in, the gap moving). */
@@ -311,7 +318,9 @@ type Menu =
   /** Scaling stacks and pieces (changing as the slider moves). */
   | { kind: 'scale'; stacks: string[]; pieces: string[] }
   /** Turning stacks, custom art and dice (changing as the slider moves). */
-  | { kind: 'rotate'; stacks: string[]; pieces: string[] };
+  | { kind: 'rotate'; stacks: string[]; pieces: string[] }
+  /** Setting the face a die shows (changing as the slider moves). */
+  | { kind: 'dieValue'; id: string };
 
 /** Counters and dice being dragged: the one under the finger, all of them, and how far they've gone (table units). */
 interface PieceDrag {
@@ -413,24 +422,43 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const trayStyle = useAnimatedStyle(() => ({ transform: [{ translateY: foldY.value }] }));
   const [held, setHeld] = useState<Held | null>(null);
   const [target, setTarget] = useState<string | null>(null);
-  const [menu, setMenu] = useState<Menu | null>(null);
+  const [menu, setMenuState] = useState<Menu | null>(null);
   /**
    * Where the last finger came down on screen (on the table, its tools, or in a menu's window), kept outside React
-   * state as it changes with every touch: on iPad, a menu opens there (see menuAt).
+   * state as it changes with every touch: on iPad, a menu opens above it (see menuSpot).
    */
   const [lastTouch] = useState(() => {
     const box = { x: 0, y: 0, known: false };
     return { set: (x: number, y: number) => Object.assign(box, { x, y, known: true }), get: () => box };
   });
-  /** Where an iPad's menu window opens: where the finger was as it was opened (a follow-on one, where it was tapped). */
-  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * The last menu window (on iPad): where it is, kept as it opens and is dragged, and whether the next menu is its
+   * follow-up (opened from it: while it's open or just closed), which opens in its place.
+   */
+  const [lastWindow] = useState(() => {
+    const box = { rect: null as Rect | null, closedAt: 0, open: false, follow: false };
+    return { set: (next: Partial<typeof box>) => Object.assign(box, next), get: () => box };
+  });
+  /**
+   * Opens a menu, or closes it (null): a menu opened as another closes (or soon after) follows it, and opens
+   * where it was. One function for good, so what holds it (the top bar's button) is never out of date.
+   */
+  const [setMenu] = useState(() => (next: Menu | null) => {
+    const was = lastWindow.get();
+    if (next === null) lastWindow.set({ closedAt: timeNow(), open: false });
+    else lastWindow.set({ follow: was.open || timeNow() - was.closedAt < FOLLOW_MS, open: true });
+    setMenuState(next);
+  });
+  /** Where an iPad's menu window opens: above the finger that opened it, or (a follow-up) where the last window was. */
+  const [menuSpot, setMenuSpot] = useState<{ at?: Point; from?: Rect } | null>(null);
   const [menuWas, setMenuWas] = useState<Menu | null>(null);
   // As a menu opens, or another takes its place: set during render, React's way for state that follows state.
   if (menu !== menuWas) {
     setMenuWas(menu);
     if (menu && menu.kind !== menuWas?.kind) {
       const t = lastTouch.get();
-      setMenuAt(t.known ? { x: t.x, y: t.y } : null);
+      const last = lastWindow.get();
+      setMenuSpot(last.follow && last.rect ? { from: last.rect } : t.known ? { at: { x: t.x, y: t.y } } : null);
     }
   }
   /** Dealing from this stack: its menu shows how many to deal and to whom, instead of its options. */
@@ -574,6 +602,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const previewRotate = (deg: number) => {
     if (!scaleBase || menu?.kind !== 'rotate') return;
     updateSandbox(rotateItems(scaleBase, menu.stacks, menu.pieces, deg));
+  };
+  /** A die's face set as the number slider moves: one undo, as scaling is. */
+  const openDieValue = (id: string) => {
+    if (!table) return;
+    setScaleBase(table);
+    setTimeout(() => setMenu({ kind: 'dieValue', id }), 300);
+  };
+  const previewDieValue = (value: number) => {
+    if (!scaleBase || menu?.kind !== 'dieValue') return;
+    updateSandbox(setPiece(scaleBase, menu.id, { value }));
   };
   const previewScale = (k: number) => {
     if (!scaleBase || menu?.kind !== 'scale') return;
@@ -3072,24 +3110,63 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       { scale: Math.hypot(camA.value, camB.value) },
     ],
   }));
-  /** Where it is on screen (the box round it, turned as it's seen), for the iPad's options to float beside. */
-  const spotNear = (() => {
-    if (!IS_PAD || !spot) return undefined;
+  /** The box round something on the table, turned as it's seen on screen, for the iPad's options to float beside (or keep off). */
+  const screenBox = (it: { x: number; y: number; w: number; h: number; angle: number }): Rect => {
     const cam = readCamera();
-    const r = (spot.angle * Math.PI) / 180;
+    const r = (it.angle * Math.PI) / 180;
     const pts = [
       [-1, -1],
       [1, -1],
       [1, 1],
       [-1, 1],
     ].map(([sx, sy]) => {
-      const wx = spot.x + (sx * spot.w * Math.cos(r)) / 2 - (sy * spot.h * Math.sin(r)) / 2;
-      const wy = spot.y + (sx * spot.w * Math.sin(r)) / 2 + (sy * spot.h * Math.cos(r)) / 2;
+      const wx = it.x + (sx * it.w * Math.cos(r)) / 2 - (sy * it.h * Math.sin(r)) / 2;
+      const wy = it.y + (sx * it.w * Math.sin(r)) / 2 + (sy * it.h * Math.cos(r)) / 2;
       return { x: cam.a * wx - cam.b * wy + cam.tx, y: cam.b * wx + cam.a * wy + cam.ty };
     });
     const xs = pts.map((q) => q.x);
     const ys = pts.map((q) => q.y);
     return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+  };
+  /** Where it is on screen (the box round it, turned as it's seen), for the iPad's options to float beside. */
+  const spotNear = IS_PAD && spot ? screenBox(spot) : undefined;
+  /**
+   * What the menu open is for, on screen (iPad): the thing a follow-up window keeps clear of, if it can (a die's
+   * color, a stack's scale): all the things it will change.
+   */
+  const menuTarget = (() => {
+    if (!IS_PAD || !table || !menu) return undefined;
+    let stackIds: string[] = [];
+    let pieceIds: string[] = [];
+    if (menu.kind === 'dieKind' || menu.kind === 'pieceColor' || menu.kind === 'pieceShape') {
+      if (menu.id) pieceIds = [menu.id];
+      else {
+        stackIds = chosen;
+        pieceIds = pickedPieces;
+      }
+    } else if (menu.kind === 'dieValue') pieceIds = [menu.id];
+    else if (menu.kind === 'scale' || menu.kind === 'rotate') {
+      stackIds = menu.stacks;
+      pieceIds = menu.pieces;
+    } else if (menu.kind === 'selection') {
+      stackIds = chosen;
+      pieceIds = pickedPieces;
+    }
+    const boxes = [
+      ...table.stacks
+        .filter((s) => stackIds.includes(s.id))
+        .map((s) => {
+          const { w, h } = cardSizeOf(s.cards[s.cards.length - 1], size);
+          return screenBox({ x: s.x, y: s.y, w, h, angle: s.angle });
+        }),
+      ...(table.pieces ?? [])
+        .filter((p) => pieceIds.includes(p.id))
+        .map((p) => {
+          const { w, h } = pieceSizeOf(p);
+          return screenBox({ x: p.x, y: p.y, w, h, angle: turnsFreely(p) ? (p.angle ?? 0) : 0 });
+        }),
+    ];
+    return unionOf(boxes);
   })();
   const spotlight = spot && !IS_PAD ? (
     <Animated.View style={[styles.world, spotStyle]} pointerEvents="none">
@@ -3393,17 +3470,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             `d${piece.sides ?? 6}`,
             [
               tile('Roll', 'dice', 'casino', () => rollDice([id])),
-              // Set to a face, as if put down that way up.
-              tile(
-                'Number',
-                'number',
-                'pin',
-                askNum(`Set the number (1 to ${piece.sides ?? 6})`, String(piece.value), (text) => {
-                  const v = parseInt(text.replace(/\D/g, ''), 10);
-                  if (v >= 1 && v <= (piece.sides ?? 6)) commit(setPiece(table, id, { value: v }));
-                  else haptics.warn();
-                }),
-              ),
+              // Set to a face, as if put down that way up: a slider.
+              tile('Number', 'number', 'pin', () => openDieValue(id)),
               tile('Kind', 'die.face.6', 'casino', next({ kind: 'dieKind', id })),
               colorTile,
               rotateTile,
@@ -3679,6 +3747,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         actions: [],
       };
     }
+    if (menu.kind === 'dieValue') {
+      const die = table.pieces?.find((p) => p.id === menu.id && p.kind === 'die');
+      if (!die) return null;
+      return {
+        title: `d${die.sides ?? 6}`,
+        tiles: [],
+        banner: <NumberSlider min={1} max={die.sides ?? 6} value={die.value} onChange={previewDieValue} />,
+        actions: [],
+      };
+    }
     if (menu.kind === 'rotate') {
       const n = menu.stacks.length + menu.pieces.length;
       // Where the first of them is turned now.
@@ -3806,7 +3884,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       openMenu: () => setMenu({ kind: 'table' }),
       hidden: !!searching,
     });
-  }, [history.length, future.length, carrying, onControls, table, latestUndo, latestRedo, searching]);
+  }, [history.length, future.length, carrying, onControls, table, latestUndo, latestRedo, searching, setMenu]);
 
   if (!table) {
     return (
@@ -4454,7 +4532,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         spotlight={spotlight}
         onOptionsTop={setOptionsTop}
         // On iPad, a window beside it; a card in the hand's beside where it was tapped.
-        near={spotNear ?? (IS_PAD && menu?.kind === 'hand' && menuAt ? { x: menuAt.x, y: menuAt.y, w: 0, h: 0 } : undefined)}
+        near={spotNear ?? (IS_PAD && menu?.kind === 'hand' && menuSpot?.at ? { x: menuSpot.at.x, y: menuSpot.at.y, w: 0, h: 0 } : undefined)}
+        onPlace={(rect) => lastWindow.set({ rect })}
         title={sheet?.title}
         tiles={sheet?.tiles ?? []}
         rows={sheet && 'rows' in sheet ? sheet.rows : undefined}
@@ -4501,22 +4580,23 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       <AddCardsModal visible={addingCards} decks={decks} onAdd={addCardsToTable} onClose={() => setAddingCards(false)} />
       {/* The table's menu, and choosing a deck to add. */}
       <ActionSheet
-        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'selection' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'addCards')}
+        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'selection' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'addCards')}
         title={sheet?.title}
         banner={sheet && 'banner' in sheet ? sheet.banner : undefined}
         tiles={sheet?.tiles}
         actions={sheet?.actions ?? []}
         // Scaling is kept as it's made: put away, it's done (and one undo).
-        closeLabel={menu?.kind === 'scale' || menu?.kind === 'rotate' ? 'Done' : undefined}
+        closeLabel={menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' ? 'Done' : undefined}
         // On iPad: the table's settings (and its theme, chosen from them) dropped from the top; every other menu a
         // window where the finger was.
         place={
           IS_PAD
             ? menu?.kind === 'table' || menu?.kind === 'color'
               ? { kind: 'drop' }
-              : { kind: 'window', at: menuAt ?? { x: screenW / 2 - 170, y: area.h / 3 } }
+              : { kind: 'window', at: menuSpot?.at, from: menuSpot?.from, avoid: menuSpot?.from ? menuTarget : undefined }
             : undefined
         }
+        onPlace={(rect) => lastWindow.set({ rect })}
         onClose={() => {
           finishScale();
           setMenu(null);

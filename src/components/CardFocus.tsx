@@ -54,6 +54,8 @@ interface Props {
    * nothing darkened, and the panel can be dragged elsewhere (by its title, or the grip in its corner).
    */
   near?: { x: number; y: number; w: number; h: number };
+  /** The compact panel says where it is (its corner and size) as it opens and wherever it's let go. */
+  onPlace?: (rect: { x: number; y: number; w: number; h: number }) => void;
 }
 
 /**
@@ -122,16 +124,45 @@ export function CardFocus(props: Props) {
     }),
   );
 
-  // The compact panel, dragged by its title or its corner grip: it stays where it's let go.
-  const [panelTouches] = useState(() =>
-    PanResponder.create({
+  // Where the compact panel is (its place beside the thing, and how far it has been dragged), kept outside React
+  // state: its drag is made once.
+  const [spotBox] = useState(() => {
+    const box = { x: 0, y: 0, w: 0, h: 0, panX: 0, panY: 0, onPlace: undefined as Props['onPlace'] };
+    return { set: (next: Partial<typeof box>) => Object.assign(box, next), get: () => box };
+  });
+  useEffect(() => {
+    const id = anim.pan.addListener(({ x, y }) => spotBox.set({ panX: x, panY: y }));
+    return () => anim.pan.removeListener(id);
+  }, [anim, spotBox]);
+  // The compact panel, dragged by its title or its corner grip: it stays where it's let go (and says where).
+  const [panelTouches] = useState(() => {
+    const told = () => {
+      const b = spotBox.get();
+      b.onPlace?.({ x: b.x + b.panX, y: b.y + b.panY, w: b.w, h: b.h });
+    };
+    return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderGrant: () => anim.pan.extractOffset(),
       onPanResponderMove: (_, g) => anim.pan.setValue({ x: g.dx, y: g.dy }),
-      onPanResponderRelease: () => anim.pan.flattenOffset(),
-      onPanResponderTerminate: () => anim.pan.flattenOffset(),
-    }),
-  );
+      onPanResponderRelease: () => {
+        anim.pan.flattenOffset();
+        told();
+      },
+      onPanResponderTerminate: () => {
+        anim.pan.flattenOffset();
+        told();
+      },
+    });
+  });
+  // Told where it settles, once it's measured and placed.
+  const settledX = near && panelH !== null ? Math.round(compactSpot(near, panelH, screenW, height, insets).x) : null;
+  const settledY = near && panelH !== null ? Math.round(compactSpot(near, panelH, screenW, height, insets).y) : null;
+  useEffect(() => {
+    if (!visible || settledX === null || settledY === null || panelH === null) return;
+    props.onPlace?.({ x: settledX, y: settledY, w: COMPACT_W, h: panelH });
+    // Only when it settles somewhere, not whenever the caller's function is new.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, settledX, settledY, panelH]);
 
   const choose = (t: SheetTile) => {
     if (!t.keepsOpen) onClose();
@@ -212,13 +243,9 @@ export function CardFocus(props: Props) {
   );
 
   if (near) {
-    // Beside it, on the right if there's room (else the left, else over it), level with its middle, on screen.
-    const H = panelH ?? 0;
-    const right = near.x + near.w + COMPACT_GAP;
-    const left = near.x - COMPACT_GAP - COMPACT_W;
-    const x =
-      right + COMPACT_W <= screenW - 12 ? right : left >= 12 ? left : Math.max(12, Math.min(screenW - COMPACT_W - 12, near.x + near.w / 2 - COMPACT_W / 2));
-    const y = Math.max(insets.top + 8, Math.min(height - insets.bottom - H - 8, near.y + near.h / 2 - H / 2));
+    // Beside it (see compactSpot).
+    const { x, y } = compactSpot(near, panelH ?? 0, screenW, height, insets);
+    spotBox.set({ x, y, w: COMPACT_W, h: panelH ?? 0, onPlace: props.onPlace });
     return (
       <Modal visible={mounted} transparent animationType="none" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={onClose}>
         {/* Nothing darkened: a tap anywhere else closes it. */}
@@ -298,6 +325,25 @@ const ICON = 52;
 const COMPACT_W = 320;
 const COMPACT_GAP = 16;
 const ROW_H = 44;
+
+/**
+ * Where the compact panel's top left goes: beside the thing, on the right if there's room (else the left, else
+ * over it), level with its middle, on screen.
+ */
+function compactSpot(
+  near: { x: number; y: number; w: number; h: number },
+  panelH: number,
+  screenW: number,
+  height: number,
+  insets: { top: number; bottom: number },
+): { x: number; y: number } {
+  const right = near.x + near.w + COMPACT_GAP;
+  const left = near.x - COMPACT_GAP - COMPACT_W;
+  const x =
+    right + COMPACT_W <= screenW - 12 ? right : left >= 12 ? left : Math.max(12, Math.min(screenW - COMPACT_W - 12, near.x + near.w / 2 - COMPACT_W / 2));
+  const y = Math.max(insets.top + 8, Math.min(height - insets.bottom - panelH - 8, near.y + near.h / 2 - panelH / 2));
+  return { x, y };
+}
 
 const styles = StyleSheet.create({
   backdrop: { backgroundColor: 'rgba(0,0,0,0.3)' },
