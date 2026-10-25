@@ -4,10 +4,43 @@ import UIKit
 import Vision
 
 /// Cuts the subject out of a picture, as Photos does when a subject is lifted (Vision's foreground masks, iOS 17
-/// and later): for cards of odd shapes photographed on a table, and for custom art.
+/// and later): for cards of odd shapes photographed on a table, and for custom art. And finds a card in a photo
+/// (Vision's rectangle finder, as Apple's own document scanner uses), for the card camera to straighten it.
 public class SubjectLiftModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SubjectLift")
+
+    /// The card in a photo: its corners (in the photo's pixels, upright, clockwise from the top left) and how sure
+    /// the finder is of it. Nil if there's none to be found.
+    AsyncFunction("findCard") { (uri: String) -> [String: Any]? in
+      guard let url = URL(string: uri),
+            let image = CIImage(contentsOf: url, options: [.applyOrientationProperty: true])
+      else { return nil }
+      let request = VNDetectRectanglesRequest()
+      // Any card shape (from a long thin one to a square), filling at least a little of the photo, its corners
+      // a little off square (a card shot at an angle).
+      request.minimumAspectRatio = 0.2
+      request.maximumAspectRatio = 1.0
+      request.minimumSize = 0.15
+      request.quadratureTolerance = 25
+      request.minimumConfidence = 0.5
+      request.maximumObservations = 1
+      let handler = VNImageRequestHandler(ciImage: image)
+      do {
+        try handler.perform([request])
+      } catch {
+        return nil
+      }
+      guard let found = request.results?.first else { return nil }
+      let width = Double(image.extent.width)
+      let height = Double(image.extent.height)
+      // Vision's points are shares of the picture from its bottom left; these are pixels from its top left.
+      let point = { (p: CGPoint) -> [String: Double] in ["x": Double(p.x) * width, "y": (1 - Double(p.y)) * height] }
+      return [
+        "corners": [point(found.topLeft), point(found.topRight), point(found.bottomRight), point(found.bottomLeft)],
+        "confidence": Double(found.confidence),
+      ]
+    }
 
     /// Whether this iPhone can do it (iOS 17 and later).
     Function("isAvailable") { () -> Bool in

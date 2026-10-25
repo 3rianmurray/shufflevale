@@ -66,8 +66,8 @@ test("files that aren't deck files, or are damaged or too new, are turned away w
 });
 
 test('deck files are named after the deck, safely', () => {
-  assert.equal(deckFileName([{ name: 'Monsters: Vol/2' }]), 'Monsters Vol 2.shufflevale.json');
-  assert.equal(deckFileName([{ name: 'A' }, { name: 'B' }]), 'Shufflevale decks.shufflevale.json');
+  assert.equal(deckFileName([{ name: 'Monsters: Vol/2' }]), 'Monsters Vol 2.shufflevale');
+  assert.equal(deckFileName([{ name: 'A' }, { name: 'B' }]), 'Shufflevale decks.shufflevale');
   assert.equal(extOf('decks/x/1.PNG'), 'png');
   assert.equal(extOf('decks/x/noext'), 'jpg');
 });
@@ -130,6 +130,73 @@ test('a table travels with its decks: packed, read back, and pointed at the deck
   assert.equal(t.gridStep, 60);
   // Fresh ids for its stacks and cards.
   assert.ok(t.stacks[0].id.startsWith('n') && t.stacks[0].cards.every((c) => c.iid.startsWith('n')));
+});
+
+test('a table’s components, custom art and card sizes come with it', () => {
+  const d = deck();
+  const table = {
+    id: 't1', name: 'Zombicide', createdAt: 0, updatedAt: 0, hideHands: true,
+    stacks: [{ id: 's1', x: 100, y: 200, angle: 0, cards: [{ iid: 'a', deckId: 'd1', cardId: 'c1', faceUp: true, scale: 1.5 }] }],
+    hands: [[], [], [], []],
+    handNames: ['Hand 1', 'Hand 2', 'Hand 3', 'Hand 4'],
+    pieces: [
+      { id: 'p1', kind: 'die' as const, x: 10, y: 20, value: 17, sides: 20, angle: 30, color: '#e24b4a' },
+      { id: 'p2', kind: 'art' as const, x: 300, y: 300, value: 0, image: 'decks/tokens/board.png', w: 400, h: 300, over: 's1', scale: 2 },
+      {
+        id: 'p3', kind: 'bag' as const, x: 0, y: 0, value: 0,
+        items: [{ card: { iid: 'b', deckId: 'd1', cardId: 'c2', faceUp: false } }, { piece: { id: 'p4', kind: 'token' as const, x: 0, y: 0, value: 2, image: 'decks/tokens/t.jpg' } }],
+      },
+      { id: 'p5', kind: 'zone' as const, x: 0, y: 0, value: 0, w: 500, h: 400, look: 'dashed' as const, label: 'Discard' },
+    ],
+  };
+  const reads: string[] = [];
+  const text = JSON.stringify(packDecks([d], (p) => (reads.push(p), `data-of-${p}`), [table]));
+  // The pieces' pictures go in the file, and the paths don't.
+  assert.ok(reads.includes('decks/tokens/board.png') && reads.includes('decks/tokens/t.jpg'));
+  assert.match(JSON.parse(text).tables[0].pieces[1].image, /^i\d+$/);
+  const read = unpackFile(text);
+  assert.equal(Object.keys(read.images).length, 2);
+  const map = new Map([['d1', { id: 'D', cards: new Map([['c1', 'X'], ['c2', 'Y'], ['c3', 'Z']]) }]]);
+  let n = 0;
+  const saved: string[] = [];
+  const t = remapTable(read.tables[0], map, () => `n${n++}`, (key) => (saved.push(read.images[key].data), `decks/tokens/new-${key}`));
+  assert.equal(t.hideHands, true);
+  assert.equal(t.stacks[0].cards[0].scale, 1.5);
+  const [die, art, bag, zone] = t.pieces!;
+  assert.deepEqual([die.kind, die.value, die.sides, die.angle, die.color], ['die', 17, 20, 30, '#e24b4a']);
+  // Custom art keeps its picture (saved again), its size and scale, and lies over the same stack (by its new id).
+  assert.equal(art.image, `decks/tokens/new-${Object.keys(read.images)[0]}`);
+  assert.deepEqual([art.w, art.h, art.scale, art.over], [400, 300, 2, t.stacks[0].id]);
+  assert.deepEqual(saved.sort(), ['data-of-decks/tokens/board.png', 'data-of-decks/tokens/t.jpg']);
+  // A bag keeps its card (pointed at the deck as added) and its token.
+  assert.equal(bag.items![0].card!.cardId, 'Y');
+  assert.equal(bag.items![1].piece!.kind, 'token');
+  assert.ok(bag.items![1].piece!.image);
+  assert.deepEqual([zone.look, zone.label, zone.w], ['dashed', 'Discard', 500]);
+  // Fresh ids for every piece.
+  assert.ok(t.pieces!.every((p) => p.id.startsWith('n')));
+});
+
+test('a table’s pieces are checked: unknown kinds, nonsense values and missing pictures go', () => {
+  const d = deck();
+  const raw = JSON.parse(JSON.stringify(packDecks([d], (p) => `data-of-${p}`, [{ id: 't', name: 'T', createdAt: 0, updatedAt: 0, handNames: [], hands: [[], [], [], []], stacks: [] }])));
+  raw.tables[0].pieces = [
+    { kind: 'dragon', x: 0, y: 0, value: 1 },
+    { kind: 'die', x: 0, y: 0, value: 99, sides: 7 },
+    { kind: 'token', x: 'left', y: 0, value: 1 },
+    { kind: 'token', x: 0, y: 0, value: 1, image: 'nope', scale: 1e9, color: 'javascript:alert(1)' },
+  ];
+  const [t] = unpackFile(JSON.stringify(raw)).tables;
+  assert.equal(t.pieces!.length, 2);
+  assert.deepEqual([t.pieces![0].sides, t.pieces![0].value], [6, 6]);
+  assert.deepEqual([t.pieces![1].image, t.pieces![1].scale, t.pieces![1].color], [undefined, 4, undefined]);
+});
+
+test('a table of just components, with no decks, still opens', () => {
+  const table = { id: 't', name: 'Dice', createdAt: 0, updatedAt: 0, handNames: [], hands: [[], [], [], []], stacks: [], pieces: [{ id: 'p', kind: 'die' as const, x: 0, y: 0, value: 3 }] };
+  const read = unpackFile(JSON.stringify(packDecks([], (p) => p, [table])));
+  assert.equal(read.decks.length, 0);
+  assert.equal(read.tables[0].pieces!.length, 1);
 });
 
 test('a table’s cards from decks not in the file are left out; files from before tables still open', () => {

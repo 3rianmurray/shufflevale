@@ -13,12 +13,11 @@ import { SwipeRow } from '../components/SwipeRow';
 import type { SwipeSide } from '../components/SwipeRow';
 import { useDecks } from '../lib/DecksContext';
 import { askName } from '../lib/names';
-import { DeckFileError, remapTable } from '../lib/deckFile';
+import { DeckFileError } from '../lib/deckFile';
 import { everythingFile, pickDeckFile, tableFile } from '../lib/deckExport';
 import type { FileContents } from '../lib/deckExport';
-import type { DeckIdMap } from '../lib/deckFile';
 import { backUpWithNotice, shareWithNotice } from '../lib/fileActions';
-import { newId } from '../lib/id';
+import { useFileImport } from '../lib/useFileImport';
 import { deleteDeckWarning } from '../lib/deckInUse';
 import { cardRoom, cardsUsed, FREE_CARD_LIMIT } from '../lib/limits';
 import { exampleAllowances, isPlayground, usePro } from '../lib/pro';
@@ -26,7 +25,7 @@ import * as haptics from '../lib/haptics';
 import { buildRows, dropDeck, dropGroup } from '../lib/groups';
 import type { Row } from '../lib/groups';
 import { useExamples } from '../lib/examples';
-import { createSandboxWith, deleteSandbox, duplicateSandbox, moveSandbox, updateSandbox, useSandboxes } from '../lib/sandboxStore';
+import { deleteSandbox, duplicateSandbox, moveSandbox, updateSandbox, useSandboxes } from '../lib/sandboxStore';
 import { loadSettings, saveSettings } from '../lib/storage';
 import { offerTipAfterUses, resetTips, setTipsOn, tipsOn } from '../lib/tips';
 import { startTour, tourEvent, useTourStep } from '../lib/tour';
@@ -47,7 +46,6 @@ export default function HomeScreen() {
     createDeck,
     deleteDeck,
     resetDeck,
-    importDecks,
     duplicateDeck,
     sessions,
     createSession,
@@ -64,6 +62,7 @@ export default function HomeScreen() {
   } = useDecks();
   const insets = useSafeAreaInsets();
   const sandboxes = useSandboxes();
+  const addFile = useFileImport();
 
   // The walkthrough starts by itself the first time the app opens; after that, from the help button.
   useEffect(() => {
@@ -199,25 +198,7 @@ export default function HomeScreen() {
   const importFromFile = async () => {
     try {
       const found = await pickDeckFile();
-      if (!found) return;
-      // A table's file: its decks kept together, in a group named for it (e.g. “Zombicide Decks”).
-      const groupName = found.tables.length === 1 && found.decks.length ? `${found.tables[0].name} Decks` : undefined;
-      const added = importDecks(found.decks, groupName);
-      // Where each of the file's decks (and its cards) went, for its tables' cards to point at.
-      const map: DeckIdMap = new Map();
-      found.decks.forEach((d, i) => {
-        if (!d.fileId) return;
-        const cards = new Map<string, string>();
-        d.cards.forEach((c, j) => {
-          if (c.fileId && added[i]?.cards[j]) cards.set(c.fileId, added[i].cards[j].id);
-        });
-        map.set(d.fileId, { id: added[i].id, cards });
-      });
-      for (const t of found.tables) createSandboxWith(t.name, (empty) => ({ ...empty, ...remapTable(t, map, newId) }));
-      haptics.success();
-      const decksText = added.length === 1 ? `“${added[0].name}”` : `${added.length} decks`;
-      const tablesText = found.tables.length ? ` and ${found.tables.length === 1 ? `the table “${found.tables[0].name}”` : `${found.tables.length} tables`}` : '';
-      Alert.alert(`Added ${decksText}${tablesText}`, groupName ? `Its decks are in the group “${groupName}”, at the top of your decks.` : 'New decks are at the top of your decks.');
+      if (found) addFile(found);
     } catch (e) {
       haptics.warn();
       Alert.alert('Couldn’t open that file', e instanceof DeckFileError ? e.message : 'Something went wrong reading it.');

@@ -9,6 +9,7 @@ import { ActionSheet } from '../../components/ActionSheet';
 import { Button } from '../../components/Button';
 import { CardSizePicker } from '../../components/CardSizePicker';
 import { CardView } from '../../components/CardView';
+import { CardCamera } from '../../components/CardCamera';
 import { CardScanModal } from '../../components/CardScanModal';
 import { CropModal } from '../../components/CropModal';
 import { ImportReview } from '../../components/ImportReview';
@@ -30,6 +31,8 @@ import { keepOriginal, loadUpright, smallPixels } from '../../lib/images';
 import { pickFiles, pickImages } from '../../lib/pickers';
 import { guessSheet } from '../../lib/sheetGuess';
 import type { Grid } from '../../lib/spriteSheet';
+import type { Pairing } from '../../lib/importBatch';
+import { canFindCards } from '../../lib/subjectLift';
 import { imageUri } from '../../lib/storage';
 import { offerTipAfterUses, offerTipSoon } from '../../lib/tips';
 import { tourEvent, useTourStep } from '../../lib/tour';
@@ -115,6 +118,18 @@ export default function DeckEditorScreen() {
   const [reviewNext, setReviewNext] = useState<ImportPicture[] | null>(null);
   /** The grid those cards were cut with, for a sheet of their backs to start from (none when they weren't). */
   const [reviewGrid, setReviewGrid] = useState<Grid | null>(null);
+  /** How the cards being checked pair up to start with (the card camera's fronts and backs come in turn). */
+  const [reviewPairing, setReviewPairing] = useState<Pairing>('none');
+  /** The card camera, open: for new cards, or the card back. */
+  const [cameraFor, setCameraFor] = useState<ArtTarget | null>(null);
+  /**
+   * The card shape settled for this time with the camera: a deck whose size is worked out from its first card
+   * gets it from the first card taken (the rest are fitted to it, though they're worked on later).
+   */
+  const [shapeBox] = useState(() => {
+    const box = { ratio: null as number | null };
+    return { get: () => box.ratio, set: (ratio: number | null) => Object.assign(box, { ratio }) };
+  });
   const pro = usePro();
   /** How many more cards fit in the free version (unlimited with Pro). */
   const room = cardRoom(decks.decks, exampleAllowances(), pro);
@@ -167,6 +182,13 @@ export default function DeckEditorScreen() {
   // the cropper, except sprite sheets, which have their own screen.
   const fromCamera = (target: ArtTarget) =>
     withBusy(async () => {
+      // The app's own card camera (from 2.2.0): each card found and straightened, or cut out if it's another
+      // shape, in true colors; fronts with their backs, if they're taken too. Just one, for a back.
+      if (canFindCards()) {
+        shapeBox.set(null);
+        setCameraFor(target);
+        return;
+      }
       // Apple's scanner, where the app has it: it finds and straightens each card itself, several in a row,
       // and they're fitted to the deck's card size. (Just the first, for the back.)
       if (appleScannerAvailable()) {
@@ -181,6 +203,7 @@ export default function DeckEditorScreen() {
           // Several: checked over first, where backs scanned with them are paired up.
           if (cards.length > 1) {
             setReviewGrid(null);
+            setReviewPairing('none');
             setReview(cards.map((c) => ({ uri: c, original: c })));
           }
           else addNewCards(cards, cards);
@@ -214,6 +237,7 @@ export default function DeckEditorScreen() {
         pictures.push({ uri: await fitToCard(upright.uri, ratio), original: await keepOriginal(upright.uri) });
       }
       setReviewGrid(null);
+      setReviewPairing('none');
       setReview(pictures);
       return;
     }
@@ -237,6 +261,19 @@ export default function DeckEditorScreen() {
    * Works out an automatic card size (one not yet worked out) from a picture of a card, the deck's first art,
    * cutting anything already cut to fit it again. Gives the deck's card shape (width / height) from then on.
    */
+  /** The deck's card shape, for the card camera: worked out from the first card it finds, if it's still to be. */
+  const ratioForCamera = (measured: number) => {
+    const settled = shapeBox.get();
+    if (settled !== null) return settled;
+    let ratio = cardRatio(deck);
+    if (deck.cardShape?.kind === 'auto' && !deck.cardShape.detected) {
+      const shape: CardShape = { kind: 'auto', detected: detectShape(measured) };
+      changeShape(shape);
+      ratio = cardRatio({ cardShape: shape });
+    }
+    shapeBox.set(ratio);
+    return ratio;
+  };
   const settleAuto = async (uri: string): Promise<number> => {
     if (deck.cardShape?.kind !== 'auto' || deck.cardShape.detected) return cardRatio(deck);
     const img = await loadUpright(uri);
@@ -271,7 +308,7 @@ export default function DeckEditorScreen() {
   const sourceActions = (target: ArtTarget) => [
     {
       // With Apple's scanner, it scans (several cards in a row, for new cards); otherwise a plain photo.
-      label: appleScannerAvailable() ? (target === 'cards' ? 'Scan cards' : 'Scan card back') : 'Take photo',
+      label: canFindCards() || appleScannerAvailable() ? (target === 'cards' ? 'Scan cards' : 'Scan card back') : 'Take photo',
       opensModal: true,
       onPress: () => fromCamera(target),
     },
@@ -735,6 +772,7 @@ export default function DeckEditorScreen() {
           const several = target === 'cards' && uris.length > 1;
           if (several) {
             setReviewGrid(grid);
+            setReviewPairing('none');
             setReviewNext(uris.map((u) => ({ uri: u, original: u })));
           }
           withBusy(async () => {
@@ -750,9 +788,31 @@ export default function DeckEditorScreen() {
         }}
       />
 
+      <CardCamera
+        visible={cameraFor !== null}
+        single={cameraFor === 'back'}
+        ratioFor={ratioForCamera}
+        onDone={(pictures, pairing) => {
+          const target = cameraFor;
+          setCameraFor(null);
+          if (!pictures.length) return;
+          if (target === 'back') return setBack(pictures[0].uri, pictures[0].original);
+          // Checked over once the camera has gone (noted now, before it has).
+          setReviewGrid(null);
+          setReviewPairing(pairing);
+          setReviewNext(pictures);
+        }}
+        onCancel={() => setCameraFor(null)}
+        onClosed={() => {
+          if (reviewNext) setReview(reviewNext);
+          setReviewNext(null);
+        }}
+      />
+
       <ImportReview
         pictures={review}
         sheetGrid={reviewGrid}
+        startPairing={reviewPairing}
         cardRatio={cardRatio(deck)}
         roundness={deck.roundness}
         room={room}

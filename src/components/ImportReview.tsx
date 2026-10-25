@@ -32,6 +32,8 @@ interface Props {
   pictures: ImportPicture[] | null;
   /** The grid the pictures were cut from a sprite sheet with, if they were: a sheet of their backs starts from it. */
   sheetGrid?: Grid | null;
+  /** How the pictures pair up to start with (the card camera's fronts and backs come in turn). */
+  startPairing?: Pairing;
   cardRatio: number;
   roundness?: number;
   /** How many more cards the free version has room for (Infinity with Pro). */
@@ -56,7 +58,7 @@ const PAIRINGS: [Pairing, string][] = [
  * include backs (scanned in turn, or all the fronts and then the backs). A picture tapped can be turned, cut
  * again or taken out (the cards after it pair up again), and a card's two sides swapped.
  */
-export function ImportReview({ pictures, sheetGrid, cardRatio, roundness, room, onRoundness, onAdd, onCancel }: Props) {
+export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardRatio, roundness, room, onRoundness, onAdd, onCancel }: Props) {
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
   const [list, setList] = useState<ImportPicture[]>([]);
@@ -81,7 +83,7 @@ export function ImportReview({ pictures, sheetGrid, cardRatio, roundness, room, 
   if (pictures && pictures !== source) {
     setSource(pictures);
     setList(pictures);
-    setPairing('none');
+    setPairing(startPairing);
     setFronts(undefined);
     setPicked(null);
   }

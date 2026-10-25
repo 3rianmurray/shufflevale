@@ -61,6 +61,8 @@ export default function RootLayout() {
           <Stack.Screen name="help" options={{ title: 'Help' }} />
           <Stack.Screen name="about" options={{ title: 'About' }} />
           <Stack.Screen name="pro" options={{ title: 'Pro', presentation: 'modal' }} />
+          {/* A Shufflevale file opened in the app from elsewhere (see +native-intent). */}
+          <Stack.Screen name="open" options={{ title: 'Open File', presentation: 'modal' }} />
           {/* Its own top bar, and sideways swipes there move cards and the camera, not the screen. */}
           <Stack.Screen name="sandbox/[id]" options={{ headerShown: false, gestureEnabled: false }} />
         </Stack>

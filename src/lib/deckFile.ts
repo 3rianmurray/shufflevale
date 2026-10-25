@@ -2,7 +2,7 @@
 // move to another phone, or give to a friend. Plain JSON with the pictures inside (as base64), so it survives being
 // mailed, AirDropped or kept in Files. Only the packing and unpacking is here; reading and writing the files is in
 // deckExport.ts.
-import type { SandboxCard, SandboxStack, SandboxTable } from './sandbox';
+import type { BagItem, PieceKind, PieceShape, SandboxCard, SandboxStack, SandboxTable, TablePiece, ZoneLook } from './sandbox';
 import type { CardShape, Deck, PlayMode } from './types';
 
 /** Marks a file as ours, and which version of the format it's in. */
@@ -48,13 +48,21 @@ export interface DeckFile {
   tables?: FileTable[];
 }
 
-/** A table in a file: everything but its own id and dates. Its cards point at the file's decks and cards. */
+/**
+ * A table in a file: everything but its own id and dates. Its cards point at the file's decks and cards, and its
+ * pieces' pictures (tokens, custom art) are keys into the file's `images`.
+ */
 export type FileTable = Omit<SandboxTable, 'id' | 'createdAt' | 'updatedAt'>;
 
-/** A file's contents, read back: its decks, and its tables (their cards still pointing at the file's ids). */
+/**
+ * A file's contents, read back: its decks, and its tables (their cards still pointing at the file's ids, their
+ * pieces' pictures at `images`).
+ */
 export interface UnpackedFile {
   decks: UnpackedDeck[];
   tables: FileTable[];
+  /** The pictures the tables' pieces use, by key. */
+  images: Record<string, FileImage>;
 }
 
 /** A deck read back from a file, ready to be added: its pictures still as base64, to be written out. */
@@ -89,6 +97,14 @@ export function packDecks(decks: Deck[], read: (path: string) => string, tables:
     images[key] = { ext: extOf(path), data: read(path) };
     return key;
   };
+  // A piece's picture, and those of the pieces in a bag, go in the file with the cards'.
+  const packItem = (i: BagItem): BagItem => (i.piece ? { piece: packPiece(i.piece) } : i);
+  const packPiece = (p: TablePiece): TablePiece => ({
+    ...p,
+    ...(p.image ? { image: keyOf(p.image) } : {}),
+    ...(p.items ? { items: p.items.map(packItem) } : {}),
+    ...(p.supply ? { supply: packItem(p.supply) } : {}),
+  });
   return {
     kind: KIND,
     version: VERSION,
@@ -108,13 +124,22 @@ export function packDecks(decks: Deck[], read: (path: string) => string, tables:
       })),
     })),
     images,
-    ...(tables.length ? { tables: tables.map(({ id: _id, createdAt: _c, updatedAt: _u, ...t }) => t) } : {}),
+    ...(tables.length
+      ? { tables: tables.map(({ id: _id, createdAt: _c, updatedAt: _u, ...t }) => (t.pieces ? { ...t, pieces: t.pieces.map(packPiece) } : t)) }
+      : {}),
   };
 }
 
-/** The decks a table's cards come from (on it, in its hands and its trash), in the order given. */
+/** The cards in a bag (and in the bags in it), its supply's too. */
+function bagCards(p: TablePiece): SandboxCard[] {
+  const items = [...(p.items ?? (p.cards ?? []).map((card) => ({ card }))), ...(p.supply ? [p.supply] : [])];
+  return items.flatMap((i) => (i.card ? [i.card] : i.piece ? bagCards(i.piece) : []));
+}
+
+/** The decks a table's cards come from (on it, in its hands, its trash and its bags), in the order given. */
 export function decksOnTable(table: SandboxTable, decks: Deck[]): Deck[] {
-  const used = new Set([...table.stacks.flatMap((s) => s.cards), ...table.hands.flat(), ...(table.trash ?? [])].map((c) => c.deckId));
+  const cards = [...table.stacks.flatMap((s) => s.cards), ...table.hands.flat(), ...(table.trash ?? []), ...(table.pieces ?? []).flatMap(bagCards)];
+  const used = new Set(cards.map((c) => c.deckId));
   return decks.filter((d) => used.has(d.id));
 }
 
@@ -206,6 +231,8 @@ export function unpackFile(text: string): UnpackedFile {
     throw new DeckFileError('This deck was saved by a newer version of Shufflevale. Update the app to open it.');
   }
   const images = isObject(file.images) ? file.images : {};
+  // A table's file may hold no decks at all (a table of just components); otherwise it needs some.
+  const hasTables = Array.isArray(file.tables) && file.tables.length > 0;
   const image = (key: unknown): FileImage => {
     const found = typeof key === 'string' ? images[key] : undefined;
     if (!isObject(found) || typeof found.data !== 'string' || typeof found.ext !== 'string' || !found.data) {
@@ -219,7 +246,7 @@ export function unpackFile(text: string): UnpackedFile {
     }
     return { ext, data: found.data };
   };
-  if (!Array.isArray(file.decks) || !file.decks.length) throw new DeckFileError('This file has no decks in it.');
+  if (!Array.isArray(file.decks) || (!file.decks.length && !hasTables)) throw new DeckFileError('This file has no decks in it.');
   const decks: UnpackedDeck[] = file.decks.map((d: unknown) => {
     if (!isObject(d) || !Array.isArray(d.cards)) throw new DeckFileError('This deck file is damaged.');
     return {
@@ -249,8 +276,19 @@ export function unpackFile(text: string): UnpackedFile {
   for (const d of decks) {
     if (d.fileId) known.set(d.fileId, new Set(d.cards.flatMap((c) => (c.fileId ? [c.fileId] : []))));
   }
-  const tables = Array.isArray(file.tables) ? file.tables.slice(0, MAX_TABLES).flatMap((t: unknown) => tableFrom(t, known)) : [];
-  return { decks, tables };
+  // A piece's picture: kept if it's a sound one (a damaged one is just left off the piece, as it isn't a card).
+  const tableImages: Record<string, FileImage> = {};
+  const pieceImage = (key: string) => {
+    if (tableImages[key]) return key;
+    try {
+      tableImages[key] = image(key);
+      return key;
+    } catch {
+      return undefined;
+    }
+  };
+  const tables = hasTables ? (file.tables as unknown[]).slice(0, MAX_TABLES).flatMap((t) => tableFrom(t, known, pieceImage)) : [];
+  return { decks, tables, images: tableImages };
 }
 
 /** The most tables a file is opened with, and the most cards each can hold (as `MAX_TABLE_CARDS` in sandbox.ts). */
@@ -263,26 +301,123 @@ const GRID_STEPS = [20, 40, 60];
 const idFrom = (v: unknown) => (typeof v === 'string' && v.length > 0 && v.length <= 64 ? v : undefined);
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
+/** How much bigger or smaller a card or piece can be drawn (as SCALE_MIN and SCALE_MAX in sandbox.ts). */
+const SCALE_MIN = 0.1;
+const SCALE_MAX = 4;
+/** A scale from a file, kept to what the app allows; none for its own size. */
+const scaleFrom = (v: unknown) => (finite(v) && v > 0 && Math.abs(v - 1) >= 0.005 ? { scale: Math.min(SCALE_MAX, Math.max(SCALE_MIN, v)) } : {});
+
+// What a table's pieces can be (as in sandbox.ts).
+const PIECE_KINDS = new Set<PieceKind>(['counter', 'die', 'coin', 'text', 'marker', 'spinner', 'meeple', 'token', 'timer', 'zone', 'bag', 'track', 'art']);
+const PIECE_SHAPES = new Set<PieceShape>(['meeple', 'pawn', 'cube', 'disc']);
+const ZONE_LOOKS = new Set<ZoneLook>(['outline', 'filled', 'dashed']);
+const DIE_SIDES = [4, 6, 8, 10, 12, 20];
+/** The most pieces a table is opened with, the most custom art (as ART_MAX), and a track's spaces (as TRACK_MAX). */
+const MAX_PIECES = 500;
+const ART_MAX = 40;
+const TRACK_MAX = 50;
+/** The longest a piece's words can be, and the biggest its own size (twice the table's width, as TABLE_W). */
+const MAX_LABEL = 500;
+const MAX_PIECE_SIDE = 7200;
+/** The longest a timer can be set for (as TIMER_MAX). */
+const TIMER_MAX = 99 * 60 + 59;
+/** How deep bags in bags go. */
+const MAX_BAG_DEPTH = 3;
+
+const color = (v: unknown) => (typeof v === 'string' && /^#[0-9a-f]{3,8}$/i.test(v) ? v : undefined);
+const angleFrom = (v: number) => {
+  const r = ((((v + 180) % 360) + 360) % 360) - 180;
+  return r === -180 ? 180 : r;
+};
+
+/**
+ * A piece from a file, checked: a kind the app has, a place on the table, and only the settings that make sense
+ * for it (its picture, a key into the file's pictures, kept if it's sound). A bag's cards and pieces come too.
+ * Running timers come paused, at their full time (the time they'd have run out is the sender's).
+ */
+function pieceFrom(
+  v: unknown,
+  card: (c: unknown) => SandboxCard[],
+  pictureKey: (key: string) => string | undefined,
+  depth = 0,
+): TablePiece[] {
+  if (!isObject(v) || typeof v.kind !== 'string' || !PIECE_KINDS.has(v.kind as PieceKind) || !finite(v.x) || !finite(v.y)) return [];
+  const kind = v.kind as PieceKind;
+  const p: TablePiece = { id: idFrom(v.id) ?? '', kind, x: v.x, y: v.y, value: finite(v.value) ? v.value : 0 };
+  if (kind === 'die') {
+    p.sides = DIE_SIDES.includes(v.sides as number) ? (v.sides as number) : 6;
+    p.value = Math.min(p.sides, Math.max(1, Math.round(p.value)));
+  }
+  if (typeof v.label === 'string') p.label = v.label.slice(0, MAX_LABEL);
+  if (typeof v.shape === 'string' && PIECE_SHAPES.has(v.shape as PieceShape)) p.shape = v.shape as PieceShape;
+  if (typeof v.look === 'string' && ZONE_LOOKS.has(v.look as ZoneLook)) p.look = v.look as ZoneLook;
+  const over = idFrom(v.over);
+  if (over) p.over = over;
+  if (finite(v.angle)) p.angle = angleFrom(v.angle);
+  const picture = typeof v.image === 'string' ? pictureKey(v.image) : undefined;
+  if (picture) p.image = picture;
+  for (const flag of ['square', 'snap', 'locked', 'vertical', 'reversed', 'rollInPlace'] as const) if (v[flag] === true) p[flag] = true;
+  if (finite(v.left) && v.left >= 0) p.left = Math.min(TIMER_MAX, v.left);
+  if (positive(v.w)) p.w = Math.min(MAX_PIECE_SIDE, v.w);
+  if (positive(v.h)) p.h = Math.min(MAX_PIECE_SIDE, v.h);
+  if (finite(v.spaces)) p.spaces = Math.min(TRACK_MAX, Math.max(2, Math.round(v.spaces)));
+  if (v.first === 0 || v.first === 1) p.first = v.first;
+  const own = color(v.color);
+  if (own) p.color = own;
+  const marker = color(v.markerColor);
+  if (marker) p.markerColor = marker;
+  Object.assign(p, scaleFrom(v.scale));
+  if (kind === 'bag') {
+    const item = (i: unknown): BagItem[] => {
+      if (!isObject(i)) return [];
+      if (i.card) return card(i.card).map((c) => ({ card: c }));
+      return depth < MAX_BAG_DEPTH ? pieceFrom(i.piece, card, pictureKey, depth + 1).map((piece) => ({ piece })) : [];
+    };
+    // Bags from before they held pieces too: their cards.
+    const items = Array.isArray(v.items) ? v.items.flatMap(item) : Array.isArray(v.cards) ? v.cards.flatMap(card).map((c) => ({ card: c })) : [];
+    if (items.length) p.items = items;
+    const [supply] = item(v.supply);
+    if (supply) p.supply = supply;
+  }
+  return [p];
+}
+
 /**
  * A table from a file, checked: only its cards from the file's own decks, up to the most a table holds; positions
- * and settings only where they make sense. Its cards still point at the file's ids (see `remapTable`).
+ * and settings only where they make sense; its pieces as `pieceFrom` reads them. Its cards still point at the
+ * file's ids, and its pieces' pictures at the file's (see `remapTable`).
  */
-function tableFrom(v: unknown, known: Map<string, Set<string>>): FileTable[] {
+function tableFrom(v: unknown, known: Map<string, Set<string>>, pictureKey: (key: string) => string | undefined): FileTable[] {
   if (!isObject(v) || !Array.isArray(v.stacks)) return [];
   let count = 0;
   const card = (c: unknown): SandboxCard[] => {
     if (count >= MAX_TABLE_CARDS || !isObject(c) || typeof c.deckId !== 'string' || typeof c.cardId !== 'string') return [];
     if (!known.get(c.deckId)?.has(c.cardId)) return [];
     count++;
-    return [{ iid: '', deckId: c.deckId, cardId: c.cardId, faceUp: c.faceUp === true, ...(c.solo === true ? { solo: true } : {}), ...(c.single === true ? { single: true } : {}) }];
+    return [
+      {
+        iid: '',
+        deckId: c.deckId,
+        cardId: c.cardId,
+        faceUp: c.faceUp === true,
+        ...(c.solo === true ? { solo: true } : {}),
+        ...(c.single === true ? { single: true } : {}),
+        ...scaleFrom(c.scale),
+      },
+    ];
   };
   const cards = (list: unknown) => (Array.isArray(list) ? list.flatMap(card) : []);
   const stacks: SandboxStack[] = v.stacks.flatMap((s: unknown) => {
     if (!isObject(s) || !finite(s.x) || !finite(s.y)) return [];
     const inStack = cards(s.cards);
     if (!inStack.length) return [];
-    return [{ id: '', x: s.x, y: s.y, angle: finite(s.angle) ? s.angle : 0, cards: inStack, ...(s.locked === true ? { locked: true } : {}) }];
+    // Its id from the file, which custom art lying over it points at (a new one's given as it's added).
+    return [{ id: idFrom(s.id) ?? '', x: s.x, y: s.y, angle: finite(s.angle) ? s.angle : 0, cards: inStack, ...(s.locked === true ? { locked: true } : {}) }];
   });
+  let art = 0;
+  const pieces = (Array.isArray(v.pieces) ? v.pieces.slice(0, MAX_PIECES) : [])
+    .flatMap((p) => pieceFrom(p, card, pictureKey))
+    .filter((p) => p.kind !== 'art' || ++art <= ART_MAX);
   const hands = Array.from({ length: HANDS }, (_, i) => cards(Array.isArray(v.hands) ? v.hands[i] : undefined));
   const handNames = Array.from({ length: HANDS }, (_, i) => nameFrom(Array.isArray(v.handNames) ? v.handNames[i] : undefined, `Hand ${i + 1}`));
   const trash = cards(v.trash);
@@ -304,6 +439,8 @@ function tableFrom(v: unknown, known: Map<string, Set<string>>): FileTable[] {
       ...flag('lockCamera'),
       ...flag('showGrid'),
       ...flag('hideCounts'),
+      ...flag('hideHands'),
+      ...(pieces.length ? { pieces } : {}),
       ...camera,
       ...focus,
     },
@@ -314,23 +451,48 @@ function tableFrom(v: unknown, known: Map<string, Set<string>>): FileTable[] {
 export type DeckIdMap = Map<string, { id: string; cards: Map<string, string> }>;
 
 /**
- * A table from a file pointed at its decks as they were added (see `DeckIdMap`), with fresh ids for its stacks and
- * cards from `ids`. Cards whose deck or card didn't come through are left out.
+ * A table from a file pointed at its decks as they were added (see `DeckIdMap`), with fresh ids for its stacks,
+ * cards and pieces from `ids`. Cards whose deck or card didn't come through are left out. Its pieces' pictures
+ * become saved ones through `picture` (given a key into the file's pictures, it saves it and gives its path), or
+ * are left off without it.
  */
-export function remapTable(t: FileTable, map: DeckIdMap, ids: () => string): FileTable {
+export function remapTable(t: FileTable, map: DeckIdMap, ids: () => string, picture?: (key: string) => string | undefined): FileTable {
   const card = (c: SandboxCard): SandboxCard[] => {
     const deck = map.get(c.deckId);
     const cardId = deck?.cards.get(c.cardId);
     return deck && cardId ? [{ ...c, iid: ids(), deckId: deck.id, cardId }] : [];
   };
+  // Each stack's new id, for the custom art lying over it.
+  const stackIds = new Map<string, string>();
+  const stacks = t.stacks.flatMap((s) => {
+    const cards = s.cards.flatMap(card);
+    if (!cards.length) return [];
+    const id = ids();
+    if (s.id) stackIds.set(s.id, id);
+    return [{ ...s, id, cards }];
+  });
+  const item = (i: BagItem): BagItem[] => (i.card ? card(i.card).map((c) => ({ card: c })) : [{ piece: piece(i.piece!) }]);
+  const piece = (p: TablePiece): TablePiece => {
+    const { image, over, items, supply, ...rest } = p;
+    const path = image && picture ? picture(image) : undefined;
+    const under = over ? stackIds.get(over) : undefined;
+    const inside = items?.flatMap(item);
+    const [kept] = supply ? item(supply) : [];
+    return {
+      ...rest,
+      id: ids(),
+      ...(path ? { image: path } : {}),
+      ...(under ? { over: under } : {}),
+      ...(inside?.length ? { items: inside } : {}),
+      ...(kept ? { supply: kept } : {}),
+    };
+  };
   return {
     ...t,
-    stacks: t.stacks.flatMap((s) => {
-      const cards = s.cards.flatMap(card);
-      return cards.length ? [{ ...s, id: ids(), cards }] : [];
-    }),
+    stacks,
     hands: t.hands.map((h) => h.flatMap(card)),
     ...(t.trash ? { trash: t.trash.flatMap(card) } : {}),
+    ...(t.pieces ? { pieces: t.pieces.map(piece) } : {}),
   };
 }
 
@@ -339,8 +501,11 @@ export function deckFileName(decks: Pick<Deck, 'name'>[]): string {
   return fileNameFor(decks.length === 1 ? decks[0].name : 'Shufflevale decks');
 }
 
+/** A Shufflevale file's own extension (files from before it are `.shufflevale.json`, and still open). */
+export const FILE_EXT = 'shufflevale';
+
 /** A file name for a Shufflevale file called `name`, made safe for any disk. */
 export function fileNameFor(name: string): string {
   const safe = name.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Shufflevale';
-  return `${safe}.shufflevale.json`;
+  return `${safe}.${FILE_EXT}`;
 }
