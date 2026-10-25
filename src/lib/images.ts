@@ -131,3 +131,36 @@ export async function rotateImage(uri: string, turn: -90 | 90): Promise<LoadedIm
   const img = await ref.saveAsync({ format: formatOf(uri), compress: 1 });
   return { uri: img.uri, width: img.width, height: img.height };
 }
+
+/** How big a token's picture is kept: plenty for a token, even zoomed right in. */
+const TOKEN_SIDE = 360;
+
+/**
+ * A picture made into a token's, shrunk to TOKEN_SIDE: the largest square from its middle; or, for a cut-out (a
+ * picture with see-through parts, like a subject lifted from a photo), the whole of it, kept see-through.
+ */
+export async function tokenPicture(uri: string): Promise<string> {
+  if (await hasTransparency(uri)) {
+    const size = await ImageManipulator.manipulate(uri).renderAsync();
+    const ref = await ImageManipulator.manipulate(uri)
+      .resize(size.width >= size.height ? { width: TOKEN_SIDE } : { height: TOKEN_SIDE })
+      .renderAsync();
+    return (await ref.saveAsync({ format: SaveFormat.PNG })).uri;
+  }
+  const square = await cropToShape(uri, 1);
+  const ref = await ImageManipulator.manipulate(square).resize({ width: TOKEN_SIDE }).renderAsync();
+  const out = await ref.saveAsync({ format: SaveFormat.JPEG, compress: 0.85 });
+  return out.uri;
+}
+/** How big custom art is kept, on its longest side: sharp zoomed in close, as a card's art is (see ART_MAX for the limit). */
+const ART_SIDE = 1024;
+
+/** A picture made into custom art: shrunk to ART_SIDE on its longest side, kept see-through if it is. */
+export async function artPicture(uri: string): Promise<LoadedImage> {
+  const see = await hasTransparency(uri);
+  const size = await ImageManipulator.manipulate(uri).renderAsync();
+  let ctx = ImageManipulator.manipulate(uri);
+  if (Math.max(size.width, size.height) > ART_SIDE) ctx = ctx.resize(size.width >= size.height ? { width: ART_SIDE } : { height: ART_SIDE });
+  const out = await (await ctx.renderAsync()).saveAsync(see ? { format: SaveFormat.PNG } : { format: SaveFormat.JPEG, compress: 0.92 });
+  return { uri: out.uri, width: out.width, height: out.height };
+}

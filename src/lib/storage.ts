@@ -137,6 +137,11 @@ export interface Settings {
   solitaireMade?: boolean;
   /** The Playing Cards deck the app made last, reused for new Solitaire tables while it's still there. */
   playingCardsDeckId?: string;
+  /** The Playground table (every component, to try: a Free Play example) has been made, once; and which it is. */
+  playgroundMade?: boolean;
+  playgroundTableId?: string;
+  /** How the Playing Cards deck looked as it was made (see deckLook): the Playground's cards, unchanged. */
+  playingCardsLook?: string;
   /** Tips (see lib/tips) are turned off. */
   tipsOff?: boolean;
   /** The tips already shown (each shows once). */
@@ -147,10 +152,6 @@ export interface Settings {
   playThemes?: Record<string, string>;
   /** Shufflevale Pro has been bought on this phone's Apple Account (see lib/pro), remembered for offline use. */
   proOwned?: boolean;
-  /** The tester switch, in TestFlight builds: act as free or as Pro. */
-  proOverride?: 'free' | 'pro';
-  /** The tester controls in About are showing (shown by tapping the version 7 times, in TestFlight). */
-  testerShown?: boolean;
   /** Where the player's put the tools drawer on tables: which edge, and how far down it (0 top, 1 bottom). */
   toolsSpot?: { side: 'left' | 'right'; at: number };
 }

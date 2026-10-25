@@ -1,10 +1,14 @@
 // Shufflevale Pro: a one-time purchase from the App Store (StoreKit, through expo-iap), which takes away the free
-// version's card limit and opens up deck files. Owning it is remembered on the phone, so it works offline; the
-// App Store is asked again each time the app opens (which also catches a refund). The purchase is the only way in.
+// version's card limit, opens up deck files and adds the table's components (all but dice: see isProPiece). Owning
+// it is remembered on the phone, so it works offline; the App Store is asked again each time the app opens (which
+// also catches a refund). The purchase is the only way in.
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useSyncExternalStore } from 'react';
 import { Alert } from 'react-native';
 
+import type { TablePiece } from './sandbox';
+import { copiesOf } from './types';
+import type { Deck } from './types';
 import { loadSettings, saveSettings } from './storage';
 
 /** The Pro product, as set up in App Store Connect. */
@@ -96,7 +100,7 @@ export async function startPro() {
     if (purchase.purchaseState === 'purchased') {
       setOwned(true);
       m.finishTransaction({ purchase, isConsumable: false }).catch((e) => console.warn('finishTransaction failed', e));
-      if (state.busy) Alert.alert('Welcome to Shufflevale Pro', 'Unlimited cards and deck files are yours. Thank you!');
+      if (state.busy) Alert.alert('Welcome to Shufflevale Pro', 'Unlimited cards, deck files and every component are yours. Thank you!');
     }
     set({ busy: false });
   });
@@ -117,6 +121,27 @@ export async function startPro() {
   }
   // What the App Store says now (a refund takes Pro away again).
   if (purchases.status === 'fulfilled') setOwned(purchases.value.some((p) => p.productId === PRO_PRODUCT_ID));
+}
+
+/** The table's components that are part of Pro: all but dice (decks and dice are free). */
+export const isProPiece = (p: Pick<TablePiece, 'kind'>) => p.kind !== 'die';
+
+/**
+ * The Playground example (see examples.ts): the one table where Pro's components can be tried without it. Known by
+ * its id, so renaming it changes nothing (and a copy of it isn't it).
+ */
+export const isPlayground = (tableId: string) => loadSettings().playgroundTableId === tableId;
+
+/**
+ * A short fingerprint of how a deck looks (its back, shape, and each card's picture, own back and copies). Noted
+ * for the Playing Cards example as it's made, so the Playground can tell if it's been changed into a deck of
+ * someone's own (whose cards, without Pro, don't play there).
+ */
+export function deckLook(deck: Deck): string {
+  const text = [deck.backImage ?? '', deck.cardShape ?? '', ...deck.cards.map((c) => `${c.id}|${c.image}|${c.back ?? ''}|${copiesOf(c)}`)].join(';');
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+  return `${deck.cards.length}:${h.toString(36)}`;
 }
 
 /** How many cards the walkthrough's sample deck comes with (see sampleDeck.ts). */
