@@ -1923,6 +1923,27 @@ export function playground(t: SandboxTable, deck: Deck | undefined, ids: () => s
   return { ...table, focus: { x: cx - 440, y: cy - 390, w: 1140, h: 740 } };
 }
 
+/** The Playground's layout: raised each time components are added to it (2: the card spot and the score pad). */
+export const PLAYGROUND_VERSION = 2;
+
+/**
+ * A Playground made before the card spot and score pad came, with them added where a new one has them (the rest
+ * left as the player has it), and room in view for them. The same table if it has them both.
+ */
+export function updatePlayground(t: SandboxTable, ids: () => string): SandboxTable {
+  const has = (kind: PieceKind) => (t.pieces ?? []).some((p) => p.kind === kind);
+  if (has('spot') && has('score')) return t;
+  const cx = TABLE_W / 2;
+  const cy = TABLE_H / 2;
+  const added: TablePiece[] = [
+    // Under everything else, as zones are drawn (their order among the pieces is kept).
+    ...(has('spot') ? [] : [{ ...newPiece('spot', ids(), { x: cx - 330, y: cy - 40 }), label: 'Draw' }]),
+    ...(has('score') ? [] : [newPiece('score', ids(), { x: cx + 590, y: cy })]),
+  ];
+  const focus = t.focus ? { ...t.focus, w: Math.max(t.focus.w, cx + 700 - t.focus.x) } : t.focus;
+  return { ...t, pieces: [...added, ...(t.pieces ?? [])], ...(focus ? { focus } : {}) };
+}
+
 /** The table with only the cards that pass keep (on the table, in the hands and in the trash; empty stacks go). */
 export function keepCards(t: SandboxTable, keep: (c: SandboxCard) => boolean): SandboxTable {
   const stacks = t.stacks.map((s) => ({ ...s, cards: s.cards.filter(keep) })).filter((s) => s.cards.length);

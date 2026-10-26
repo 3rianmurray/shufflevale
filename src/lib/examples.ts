@@ -8,7 +8,7 @@ import * as haptics from './haptics';
 import { newId } from './id';
 import { playingCards } from './playingCards';
 import { deckLook } from './pro';
-import { newSandbox, playground, solitaire } from './sandbox';
+import { newSandbox, playground, PLAYGROUND_VERSION, solitaire, updatePlayground } from './sandbox';
 import type { SandboxTable } from './sandbox';
 import { createSandboxWith, sandboxes, updateSandbox } from './sandboxStore';
 import type { Deck } from './types';
@@ -25,12 +25,14 @@ const PLAYGROUND = 'Playground';
 function restorePlayground(deck: Deck | undefined): boolean {
   const id = loadSettings().playgroundTableId;
   const table = id ? sandboxes().find((t) => t.id === id) : undefined;
+  // Laid out as it is now: it has every component.
   if (table) {
     updateSandbox(playground(newSandbox(table.id, table.name, table.createdAt), deck, newId));
+    saveSettings({ ...loadSettings(), playgroundVersion: PLAYGROUND_VERSION });
     return false;
   }
   const made: SandboxTable = createSandboxWith(PLAYGROUND, (empty) => playground(empty, deck, newId));
-  saveSettings({ ...loadSettings(), playgroundTableId: made.id, playgroundMade: true });
+  saveSettings({ ...loadSettings(), playgroundTableId: made.id, playgroundMade: true, playgroundVersion: PLAYGROUND_VERSION });
   return true;
 }
 
@@ -120,10 +122,19 @@ export function useExamples() {
     ]);
   };
 
-  /** Just the Playground, if it's never been made (for those who had the other examples before it came). */
+  /**
+   * Just the Playground, if it's never been made (for those who had the other examples before it came); or, made
+   * before components were added to it, those components (the rest left as the player has it).
+   */
   const addPlayground = () => {
     const s = loadSettings();
-    if (s.playgroundMade) return;
+    if (s.playgroundMade) {
+      if ((s.playgroundVersion ?? 1) >= PLAYGROUND_VERSION) return;
+      const table = s.playgroundTableId ? sandboxes().find((t) => t.id === s.playgroundTableId) : undefined;
+      if (table) updateSandbox(updatePlayground(table, newId));
+      saveSettings({ ...loadSettings(), playgroundVersion: PLAYGROUND_VERSION });
+      return;
+    }
     const deck = playingDeck();
     // Noted as it is now, if it never was (made before the Playground came, before there was a reason to change it).
     if (deck && !s.playingCardsLook) saveSettings({ ...loadSettings(), playingCardsLook: deckLook(deck) });
