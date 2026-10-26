@@ -5,7 +5,7 @@ import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useState } from 'r
 import { ActionSheetIOS, Alert, Animated as RNAnimated, Easing, Image, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Switch, View, useWindowDimensions } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { Easing as ReEasing, LinearTransition, useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { Easing as ReEasing, LinearTransition, useAnimatedStyle, useSharedValue, withDelay, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -273,6 +273,8 @@ const FOLDED_SHOWS = 38;
 /** The space between the hand tabs, and at either end of their row. */
 const HAND_TAB_GAP = 4;
 const HAND_TABS_PAD = 8;
+/** How long the screen's own turn takes to settle before the hand tray rises back (see turnY). */
+const TURN_SETTLE_MS = 320;
 /** The narrowed tray's top corners (an iPhone turned on its side). */
 const TRAY_CORNER = 14;
 /** The flip button shown while carrying cards (bottom left): its size, and its space from the screen's edge and the tray. */
@@ -463,7 +465,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   });
   // The tray's slide as it folds and opens, with a little spring, as in table mode.
   const foldY = useSharedValue(0);
-  const trayStyle = useAnimatedStyle(() => ({ transform: [{ translateY: foldY.value }] }));
+  /** The tray slid down off the screen and back while the phone turns (see below). */
+  const turnY = useSharedValue(0);
+  const trayStyle = useAnimatedStyle(() => ({ transform: [{ translateY: foldY.value + turnY.value }] }));
   const [held, setHeld] = useState<Held | null>(null);
   const [target, setTarget] = useState<string | null>(null);
   const [menu, setMenuState] = useState<Menu | null>(null);
@@ -813,6 +817,18 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     foldY.set(folded ? trayH - FOLDED_SHOWS : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trayH]);
+  // The phone turned (on its side, or back upright): the tray takes a different shape, so rather than jump to it,
+  // it's gone below the screen's edge the moment the screen turns, and once the turn has settled it rises back up.
+  const [turnFrom] = useState(() => {
+    const box = { sideways };
+    return { get: () => box.sideways, set: (s: boolean) => Object.assign(box, { sideways: s }) };
+  });
+  useLayoutEffect(() => {
+    if (turnFrom.get() === sideways) return;
+    turnFrom.set(sideways);
+    turnY.set(withSequence(withTiming(trayH + HAND_TAB_H + SPRING_OVERSHOOT, { duration: 0 }), withDelay(TURN_SETTLE_MS, withSpring(0, { damping: 18, stiffness: 160, mass: 0.9 }))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideways]);
   /** Shows another hand (opening the tray, if it was folded). */
   const chooseHand = (i: number) => {
     setHandIndex(i);
