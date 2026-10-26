@@ -45,6 +45,9 @@ function solitaireTable(): SandboxTable | undefined {
 /** Whether a table is one of the app's examples, which can be reset to how it first was. */
 export const isExampleTable = (id: string) => loadSettings().playgroundTableId === id || solitaireTable()?.id === id;
 
+/** What an example table's reset is called in its menu: Reset Playground, or Reset Solitaire. */
+export const resetExampleLabel = (id: string) => (loadSettings().playgroundTableId === id ? 'Reset Playground' : 'Reset Solitaire');
+
 /** Whether a deck is the Playing Cards deck the app made (found by name, if made before it was noted). */
 export const isExampleDeck = (deck: Deck) => {
   const id = loadSettings().playingCardsDeckId;

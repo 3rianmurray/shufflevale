@@ -601,12 +601,38 @@ function Coin({ piece, color, rollKey, size, selected }: { piece: TablePiece; co
         <Circle cx={c[0]} cy={c[1]} r={art.len(0.5)} color={shade(color, -0.35)} />
         <Circle cx={c[0] - art.len(0.02)} cy={c[1] - art.len(0.02)} r={art.len(0.44)} color={shade(color, shown === 1 ? 0.08 : -0.06)} />
         <Circle cx={c[0] - art.len(0.02)} cy={c[1] - art.len(0.02)} r={art.len(0.36)} color={shade(color, 0.35)} style="stroke" strokeWidth={art.len(0.03)} opacity={0.6} />
+        {shown === 1 ? <Heads art={art} color={ink} /> : <Tails art={art} color={ink} />}
         {selected ? <Circle cx={c[0]} cy={c[1]} r={art.len(0.5)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
       </Canvas>
-      <Text allowFontScaling={false} style={[styles.coinFace, { color: ink, fontSize: size * 0.42, lineHeight: size, width: size }]}>
-        {shown === 1 ? 'H' : 'T'}
-      </Text>
     </Animated.View>
+  );
+}
+
+/** A coin's heads: a head and shoulders in profile, drawn in the coin's ink (its drawing in a 0–1 box). */
+function Heads({ art, color }: { art: ReturnType<typeof artFrame>; color: string }) {
+  const head = Skia.Path.Make();
+  head.addCircle(...art.at([0.5, 0.36]), art.len(0.15));
+  const shoulders = Skia.Path.Make();
+  // The lower half of a circle, under the head: its top edge is the shoulders' line.
+  shoulders.addArc({ x: art.at([0.22, 0.6])[0], y: art.at([0.22, 0.6])[1], width: art.len(0.56), height: art.len(0.56) }, 0, 180);
+  return (
+    <>
+      <Path path={head} color={color} />
+      <Path path={shoulders} color={color} />
+    </>
+  );
+}
+
+/** A coin's tails: a wreath of leaves round a star, drawn in the coin's ink (in a 0–1 box). */
+function Tails({ art, color }: { art: ReturnType<typeof artFrame>; color: string }) {
+  const leaves = ring(12, 0.34, [0.5, 0.5]);
+  return (
+    <>
+      {leaves.map((p, i) => (
+        <Circle key={i} cx={art.at(p)[0]} cy={art.at(p)[1]} r={art.len(0.05)} color={color} />
+      ))}
+      <Path path={art.poly(ring(10, 0.13, [0.5, 0.5]).map((p, i) => (i % 2 ? ([0.5 + (p[0] - 0.5) * 0.45, 0.5 + (p[1] - 0.5) * 0.45] as Pt) : p)))} color={color} />
+    </>
   );
 }
 
@@ -945,9 +971,9 @@ function Timer({ piece, color, size, selected, k }: { piece: TablePiece; color: 
       <Text allowFontScaling={false} style={[styles.timerText, { color: done ? '#e24b4a' : ink, fontSize: size * 0.22, lineHeight: size, width: size }]}>
         {timerText(left)}
       </Text>
-      {!running && !done ? (
+      {!running && !done && piece.left !== undefined ? (
         <Text allowFontScaling={false} style={[styles.timerHint, { color: ink, top: size * 0.66, width: size, fontSize: 9 * k }]}>
-          {piece.left !== undefined ? 'paused' : 'tap to start'}
+          paused
         </Text>
       ) : null}
     </View>
@@ -1188,7 +1214,6 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
   dieValue: { position: 'absolute', textAlign: 'center', fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.25)', textShadowRadius: 2 },
-  coinFace: { position: 'absolute', left: 0, top: 0, textAlign: 'center', fontWeight: '800' },
   tokenCount: {
     position: 'absolute',
     right: -6,

@@ -183,7 +183,7 @@ import { WoodRail } from './Tabletop';
 import { TABLE_THEMES, THEME_KEYS, themeOf } from '../lib/tableThemes';
 import { imageUri, importImage, isSeeThrough, loadSettings, saveSettings } from '../lib/storage';
 import { canCutOut, cutOut } from '../lib/subjectLift';
-import { isExampleTable, useExamples } from '../lib/examples';
+import { isExampleTable, resetExampleLabel, useExamples } from '../lib/examples';
 import { unionOf } from '../lib/windowSpot';
 import type { Point, Rect } from '../lib/windowSpot';
 import { Text } from './Text';
@@ -3464,7 +3464,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             ? [{ label: 'Rename table', opensModal: true, onPress: () => rename('Rename table', table.name, (name) => updateSandbox({ ...table, name })) }]
             : []),
           // Solitaire and the Playground: back as they first were (one undo puts it back as it was).
-          ...(isExampleTable(table.id) ? [{ label: 'Reset table', opensModal: true, onPress: () => examples.confirmResetTable(table, commit) }] : []),
+          ...(isExampleTable(table.id) ? [{ label: resetExampleLabel(table.id), opensModal: true, onPress: () => examples.confirmResetTable(table, commit) }] : []),
           {
             label: 'Clear the table',
             destructive: true,
