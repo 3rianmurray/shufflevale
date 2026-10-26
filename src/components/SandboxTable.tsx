@@ -270,6 +270,9 @@ const HAND_EDGE_STEP = 8;
 /** How far the hand tabs stand up above the tray, and how much of the tray shows when it's folded away. */
 const HAND_TAB_H = 24;
 const FOLDED_SHOWS = 38;
+/** The space between the hand tabs, and at either end of their row. */
+const HAND_TAB_GAP = 4;
+const HAND_TABS_PAD = 8;
 /** The flip button shown while carrying cards (bottom left): its size, and its space from the screen's edge and the tray. */
 const FLIP_SIZE = 64;
 const FLIP_MARGIN = 16;
@@ -389,6 +392,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const { decks, getDeck } = useDecks();
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useWindowDimensions();
+  /** An iPhone turned on its side (the iPad keeps its own layout either way). */
+  const sideways = !IS_PAD && screenW > screenH;
+  /** The hand tabs' row, as wide as its tabs need (measured): a sideways iPhone's tray is sized by it. */
+  const [tabsW, setTabsW] = useState(0);
   const [history, setHistory] = useState<SandboxTable[]>([]);
   /** Changes undone, latest last, to make again (gone once anything else changes). */
   const [future, setFuture] = useState<SandboxTable[]>([]);
@@ -751,9 +758,17 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const groupLeadTop = groupLeadStack ? groupLeadStack.cards[groupLeadStack.cards.length - 1] : undefined;
   const gapWidth = held ? handWidthOf(held.cards[held.cards.length - 1]) : groupLeadTop ? handWidthOf(groupLeadTop) : handW;
   const rowWidths = handRow.map(handWidthOf);
-  // The row's ends, clear of the notch on an iPhone turned on its side.
-  const handPadL = HAND_PAD + insets.left;
-  const handPadR = HAND_PAD + insets.right;
+  // On an iPhone turned on its side, the tray doesn't reach the screen's ends: it's the width of its tabs and about
+  // one more tab at either end, in the middle (so clear of the notch). The tabs' own width is measured.
+  const narrowTray = sideways && tabsW > 0;
+  const tabLength = (tabsW - HAND_TAB_GAP * (HAND_COUNT - 1)) / HAND_COUNT;
+  const trayW = narrowTray ? Math.min(area.w - insets.left - insets.right, tabsW + 2 * tabLength + HAND_TABS_PAD * 2) : area.w;
+  const trayLeft = (area.w - trayW) / 2;
+  /** A point on screen over the hand (the tray, or the strip along the bottom where it's folded away). */
+  const inTray = (x: number, y: number) => y >= handTop && x >= trayLeft && x <= trayLeft + trayW;
+  // The row's ends, clear of the notch (a full-width tray, on an iPhone turned on its side).
+  const handPadL = HAND_PAD + (narrowTray ? 0 : insets.left);
+  const handPadR = HAND_PAD + (narrowTray ? 0 : insets.right);
   const rowXs = rowWidths.reduce<number[]>((xs, w, k) => {
     const before = k ? xs[k - 1] + rowWidths[k - 1] + HAND_GAP : handPadL;
     return [...xs, before + (handGap === k ? gapWidth + HAND_GAP : 0)];
@@ -761,14 +776,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const rowX = (k: number) => rowXs[k];
   const rowWidth =
     handPadL + handPadR + rowWidths.reduce((sum, w) => sum + w + HAND_GAP, 0) + (handGap !== null ? gapWidth + HAND_GAP : 0) - HAND_GAP;
-  const maxHandScroll = Math.max(0, rowWidth - area.w);
+  const maxHandScroll = Math.max(0, rowWidth - trayW);
   /** Where the row's cards sit, down from the tray's top. */
   const rowTop = HAND_TOP_PAD + HAND_ROW_PAD;
   /** The hand card under a point on screen (its place in the hand), or −1. */
   const handCardAt = (x: number, y: number) => {
     // Folded away, its cards peek out but can't be picked up.
-    if (folded || y < trayOpenTop + rowTop || y > trayOpenTop + rowTop + handCardH) return -1;
-    const at = x + handScroll.get();
+    if (folded || y < trayOpenTop + rowTop || y > trayOpenTop + rowTop + handCardH || x < trayLeft || x > trayLeft + trayW) return -1;
+    const at = x - trayLeft + handScroll.get();
     const k = handRow.findIndex((_, i) => at >= rowX(i) && at <= rowX(i) + rowWidths[i]);
     return k < 0 ? -1 : hand.indexOf(handRow[k]);
   };
@@ -779,6 +794,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     foldY.set(withSpring(fold ? trayH - FOLDED_SHOWS : 0, { damping: 16, stiffness: 170, mass: 0.9 }));
     haptics.tick();
   };
+  // The tray a new height (the phone turned, so its cards changed size): a folded tray kept where it was would sit
+  // too high or too low, and stick there. Put straight to where it belongs for the new height.
+  useEffect(() => {
+    foldY.set(folded ? trayH - FOLDED_SHOWS : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trayH]);
   /** Shows another hand (opening the tray, if it was folded). */
   const chooseHand = (i: number) => {
     setHandIndex(i);
@@ -896,7 +917,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     showDragging: setToolsDragging,
   });
   /** The flip button, in the bottom-left corner above the tray, while cards are carried. */
-  const flipButton = { x: FLIP_MARGIN, y: handTop - HAND_TAB_H - FLIP_MARGIN - FLIP_SIZE, size: FLIP_SIZE };
+  const flipButton = { x: FLIP_MARGIN + insets.left, y: handTop - HAND_TAB_H - FLIP_MARGIN - FLIP_SIZE, size: FLIP_SIZE };
   /** A double tap: the card (or the whole stack) turned over where it lies. */
   const flipFromTap = (src: Source) => {
     if (!table || src.kind === 'bag') return;
@@ -1495,7 +1516,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   /** Where in the row (of cards not carried) cards dropped with their middle at a point on screen would go. */
   const handInsertAt = (x: number) => {
     // Before the first card whose middle (as the row is without the gap) lies past the point.
-    const at = x + handScroll.get();
+    const at = x - trayLeft + handScroll.get();
     let edge = handPadL;
     for (let k = 0; k < rowWidths.length; k++) {
       if (edge + rowWidths[k] / 2 > at) return k;
@@ -1511,6 +1532,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       table: SandboxTable | undefined;
       size: CardSize;
       handTop: number;
+      inTray: (x: number, y: number) => boolean;
+      trayLeft: number;
+      trayW: number;
       hand: SandboxCard[];
       handIndex: number;
       handCardAt: (x: number, y: number) => number;
@@ -1574,7 +1598,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     };
     return { set: (next: typeof box) => Object.assign(box, next), get: () => box };
   });
-  latest.set({ table, size, handTop, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onDiceGridButton, gridPickedDice, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, rollDice, lockedOut, openPro, zoomTo: (t) => zoomToTarget(t) });
+  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onDiceGridButton, gridPickedDice, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, rollDice, lockedOut, openPro, zoomTo: (t) => zoomToTarget(t) });
 
   // The gesture in progress (never drawn from, so kept outside React state).
   const [gestureState] = useState(() => {
@@ -1719,7 +1743,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     {
       const L0 = latest.get();
       const top0 = touch.cards[touch.cards.length - 1];
-      const want = top0 && p.y >= L0.handTop ? L0.handScaleOf(top0) : cameraZoom(readCamera());
+      const want = top0 && L0.inTray(p.x, p.y) ? L0.handScaleOf(top0) : cameraZoom(readCamera());
       if (want !== touch.scaleShown) {
         heldScale.set(touch.scaleShown ? withSpring(want, { damping: 18, stiffness: 240, mass: 0.6 }) : want);
         touch.scaleShown = want;
@@ -1739,11 +1763,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     // Cards that never stack go onto nothing.
     const solo = touch.cards.some((c) => c.solo);
     // Looked for on the table as it'll be once they're taken: a card can't go back onto where it alone lay.
-    const over = p.y < L.handTop && !solo ? stackTargetAt(takeAll(L.table, touch.sources), w.x, w.y, L.size, except, L.gridOn ? gridStackReach(L.gridStep) : undefined, face) : null;
+    const over = !L.inTray(p.x, p.y) && !solo ? stackTargetAt(takeAll(L.table, touch.sources), w.x, w.y, L.size, except, L.gridOn ? gridStackReach(L.gridStep) : undefined, face) : null;
     L.setTarget(over?.id ?? null);
     // Over the hand: a gap opens where they'd go in, and near either end the row scrolls along.
-    if (p.y >= L.handTop) {
-      const edge = p.x < HAND_EDGE ? -1 : p.x > area.w - HAND_EDGE ? 1 : 0;
+    if (L.inTray(p.x, p.y)) {
+      const along = p.x - L.trayLeft;
+      const edge = along < HAND_EDGE ? -1 : along > L.trayW - HAND_EDGE ? 1 : 0;
       if (edge) {
         const x = Math.min(L.maxHandScroll, Math.max(0, handScroll.get() + edge * HAND_EDGE_STEP));
         handScroll.set(x);
@@ -1815,7 +1840,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (!L.table) return;
     const carried = new Set(touch.cards.map((c) => c.iid));
     let add: { src: Source; card: SandboxCard } | null = null;
-    if (y >= L.handTop) {
+    if (L.inTray(x, y)) {
       const i = L.handCardAt(x, y);
       const c = i >= 0 ? L.hand[i] : null;
       if (c && !carried.has(c.iid)) add = { src: { kind: 'hand', hand: L.handIndex, iid: c.iid }, card: c };
@@ -1857,7 +1882,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     // Carried by more than one finger, or a whole stack held up: those tips aren't needed now.
     if (sources.length > 1) tipLearned('tables-second-finger');
     if (sources.some((src) => src.kind === 'stack')) tipLearned('tables-hold-stack');
-    if (p.y >= L.handTop) {
+    if (L.inTray(p.x, p.y)) {
       tipLearned('tables-drag-to-hand');
       // The gap's place in the row (which leaves out the carried cards) is their place in the hand once taken.
       const without = takeAll(L.table, sources);
@@ -1919,7 +1944,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
 
   // Where the hand tabs and the open tray are on screen: touches starting there are left to them (the tabs are
   // buttons; the tray has table mode's scroll view and card handling). Read by the gesture, on the UI thread.
-  const tabBand = useSharedValue({ top: 0, bottom: 0, tray: 0, toolsLeft: 0, toolsRight: 0, toolsTop: 0, toolsBottom: 0, panel: false });
+  const tabBand = useSharedValue({ top: 0, bottom: 0, tray: 0, trayLeft: 0, trayRight: 0, toolsLeft: 0, toolsRight: 0, toolsTop: 0, toolsBottom: 0, panel: false });
   useEffect(() => {
     const right = toolsSpot.side === 'right';
     // From the screen's edge, past the notch it stands clear of (an iPhone on its side), to the tab's inner edge.
@@ -1929,6 +1954,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       top: trayGone ? Number.MAX_VALUE : handTop - HAND_TAB_H,
       bottom: trayGone ? Number.MAX_VALUE : handTop,
       tray: folded || trayGone ? Number.MAX_VALUE : handTop,
+      // Across: the tray's width (narrower than the screen on an iPhone turned on its side).
+      trayLeft,
+      trayRight: trayLeft + trayW,
       // The tools drawer, on its edge: just its tab while it's tucked away, the whole panel when it's out.
       toolsLeft: right ? w - reach : 0,
       toolsRight: right ? w : reach,
@@ -1937,7 +1965,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // The search, over everything while it's open (and not on its way out): its touches are its own.
       panel: !!searching && !searchLeaving,
     });
-  }, [handTop, folded, trayGone, toolsOpen, toolsTop, toolsH, tabY, toolsSpot, area.w, screenW, tabBand, searching, searchLeaving, insets.left, insets.right]);
+  }, [handTop, folded, trayGone, trayLeft, trayW, toolsOpen, toolsTop, toolsH, tabY, toolsSpot, area.w, screenW, tabBand, searching, searchLeaving, insets.left, insets.right]);
   /** A touch that landed in the open tray, watched (but not yet claimed) to see if it lifts a card out. */
   const trayTouch = useSharedValue({ id: -1, x: 0, y: 0, t: 0, watching: false, panel: false });
   /** Cards taken out of the search: the next move, the finger nearest this point (on screen) carries them on the table. */
@@ -2114,7 +2142,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         touch.twist = null;
         // On a hand card (its touches come from the card itself, as in table mode): a tap opens its menu, an
         // upward drag lifts it out. Or a card on the table: a tap opens its menu, a drag carries it.
-        if (t.y >= L.handTop) {
+        if (L.inTray(t.x, t.y)) {
           const i = L.handCardAt(t.x, t.y);
           if (i >= 0 && L.selected.length) L.setSelected([]);
           touch.pressed = i >= 0 ? { kind: 'hand', hand: L.handIndex, iid: L.hand[i].iid } : null;
@@ -2508,7 +2536,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // Over the hand, it gathers into one pile under the finger, at hand size, and the hand makes room; back
         // over the table, it spreads out again as it was.
         const L = latest.get();
-        const over = f.now.y >= L.handTop;
+        const over = L.inTray(f.now.x, f.now.y);
         // Where the pile is (or cards flying out of it set off from), all the way, so flying cards keep up.
         heldX.set(f.now.x);
         heldY.set(f.now.y);
@@ -2871,7 +2899,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           return;
         }
         const onTools = !!t0 && t0.x >= band.toolsLeft && t0.x < band.toolsRight && t0.y >= band.toolsTop && t0.y < band.toolsBottom;
-        if (firstFinger && t0 && ((t0.y >= band.top && t0.y < band.bottom) || onTools)) {
+        const acrossTray = !!t0 && t0.x >= band.trayLeft && t0.x <= band.trayRight;
+        if (firstFinger && t0 && ((acrossTray && t0.y >= band.top && t0.y < band.bottom) || onTools)) {
           manager.fail();
           return;
         }
@@ -2880,7 +2909,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // lifts it out: then the touch is claimed, and every finger is tracked here, as for the table. A sideways
         // one is left to the scroll view; a tap opens the card's menu.
         if (firstFinger) {
-          if (t0 && t0.y >= band.tray) {
+          if (t0 && acrossTray && t0.y >= band.tray) {
             trayTouch.set({ id: t0.id, x: t0.x, y: t0.y, t: Date.now(), watching: true, panel: false });
             return;
           }
@@ -4425,8 +4454,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             phone can be passed round. Tapping the chosen tab folds the tray away (and back); holding a tab
             renames it.
           */}
-          <Animated.View style={[styles.trayWrap, { top: trayOpenTop - HAND_TAB_H, height: trayH + HAND_TAB_H }, trayStyle, trayGone && { display: 'none' }]}>
+          <Animated.View
+            style={[
+              styles.trayWrap,
+              { top: trayOpenTop - HAND_TAB_H, height: trayH + HAND_TAB_H },
+              narrowTray && { left: trayLeft, right: undefined, width: trayW },
+              trayStyle,
+              trayGone && { display: 'none' },
+            ]}>
             <View style={styles.tabs}>
+              <View style={styles.tabsRow} onLayout={(e) => setTabsW(Math.ceil(e.nativeEvent.layout.width))}>
               {Array.from({ length: HAND_COUNT }, (_, i) => {
                 const on = i === handIndex;
                 return (
@@ -4462,6 +4499,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                   </Pressable>
                 );
               })}
+              </View>
             </View>
             <View style={{ height: trayH }} pointerEvents="box-none">
               <WoodRail colors={theme.rail} shine={theme.shine} />
@@ -4932,12 +4970,15 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         closeLabel={menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' ? 'Done' : undefined}
         // On iPad: the table's settings (and its theme, chosen from them) dropped from the top; every other menu a
         // window where the finger was.
+        // On an iPhone turned on its side, the table's settings drop from the top as well.
         place={
           IS_PAD
             ? menu?.kind === 'table' || menu?.kind === 'color'
               ? { kind: 'drop' }
               : { kind: 'window', at: menuSpot?.at, from: menuSpot?.from, avoid: menuSpot?.from ? menuTarget : undefined }
-            : undefined
+            : sideways && (menu?.kind === 'table' || menu?.kind === 'color')
+              ? { kind: 'drop' }
+              : undefined
         }
         onPlace={(rect) => lastWindow.set({ rect })}
         onClose={() => {
@@ -5440,7 +5481,8 @@ const styles = StyleSheet.create({
   // Cards stand in the middle of the row's height (landscape ones are shorter than the rest).
   handCards: { paddingHorizontal: HAND_PAD, paddingVertical: HAND_ROW_PAD, gap: HAND_GAP, alignItems: 'center' },
   // Pull tabs standing on the tray's top edge, in the same wood, as table mode's: one per hand.
-  tabs: { height: HAND_TAB_H, flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', gap: 4, paddingHorizontal: 8 },
+  tabs: { height: HAND_TAB_H, flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', paddingHorizontal: HAND_TABS_PAD },
+  tabsRow: { flexShrink: 1, flexDirection: 'row', alignItems: 'flex-end', gap: HAND_TAB_GAP },
   tab: {
     flexShrink: 1,
     height: HAND_TAB_H,
