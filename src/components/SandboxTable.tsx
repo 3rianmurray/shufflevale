@@ -707,6 +707,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   // The tools drawer, on the left or right edge: pulled out to show the tools, tucked away again to hide them. Its
   // tab can be dragged up and down the edge, or across to the other one (the player's choice, kept for every table).
   const [toolsOpen, setToolsOpen] = useState(false);
+  /** How tall the tools are, together (measured): the panel is no taller than they need. */
+  const [toolsContentH, setToolsContentH] = useState(0);
   const [toolsSpot, setToolsSpot] = useState<ToolsSpot>(() => loadSettings().toolsSpot ?? DEFAULT_TOOLS_SPOT);
   // On an iPhone turned on its side the tools open from a tab in the top bar (beside the back button), with none on
   // the edge: a wider panel slides out on the left, clear of the notch, from below the back button to near the
@@ -847,18 +849,22 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     else haptics.tick();
   };
   // The tools drawer's place: its tab anywhere from just below the top bar to just above the hand's tabs (as a share
-  // of that, so it fits any screen), and the panel beside it, the whole of that height (its tools scroll if they don't fit).
+  // of that, so it fits any screen; the same with the hands hidden, so switching them never moves it), and the panel
+  // beside it, as tall as its tools need, up to the whole of that height (they scroll if they don't fit).
   const toolsMinY = insets.top + TOP_BAR_H + 8;
-  const toolsMaxY = Math.max(toolsMinY, trayOpenTop - HAND_TAB_H - TOOLS_TAB_H - 8);
+  const toolsMaxY = Math.max(toolsMinY, area.h - trayH - HAND_TAB_H - TOOLS_TAB_H - 8);
   const tabY = toolsMinY + toolsSpot.at * (toolsMaxY - toolsMinY);
-  const toolsH = toolsMaxY + TOOLS_TAB_H - toolsMinY;
+  /** The panel's height with all its tools in it (measured; until then, as tall as it can be). */
+  // (And its rim, top and bottom.)
+  const toolsFitH = toolsContentH ? toolsContentH + StyleSheet.hairlineWidth * 2 : Number.MAX_VALUE;
+  const toolsH = Math.min(toolsMaxY + TOOLS_TAB_H - toolsMinY, toolsFitH);
   const toolsTop = Math.min(Math.max(tabY - TOOLS_TAB_TOP, toolsMinY), toolsMaxY + TOOLS_TAB_H - toolsH);
   /** Where the tab sits in the drawer. */
   const tabInDrawer = tabY - toolsTop;
   /** Just below the top bar (and its back button). */
   const barBottom = insets.top + TOP_BAR_H;
   /** The sideways panel's height: from below the back button to a little above the bottom of the screen. */
-  const sideToolsH = Math.max(0, area.h - barBottom - insets.bottom - 8);
+  const sideToolsH = Math.min(Math.max(0, area.h - barBottom - insets.bottom - 8), toolsFitH);
   // With the tab up against the panel's top or bottom, that corner of the panel goes square, so the tab joins it
   // cleanly (like a folder's tab) instead of leaving a notch where the panel's corner curves away.
   const left = toolsSpot.side === 'left';
@@ -4635,7 +4641,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                   : [{ height: toolsH }, toolsSpot.side === 'left' ? styles.toolsPanelLeft : styles.toolsPanelRight, panelCorners],
                 toolsDragging && styles.hidden,
               ]}
-              contentContainerStyle={{ gap: 10 }}
+              // (Its padding inside its content, so the content's measured height is all the panel needs.)
+              contentContainerStyle={{ gap: 10, padding: 14 }}
+              onContentSizeChange={(_, h) => setToolsContentH(Math.ceil(h))}
               showsVerticalScrollIndicator={false}>
               <Text style={styles.toolsTitle}>Tools</Text>
               {(
@@ -5439,8 +5447,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     width: TOOLS_W,
-    padding: 14,
-    gap: 12,
     backgroundColor: 'rgba(8,18,26,0.9)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.22)',
