@@ -54,16 +54,38 @@ export function TabletopSurface({ theme }: { theme?: TableTheme } = {}) {
 export function WoodRail({
   colors: shades = ['#6b4528', '#4a2d18', '#2e1b0e'],
   shine,
+  rounded,
 }: {
   /** Another finish (a table's theme): light to dark, top to bottom. Walnut by default. */
   colors?: readonly [string, string, string];
   shine?: string;
+  /**
+   * A rail with ends (not edge to edge): its top corners rounded this much, and the highlight carried round them
+   * and down both ends, so they're finished, not cut off.
+   */
+  rounded?: number;
 } = {}) {
   return (
-    <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+    <View
+      style={[
+        StyleSheet.absoluteFill,
+        { pointerEvents: 'none' },
+        rounded ? { borderTopLeftRadius: rounded, borderTopRightRadius: rounded, overflow: 'hidden' } : null,
+      ]}>
       <LinearGradient colors={shades} locations={[0, 0.35, 1]} style={StyleSheet.absoluteFill} />
-      {/* A highlight along the rail's top edge, where the light catches it. */}
-      <View style={[styles.railHighlight, shine ? { backgroundColor: shine } : null]} />
+      {/* A highlight along the rail's top edge, where the light catches it (and down its ends, if it has them). */}
+      {rounded ? (
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            styles.railEdges,
+            { borderTopLeftRadius: rounded, borderTopRightRadius: rounded },
+            shine ? { borderColor: shine } : null,
+          ]}
+        />
+      ) : (
+        <View style={[styles.railHighlight, shine ? { backgroundColor: shine } : null]} />
+      )}
     </View>
   );
 }
@@ -90,4 +112,6 @@ const styles = StyleSheet.create({
   texture: { width: '100%', height: '100%' },
   edge: { position: 'absolute', left: 0, right: 0 },
   railHighlight: { height: 1.5, backgroundColor: 'rgba(255,220,180,0.35)' },
+  // The same highlight round a rail's top and down its ends.
+  railEdges: { borderTopWidth: 1.5, borderLeftWidth: 1.5, borderRightWidth: 1.5, borderBottomWidth: 0, borderColor: 'rgba(255,220,180,0.35)' },
 });
