@@ -22,6 +22,8 @@ export interface TableControls {
   openMenu: () => void;
   /** Something covers the table (e.g. a search, with its own title and Close): the bar steps out of the way. */
   hidden?: boolean;
+  /** The table's tools, opened from a button beside its name (an iPhone turned on its side: no room for their tab). */
+  tools?: { open: boolean; toggle: () => void };
 }
 
 /** Back to the screen before, or home if there isn't one (e.g. the app was reloaded straight onto the table). */
@@ -56,20 +58,31 @@ export function TableTopBar({ controls }: { controls: TableControls | null }) {
         />
       </TourSpot>
       {controls ? (
-        <TourSpot id="table.title" style={styles.titleSpot}>
-          <Pressable
-            onPress={controls.openMenu}
-            disabled={controls.busy}
-            accessibilityRole="button"
-            accessibilityLabel={`${controls.title}, table options`}
-            hitSlop={6}
-            style={({ pressed }) => [styles.glass, styles.title, pressed && styles.pressed, controls.busy && styles.disabled]}>
-            <Text style={styles.titleText} numberOfLines={1}>
-              {controls.title}
-            </Text>
-            <SymbolView name={{ ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }} size={12} weight="semibold" tintColor={colors.text} />
-          </Pressable>
-        </TourSpot>
+        // The name, and (on an iPhone turned on its side) the tools' button beside it.
+        <View style={styles.middle}>
+          <TourSpot id="table.title" style={styles.titleSpot}>
+            <Pressable
+              onPress={controls.openMenu}
+              disabled={controls.busy}
+              accessibilityRole="button"
+              accessibilityLabel={`${controls.title}, table options`}
+              hitSlop={6}
+              style={({ pressed }) => [styles.glass, styles.title, pressed && styles.pressed, controls.busy && styles.disabled]}>
+              <Text style={styles.titleText} numberOfLines={1}>
+                {controls.title}
+              </Text>
+              <SymbolView name={{ ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }} size={12} weight="semibold" tintColor={colors.text} />
+            </Pressable>
+          </TourSpot>
+          {controls.tools ? (
+            <RoundButton
+              icon={controls.tools.open ? { ios: 'xmark', android: 'close', web: 'close' } : { ios: 'wrench.and.screwdriver', android: 'build', web: 'build' }}
+              label={controls.tools.open ? 'Hide tools' : 'Show tools'}
+              onPress={controls.tools.toggle}
+              disabled={controls.busy}
+            />
+          ) : null}
+        </View>
       ) : (
         <View />
       )}
@@ -142,6 +155,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.22)',
   },
   pair: { flexDirection: 'row', gap: 8 },
+  middle: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   round: { width: SIZE, height: SIZE, borderRadius: SIZE / 2, alignItems: 'center', justifyContent: 'center' },
   title: {
     flexShrink: 1,
