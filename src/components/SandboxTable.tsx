@@ -335,8 +335,6 @@ type Menu =
   | { kind: 'pieceColor'; id?: string; marker?: boolean }
   | { kind: 'pieceShape'; id?: string }
   | { kind: 'addShape' }
-  /** Adding cards: whole decks, or cards chosen one by one. */
-  | { kind: 'addCards' }
   /** Where a token's picture comes from: for a new token, or (with an id) to change one's. */
   /** Scaling stacks and pieces (changing as the slider moves). */
   | { kind: 'scale'; stacks: string[]; pieces: string[] }
@@ -4017,18 +4015,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         actions: [],
       };
     }
-    if (menu.kind === 'addCards') {
-      const icon = (ios: string, android: string) => ({ ios, android, web: android }) as SheetTile['icon'];
-      return {
-        title: 'Add cards',
-        tiles: [
-          { label: 'Full decks', icon: icon('rectangle.stack', 'layers'), onPress: () => setTimeout(() => setMenu({ kind: 'addDeck' }), 250) },
-          // Its own screen, which iOS can only show once this menu has gone.
-          { label: 'Single cards', icon: icon('rectangle.portrait', 'crop_portrait'), opensModal: true, onPress: () => setAddingCards(true) },
-        ],
-        actions: [],
-      };
-    }
     if (menu.kind === 'scorePlayers') {
       const pad = table.pieces?.find((p) => p.id === menu.id);
       if (!pad) return null;
@@ -4551,11 +4537,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                       offerTipAfterUses('tables-quick-pinch', undefined, 900);
                     },
                   ],
-                  ['rectangle.portrait.on.rectangle.portrait', 'style', 'Add Cards', () => (!pro && playgroundHere ? playgroundOnly() : setMenu({ kind: 'addCards' }))],
+                  // Cards and components alike: one menu.
                   [
-                    'die.face.5',
-                    'casino',
-                    'Add Components',
+                    'plus.circle',
+                    'add_circle',
+                    'Add to Table',
                     () => {
                       // In the middle of the view (holding the table adds right where it's held).
                       setAddAt(null);
@@ -4857,7 +4843,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       <AddCardsModal visible={addingCards} decks={decks} onAdd={addCardsToTable} onClose={() => setAddingCards(false)} />
       {/* The table's menu, and choosing a deck to add. */}
       <ActionSheet
-        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'addCards' || menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
+        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
         title={sheet?.title}
         banner={sheet && 'banner' in sheet ? sheet.banner : undefined}
         wideTile={sheet && 'wideTile' in sheet ? sheet.wideTile : undefined}
