@@ -262,7 +262,7 @@ export const TablePieceView = memo(function TablePieceView({
       ) : piece.kind === 'die' ? (
         <Die piece={piece} color={color} rollKey={rollKey} rollFrom={rollFrom} size={w} selected={selected} />
       ) : piece.kind === 'coin' ? (
-        <Coin piece={piece} color={color} rollKey={rollKey} size={w} selected={selected} />
+        <Coin piece={piece} rollKey={rollKey} size={w} selected={selected} />
       ) : piece.kind === 'text' ? (
         <TextLabel piece={piece} color={color} selected={selected} k={laidOut} />
       ) : piece.kind === 'marker' ? (
@@ -562,8 +562,12 @@ function useRollMotion(rollKey: number) {
 /** How many times a tossed coin turns over in the air. */
 const COIN_FLIPS = 5;
 
-/** A coin: heads (H) or tails (T). Tossed, it hops and turns over and over, edge-on between faces. */
-function Coin({ piece, color, rollKey, size, selected }: { piece: TablePiece; color: string; rollKey: number; size: number; selected: boolean }) {
+/** A coin's faces: a head in profile, and a laurel wreath. */
+const COIN_HEADS = require('../../assets/pieces/coin-heads.png');
+const COIN_TAILS = require('../../assets/pieces/coin-tails.png');
+
+/** A gold coin: heads or tails. Tossed, it hops and turns over and over, edge-on between faces. */
+function Coin({ piece, rollKey, size, selected }: { piece: TablePiece; rollKey: number; size: number; selected: boolean }) {
   const OS = useContext(OversampleContext);
   const motion = useRollMotion(rollKey);
   const [face, setFace] = useState<number | null>(null);
@@ -590,49 +594,18 @@ function Coin({ piece, color, rollKey, size, selected }: { piece: TablePiece; co
     ];
   }, [motion]);
   const art = artFrame(size, size, OS);
-  const ink = shade(color, -0.55);
   const c = art.at([0.5, 0.5]);
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { transform }]}>
+      {/* Its shadow on the cloth, then the face it shows. */}
       <Canvas style={art.style}>
-        <Circle cx={c[0]} cy={c[1]} r={art.len(0.5)} color={shade(color, -0.35)}>
+        <Circle cx={c[0]} cy={c[1]} r={art.len(0.49)} color="#000">
           {pieceShadow(OS)}
         </Circle>
-        <Circle cx={c[0]} cy={c[1]} r={art.len(0.5)} color={shade(color, -0.35)} />
-        <Circle cx={c[0] - art.len(0.02)} cy={c[1] - art.len(0.02)} r={art.len(0.44)} color={shade(color, shown === 1 ? 0.08 : -0.06)} />
-        <Circle cx={c[0] - art.len(0.02)} cy={c[1] - art.len(0.02)} r={art.len(0.36)} color={shade(color, 0.35)} style="stroke" strokeWidth={art.len(0.03)} opacity={0.6} />
-        {shown === 1 ? <Heads art={art} color={ink} /> : <Tails art={art} color={ink} />}
-        {selected ? <Circle cx={c[0]} cy={c[1]} r={art.len(0.5)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
       </Canvas>
+      <Image source={shown === 1 ? COIN_HEADS : COIN_TAILS} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
+      {selected ? <View style={[StyleSheet.absoluteFill, styles.coinSelected, { borderRadius: size / 2 }]} /> : null}
     </Animated.View>
-  );
-}
-
-/** A coin's heads: a head and shoulders in profile, drawn in the coin's ink (its drawing in a 0–1 box). */
-function Heads({ art, color }: { art: ReturnType<typeof artFrame>; color: string }) {
-  const head = Skia.Path.Make();
-  head.addCircle(...art.at([0.5, 0.36]), art.len(0.15));
-  const shoulders = Skia.Path.Make();
-  // The lower half of a circle, under the head: its top edge is the shoulders' line.
-  shoulders.addArc({ x: art.at([0.22, 0.6])[0], y: art.at([0.22, 0.6])[1], width: art.len(0.56), height: art.len(0.56) }, 0, 180);
-  return (
-    <>
-      <Path path={head} color={color} />
-      <Path path={shoulders} color={color} />
-    </>
-  );
-}
-
-/** A coin's tails: a wreath of leaves round a star, drawn in the coin's ink (in a 0–1 box). */
-function Tails({ art, color }: { art: ReturnType<typeof artFrame>; color: string }) {
-  const leaves = ring(12, 0.34, [0.5, 0.5]);
-  return (
-    <>
-      {leaves.map((p, i) => (
-        <Circle key={i} cx={art.at(p)[0]} cy={art.at(p)[1]} r={art.len(0.05)} color={color} />
-      ))}
-      <Path path={art.poly(ring(10, 0.13, [0.5, 0.5]).map((p, i) => (i % 2 ? ([0.5 + (p[0] - 0.5) * 0.45, 0.5 + (p[1] - 0.5) * 0.45] as Pt) : p)))} color={color} />
-    </>
   );
 }
 
@@ -1230,6 +1203,7 @@ const styles = StyleSheet.create({
   timerText: { position: 'absolute', left: 0, top: 0, textAlign: 'center', fontWeight: '800', fontVariant: ['tabular-nums'] },
   timerHint: { position: 'absolute', left: 0, textAlign: 'center', fontSize: 9, fontWeight: '700', opacity: 0.7 },
   zone: { flex: 1, borderWidth: 3, borderRadius: 12 },
+  coinSelected: { borderWidth: 3, borderColor: colors.accent },
   scorePad: { flex: 1, boxShadow: '1px 3px 8px rgba(0, 0, 0, 0.45)' },
   scoreColumns: { flex: 1, flexDirection: 'row' },
   scoreCell: { alignItems: 'center', justifyContent: 'center' },

@@ -3630,7 +3630,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             [{ kind: 'toggle', label: 'Roll in place', value: !!piece.rollInPlace, onChange: (on) => commit(setPiece(table, id, { rollInPlace: on || undefined })) }, takeOffRow],
           );
         case 'coin':
-          return focus('Coin', [tile('Flip', 'arrow.triangle.2.circlepath', 'sync', () => rollDice([id])), colorTile, scaleTile], [takeOffRow]);
+          // (Gold, as its art is: no color to choose.)
+          return focus('Coin', [tile('Flip', 'arrow.triangle.2.circlepath', 'sync', () => rollDice([id])), scaleTile], [takeOffRow]);
         case 'spinner':
           return focus('Spinner', [tile('Spin', 'arrow.clockwise.circle', 'autorenew', () => rollDice([id])), colorTile, scaleTile], [lockRow, takeOffRow]);
         case 'text':
