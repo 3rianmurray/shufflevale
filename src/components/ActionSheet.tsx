@@ -225,7 +225,9 @@ export function ActionSheet(props: Props) {
   const tileRowsShown = tiles?.length ? inTileRows(tiles) : [];
   const moreRowsShown = moreTiles?.length ? inTileRows(moreTiles) : [];
   const cellShare = 100 / Math.max(2, ...[...tileRowsShown, ...moreRowsShown].map((x) => x.length));
-  const tileButton = (t: SheetTile, span = 1) => (
+  // `locked`: part of Pro, not yet unlocked (the second grid's, when it's `moreLocked`): grayed out, but it still
+  // works (it opens Pro), so it's plainly apart from what's under it (e.g. Paste).
+  const tileButton = (t: SheetTile, span = 1, locked = false) => (
     <View key={t.label} style={[styles.tileCell, { width: `${cellShare * span}%` }]}>
       <Pressable
         onPress={() => run(t)}
@@ -233,7 +235,7 @@ export function ActionSheet(props: Props) {
         accessibilityRole="button"
         accessibilityLabel={t.label}
         accessibilityState={{ disabled: t.disabled || isOff(t) }}
-        style={({ pressed }) => [styles.tile, isGuided(t) && styles.guided, pressed && styles.pressed, (t.disabled || isOff(t)) && styles.tileDisabled]}>
+        style={({ pressed }) => [styles.tile, isGuided(t) && styles.guided, pressed && styles.pressed, locked && styles.tileLocked, (t.disabled || isOff(t)) && styles.tileDisabled]}>
         <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
         <Text style={[styles.tileText, t.destructive && { color: colors.danger }]} numberOfLines={1}>
           {t.label}
@@ -275,7 +277,7 @@ export function ActionSheet(props: Props) {
           ) : null}
           {moreRowsShown.map((row, r) => (
             <View key={`more${r}`} style={styles.tileRow}>
-              {row.map((t) => tileButton(t))}
+              {row.map((t) => tileButton(t, 1, !!moreLocked))}
             </View>
           ))}
           {wideTile ? <View style={styles.tileRow}>{tileButton(wideTile, 2)}</View> : null}
@@ -478,6 +480,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   tileDisabled: { opacity: 0.35 },
+  tileLocked: { opacity: 0.45 },
   // On a tile: in its top right corner.
   tileProTag: { position: 'absolute', top: 4, right: 4, paddingHorizontal: 5, paddingVertical: 1 },
   tileText: { color: colors.text, fontSize: 12, fontWeight: '500' },
