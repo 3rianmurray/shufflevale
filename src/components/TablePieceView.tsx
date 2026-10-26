@@ -1034,17 +1034,24 @@ function ScorePad({ piece, color, selected, k }: { piece: TablePiece; color: str
                 </View>
               ))}
             </View>
-            <View style={[styles.scoreCell, { height: SCORE_TOTAL * k, borderTopWidth: 2 * k, borderTopColor: rule }]}>
+            {/* Its total, ruled off above and below. */}
+            <View style={[styles.scoreCell, { height: SCORE_TOTAL * k, borderTopWidth: 2 * k, borderTopColor: rule, borderBottomWidth: 2 * k, borderBottomColor: rule }]}>
               <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[styles.scoreTotal, { color: ink, fontSize: 19 * k }]}>
                 {scoreText(columns[i].total)}
               </Text>
             </View>
-            {/* Its + : more points for this player. */}
-            <View style={[styles.scoreCell, { height: SCORE_ADD * k }]}>
-              <View style={[styles.scoreAdd, { width: 26 * k, height: 26 * k, borderRadius: 13 * k, borderWidth: 1.5 * k, borderColor: rule }]}>
-                <Text allowFontScaling={false} style={[styles.scoreAddText, { color: ink, fontSize: 18 * k, lineHeight: 22 * k }]}>
-                  +
-                </Text>
+          </View>
+        ))}
+      </View>
+      {/* Under the totals, apart from them (no column lines): a shaded bar each, with a + to add points. */}
+      <View style={[styles.scoreAddRow, { height: SCORE_ADD * k }]}>
+        {names.map((_, i) => (
+          <View key={i} style={[styles.scoreCell, { width: SCORE_COLUMN * k, paddingHorizontal: 3 * k, paddingTop: 5 * k }]}>
+            <View style={[styles.scoreAdd, { alignSelf: 'stretch', height: 26 * k, borderRadius: 6 * k, backgroundColor: shade(color, isLight(color) ? -0.1 : 0.12) }]}>
+              {/* The +: two lines crossing, so it's exactly in the middle (a typed + sits on its font's line). */}
+              <View style={{ width: 12 * k, height: 12 * k }}>
+                <View style={[styles.scorePlusLine, { left: 0, top: 5 * k, width: 12 * k, height: 2 * k, borderRadius: k, backgroundColor: ink }]} />
+                <View style={[styles.scorePlusLine, { left: 5 * k, top: 0, width: 2 * k, height: 12 * k, borderRadius: k, backgroundColor: ink }]} />
               </View>
             </View>
           </View>
@@ -1232,8 +1239,9 @@ const styles = StyleSheet.create({
   scoreName: { fontWeight: '700' },
   scorePoints: { fontWeight: '500', fontVariant: ['tabular-nums'] },
   scoreTotal: { fontWeight: '800', fontVariant: ['tabular-nums'] },
+  scoreAddRow: { flexDirection: 'row' },
   scoreAdd: { alignItems: 'center', justifyContent: 'center' },
-  scoreAddText: { fontWeight: '600', textAlign: 'center' },
+  scorePlusLine: { position: 'absolute' },
   scoreBar: { position: 'absolute' },
   artShadow: { opacity: 0.4, transform: [{ translateX: 2 }, { translateY: 4 }] },
   artPrint: { borderRadius: 6, boxShadow: '1px 3px 8px rgba(0, 0, 0, 0.45)' },
