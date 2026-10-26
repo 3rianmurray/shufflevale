@@ -613,6 +613,15 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   });
   const layOut = (e: LayoutChangeEvent) => {
     const space = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
+    // The phone turned (the screen changed shape): what was in the middle of the view stays in the middle, the
+    // camera's zoom and turn kept. (The middle as it was: across, and between the top bar and the hand; it's put as
+    // far down the new screen, in proportion.)
+    if (placed.done() && view && view.h > 0 && (view.w !== space.w || view.h !== space.h)) {
+      const was = { x: view.w / 2, y: (barBottom + handTop - HAND_TAB_H) / 2 };
+      const now = { x: space.w / 2, y: (was.y * space.h) / view.h };
+      const cam = readCamera();
+      writeCamera({ ...cam, tx: cam.tx + now.x - was.x, ty: cam.ty + now.y - was.y });
+    }
     setView(space);
     if (placed.done() || !table) return;
     writeCamera(table.camera ?? startCamera({ w: space.w, h: space.h - HAND_H }, table.focus));
