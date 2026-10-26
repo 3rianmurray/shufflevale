@@ -57,9 +57,27 @@ export function TableTopBar({ controls }: { controls: TableControls | null }) {
           disabled={!!controls?.busy}
         />
       </TourSpot>
+      {controls?.tools ? (
+        // On an iPhone turned on its side: the tools' tab, hanging from the top edge just past the back button, the
+        // drawer's tab (its shape and color) turned to hang down. The panel it opens is on the left.
+        <Pressable
+          onPress={controls.tools.toggle}
+          disabled={controls.busy}
+          accessibilityRole="button"
+          accessibilityLabel={controls.tools.open ? 'Hide tools' : 'Show tools'}
+          hitSlop={{ bottom: 10, left: 6, right: 6 }}
+          style={({ pressed }) => [styles.toolsTab, { left: 12 + insets.left + SIZE + 14 }, pressed && styles.pressed, controls.busy && styles.disabled]}>
+          <SymbolView
+            name={controls.tools.open ? { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' } : { ios: 'wrench.and.screwdriver', android: 'build', web: 'build' }}
+            size={14}
+            weight="semibold"
+            tintColor={colors.accent}
+          />
+        </Pressable>
+      ) : null}
       {controls ? (
-        // The name, and (on an iPhone turned on its side) the tools' button beside it.
-        <View style={styles.middle}>
+        // (Clear of the tools tab, when there is one.)
+        <View style={[styles.middle, controls.tools && { marginLeft: 72 + 14 }]}>
           <TourSpot id="table.title" style={styles.titleSpot}>
             <Pressable
               onPress={controls.openMenu}
@@ -74,14 +92,6 @@ export function TableTopBar({ controls }: { controls: TableControls | null }) {
               <SymbolView name={{ ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }} size={12} weight="semibold" tintColor={colors.text} />
             </Pressable>
           </TourSpot>
-          {controls.tools ? (
-            <RoundButton
-              icon={controls.tools.open ? { ios: 'xmark', android: 'close', web: 'close' } : { ios: 'wrench.and.screwdriver', android: 'build', web: 'build' }}
-              label={controls.tools.open ? 'Hide tools' : 'Show tools'}
-              onPress={controls.tools.toggle}
-              disabled={controls.busy}
-            />
-          ) : null}
         </View>
       ) : (
         <View />
@@ -156,6 +166,21 @@ const styles = StyleSheet.create({
   },
   pair: { flexDirection: 'row', gap: 8 },
   middle: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // The table's tools tab, as on the edge of the table (see SandboxTable's toolsTab) but hanging from the top.
+  toolsTab: {
+    position: 'absolute',
+    top: 0,
+    width: 72,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,18,26,0.9)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: 0,
+    borderColor: 'rgba(255,255,255,0.22)',
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+  },
   round: { width: SIZE, height: SIZE, borderRadius: SIZE / 2, alignItems: 'center', justifyContent: 'center' },
   title: {
     flexShrink: 1,
