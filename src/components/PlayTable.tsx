@@ -3099,6 +3099,9 @@ function Table({
           setMenuZoom(null);
         }}
         {...sheetProps}
+        // The deck's (or session's) menu, opened from its name in the top bar, drops from the top, by the name; so
+        // does its theme, chosen from it. Every other menu comes up from the bottom.
+        place={sheet.kind === 'table' || sheet.kind === 'theme' ? { kind: 'drop' } : undefined}
       />
 
     </View>

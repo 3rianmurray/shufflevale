@@ -4968,16 +4968,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         actions={sheet?.actions ?? []}
         // Scaling is kept as it's made: put away, it's done (and one undo).
         closeLabel={menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' ? 'Done' : undefined}
-        // On iPad: the table's settings (and its theme, chosen from them) dropped from the top; every other menu a
-        // window where the finger was.
-        // On an iPhone turned on its side, the table's settings drop from the top as well.
+        // The table's settings (and its theme, chosen from them) dropped from the top, by its name, on iPad and iPhone.
+        // Every other menu: on iPad a window where the finger was, on iPhone a sheet from the bottom.
         place={
-          IS_PAD
-            ? menu?.kind === 'table' || menu?.kind === 'color'
-              ? { kind: 'drop' }
-              : { kind: 'window', at: menuSpot?.at, from: menuSpot?.from, avoid: menuSpot?.from ? menuTarget : undefined }
-            : sideways && (menu?.kind === 'table' || menu?.kind === 'color')
-              ? { kind: 'drop' }
+          menu?.kind === 'table' || menu?.kind === 'color'
+            ? { kind: 'drop' }
+            : IS_PAD
+              ? { kind: 'window', at: menuSpot?.at, from: menuSpot?.from, avoid: menuSpot?.from ? menuTarget : undefined }
               : undefined
         }
         onPlace={(rect) => lastWindow.set({ rect })}
