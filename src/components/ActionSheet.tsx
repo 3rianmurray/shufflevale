@@ -80,6 +80,9 @@ const OUT_MS = 200;
 const WINDOW_W = 372;
 const DROP_W = 440;
 const SIDEWAYS_W = 480;
+/** The corners' rounding: a sheet's (or dropped panel's), and a window's. */
+const SHEET_RADIUS = 16;
+const WINDOW_RADIUS = 18;
 
 /**
  * A bottom sheet of actions. Each action closes the sheet when pressed. The dimmed backdrop fades in and out
@@ -357,7 +360,12 @@ export function ActionSheet(props: Props) {
               {title ?? ''}
             </Text>
           </View>
-          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" style={styles.windowScroll} contentContainerStyle={styles.windowContent}>
+          <ScrollView
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+            style={styles.windowScroll}
+            contentContainerStyle={styles.windowContent}
+            scrollIndicatorInsets={{ bottom: WINDOW_RADIUS }}>
             {body}
           </ScrollView>
           {/* The grip: it can be moved (as a window's corner, or a zone's). */}
@@ -384,7 +392,7 @@ export function ActionSheet(props: Props) {
             { top: insets.top + 8, left: (screenWidth - w) / 2, width: w, maxHeight: room },
             { transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [-(sheetHeight + insets.top + 16), 0] }) }] },
           ]}>
-          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+          <ScrollView bounces={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} scrollIndicatorInsets={{ top: SHEET_RADIUS, bottom: SHEET_RADIUS }}>
             {body}
           </ScrollView>
         </Animated.View>
@@ -408,7 +416,8 @@ export function ActionSheet(props: Props) {
           sideways && { width: SIDEWAYS_W, alignSelf: 'center' },
           { transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [sheetHeight, 0] }) }] },
         ]}>
-        <ScrollView bounces={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+        {/* Its scroll bar kept below the rounded corners, so it never shows outside them. */}
+        <ScrollView bounces={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} scrollIndicatorInsets={{ top: SHEET_RADIUS }}>
           {body}
         </ScrollView>
       </Animated.View>
@@ -424,7 +433,7 @@ const styles = StyleSheet.create({
   // A window (as the table's other options are, on iPad: see CardFocus's compact panel).
   window: {
     position: 'absolute',
-    borderRadius: 18,
+    borderRadius: WINDOW_RADIUS,
     backgroundColor: '#08121a',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.25)',
@@ -443,7 +452,7 @@ const styles = StyleSheet.create({
   drop: {
     position: 'absolute',
     backgroundColor: colors.surface,
-    borderRadius: 16,
+    borderRadius: SHEET_RADIUS,
     shadowColor: '#000',
     shadowOpacity: 0.4,
     shadowRadius: 18,
@@ -451,8 +460,8 @@ const styles = StyleSheet.create({
   },
   sheet: {
     backgroundColor: colors.surface,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: SHEET_RADIUS,
+    borderTopRightRadius: SHEET_RADIUS,
     maxHeight: '85%',
   },
   content: { padding: 12, gap: 6 },
