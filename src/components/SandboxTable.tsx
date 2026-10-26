@@ -691,44 +691,53 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   // tab can be dragged up and down the edge, or across to the other one (the player's choice, kept for every table).
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolsSpot, setToolsSpot] = useState<ToolsSpot>(() => loadSettings().toolsSpot ?? DEFAULT_TOOLS_SPOT);
-  // On an iPhone turned on its side the tools open from a button in the top bar, with no tab on the edge: tucked away,
-  // the whole drawer goes off the screen, past the notch beside it.
-  const toolsTucked = sideways ? TOOLS_W + TOOLS_TAB_W + Math.max(insets.left, insets.right) : TOOLS_W;
-  const toolsClosedX = toolsSpot.side === 'left' ? -toolsTucked : toolsTucked;
+  // On an iPhone turned on its side the tools open from a button in the top bar, with no tab on the edge: the panel
+  // drops from the top, in the middle (clear of the notch either side), and goes back up off the screen.
+  const toolsClosedX = sideways ? 0 : toolsSpot.side === 'left' ? -TOOLS_W : TOOLS_W;
   const toolsX = useSharedValue(toolsClosedX);
+  /** How far the dropped panel (a sideways iPhone's) is pulled up: off the top of the screen while it's put away. */
+  const toolsDropY = useSharedValue(0);
+  const toolsDropHidden = -screenH;
+  /** The dropped panel's height (as tall as its tools, at most the room there is), measured. */
+  const [toolsPanelH, setToolsPanelH] = useState(0);
   /** The tab's being dragged: just the tab shows, not the (tucked away) panel it pulls out. */
   const [toolsDragging, setToolsDragging] = useState(false);
   /** The tab being dragged: how far, so far (the drawer follows it until it's let go). */
   const toolsDragX = useSharedValue(0);
   const toolsDragY = useSharedValue(0);
   const toolsStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: toolsX.value + toolsDragX.value }, { translateY: toolsDragY.value }],
+    transform: [{ translateX: toolsX.value + toolsDragX.value }, { translateY: toolsDragY.value + toolsDropY.value }],
   }));
   const showTools = (open: boolean) => {
     setToolsOpen(open);
+    haptics.tick();
+    if (sideways) {
+      // Dropped from the top with a little spring, and slid back up.
+      toolsDropY.set(open ? withSpring(0, TOOLS_SPRING) : withTiming(toolsDropHidden, { duration: TOOLS_CLOSE_MS, easing: ReEasing.in(ReEasing.quad) }));
+      return;
+    }
     // Opening springs out past its place and back. Closing can't (it would push the tab past the screen's edge, cut
     // off): it slides shut, then bounces back out off the edge a little, like a drawer, and settles.
-    // (With no tab, on a sideways iPhone, it just slides away: a bounce back would show it again.)
-    const shut = withTiming(toolsClosedX, { duration: TOOLS_CLOSE_MS, easing: ReEasing.in(ReEasing.quad) });
     toolsX.set(
       open
         ? withSpring(0, TOOLS_SPRING)
-        : sideways
-          ? shut
-          : withSequence(shut, withSpring(toolsClosedX, { ...TOOLS_SPRING, velocity: toolsSpot.side === 'left' ? TOOLS_REBOUND : -TOOLS_REBOUND })),
+        : withSequence(
+            withTiming(toolsClosedX, { duration: TOOLS_CLOSE_MS, easing: ReEasing.in(ReEasing.quad) }),
+            withSpring(toolsClosedX, { ...TOOLS_SPRING, velocity: toolsSpot.side === 'left' ? TOOLS_REBOUND : -TOOLS_REBOUND }),
+          ),
     );
-    haptics.tick();
     // After opening it a few times: the tab can be moved.
     if (open && !sideways) offerTipAfterUses('tables-tools-drag');
   };
   // Put down somewhere new: the drawer's laid out there now, so the drag's offset goes (and it's tucked on that side),
-  // before the screen's drawn, so it doesn't jump. The same once the phone's turned (tucked further away, or less).
+  // before the screen's drawn, so it doesn't jump. The same once the phone's turned (from the edge to the top, or back).
   useLayoutEffect(() => {
     toolsDragX.set(0);
     toolsDragY.set(0);
     toolsX.set(toolsOpen ? 0 : toolsClosedX);
+    toolsDropY.set(sideways && !toolsOpen ? toolsDropHidden : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toolsSpot, toolsClosedX, toolsDragX, toolsDragY, toolsX]);
+  }, [toolsSpot, toolsClosedX, sideways, toolsDropHidden, toolsDragX, toolsDragY, toolsX, toolsDropY]);
 
   // ---- The hand tray, as in table mode: the hand's cards side by side in a row that scrolls sideways. ----
   const area = view ?? { w: screenW, h: 0 };
@@ -822,6 +831,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const toolsTop = Math.min(Math.max(tabY - TOOLS_TAB_TOP, toolsMinY), toolsMaxY + TOOLS_TAB_H - toolsH);
   /** Where the tab sits in the drawer. */
   const tabInDrawer = tabY - toolsTop;
+  /** The dropped panel's left edge (an iPhone turned on its side): in the middle. */
+  const toolsDropLeft = ((area.w || screenW) - TOOLS_W) / 2;
   // With the tab up against the panel's top or bottom, that corner of the panel goes square, so the tab joins it
   // cleanly (like a folder's tab) instead of leaving a notch where the panel's corner curves away.
   const left = toolsSpot.side === 'left';
@@ -830,7 +841,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     ...(tabInDrawer + TOOLS_TAB_H > toolsH - TOOLS_PANEL_RADIUS && { [left ? 'borderBottomRightRadius' : 'borderBottomLeftRadius']: 0 }),
   };
   // The tab: a tap opens or closes the drawer; a drag (while it's closed) carries it up or down, or to the other edge.
-  const toolsDrag = useMemo(() => {
+  const [toolsDrag] = useState(() => {
     const box = {
       dragging: false,
       /** Moved before the hold was up: not a tap, and not a drag. */
@@ -906,7 +917,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       },
     });
     return { box, responder };
-  }, [toolsDragX, toolsDragY]);
+  });
   Object.assign(toolsDrag.box, {
     open: toolsOpen,
     side: toolsSpot.side,
@@ -1952,8 +1963,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const tabBand = useSharedValue({ top: 0, bottom: 0, tray: 0, trayLeft: 0, trayRight: 0, toolsLeft: 0, toolsRight: 0, toolsTop: 0, toolsBottom: 0, panel: false });
   useEffect(() => {
     const right = toolsSpot.side === 'right';
-    // From the screen's edge, past the notch it stands clear of (an iPhone on its side), to the tab's inner edge.
-    const reach = (right ? insets.right : insets.left) + (toolsOpen ? TOOLS_W + TOOLS_TAB_W : TOOLS_TAB_W);
+    // From the screen's edge to the tab's inner edge.
+    const reach = toolsOpen ? TOOLS_W + TOOLS_TAB_W : TOOLS_TAB_W;
     const w = area.w || screenW;
     tabBand.set({
       top: trayGone ? Number.MAX_VALUE : handTop - HAND_TAB_H,
@@ -1962,16 +1973,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // Across: the tray's width (narrower than the screen on an iPhone turned on its side).
       trayLeft,
       trayRight: trayLeft + trayW,
-      // The tools drawer, on its edge: just its tab while it's tucked away, the whole panel when it's out.
-      toolsLeft: right ? w - reach : 0,
-      toolsRight: right ? w : reach,
-      // (Tucked away on a sideways iPhone, it has no tab: nowhere.)
+      // The tools drawer, on its edge: just its tab while it's tucked away, the whole panel when it's out. Dropped
+      // from the top instead (a sideways iPhone): the panel while it's down, and nowhere while it's put away.
+      toolsLeft: sideways ? toolsDropLeft : right ? w - reach : 0,
+      toolsRight: sideways ? toolsDropLeft + TOOLS_W : right ? w : reach,
       toolsTop: toolsOpen ? toolsTop : sideways ? -1 : tabY,
-      toolsBottom: toolsOpen ? toolsTop + toolsH : sideways ? -1 : tabY + TOOLS_TAB_H,
+      toolsBottom: toolsOpen ? toolsTop + (sideways ? toolsPanelH : toolsH) : sideways ? -1 : tabY + TOOLS_TAB_H,
       // The search, over everything while it's open (and not on its way out): its touches are its own.
       panel: !!searching && !searchLeaving,
     });
-  }, [handTop, folded, trayGone, trayLeft, trayW, sideways, toolsOpen, toolsTop, toolsH, tabY, toolsSpot, area.w, screenW, tabBand, searching, searchLeaving, insets.left, insets.right]);
+  }, [handTop, folded, trayGone, trayLeft, trayW, sideways, toolsOpen, toolsTop, toolsH, toolsPanelH, toolsDropLeft, tabY, toolsSpot, area.w, screenW, tabBand, searching, searchLeaving]);
   /** A touch that landed in the open tray, watched (but not yet claimed) to see if it lifts a card out. */
   const trayTouch = useSharedValue({ id: -1, x: 0, y: 0, t: 0, watching: false, panel: false });
   /** Cards taken out of the search: the next move, the finger nearest this point (on screen) carries them on the table. */
@@ -4570,30 +4581,27 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           <Animated.View
             style={[
               styles.tools,
-              // Clear of the notch, on an iPhone turned on its side (the overshoot below fills in behind it).
-              toolsSpot.side === 'left' ? { left: insets.left } : { right: insets.right },
+              // On an iPhone turned on its side: dropped from the top, in the middle, clear of the notch either side.
+              sideways ? { left: toolsDropLeft } : toolsSpot.side === 'left' ? { left: 0 } : { right: 0 },
               { top: toolsTop, height: toolsH, zIndex: 10 },
               toolsStyle,
               !!searching && styles.hidden,
             ]}
             pointerEvents={searching ? 'none' : 'box-none'}>
             {/* More of the panel past the screen's edge, so its spring's bounce never shows a gap beside it. */}
-            {toolsDragging ? null : (
+            {toolsDragging || sideways ? null : (
               <View
-                style={[
-                  styles.overshoot,
-                  styles.toolsOvershoot,
-                  {
-                    top: 0,
-                    height: toolsH,
-                    width: SPRING_OVERSHOOT + Math.max(insets.left, insets.right),
-                    left: toolsSpot.side === 'left' ? -(SPRING_OVERSHOOT + insets.left) : TOOLS_TAB_W + TOOLS_W,
-                  },
-                ]}
+                style={[styles.overshoot, styles.toolsOvershoot, { top: 0, height: toolsH, width: SPRING_OVERSHOOT, left: toolsSpot.side === 'left' ? -SPRING_OVERSHOOT : TOOLS_TAB_W + TOOLS_W }]}
               />
             )}
             <ScrollView
-              style={[styles.toolsPanel, { height: toolsH }, toolsSpot.side === 'left' ? styles.toolsPanelLeft : styles.toolsPanelRight, panelCorners, toolsDragging && styles.hidden]}
+              onLayout={(e) => setToolsPanelH(e.nativeEvent.layout.height)}
+              style={[
+                styles.toolsPanel,
+                // Dropped, as tall as its tools (at most the room there is); on the edge, the whole height.
+                sideways ? [styles.toolsPanelDropped, { maxHeight: toolsH }] : [{ height: toolsH }, toolsSpot.side === 'left' ? styles.toolsPanelLeft : styles.toolsPanelRight, panelCorners],
+                toolsDragging && styles.hidden,
+              ]}
               contentContainerStyle={{ gap: 10 }}
               showsVerticalScrollIndicator={false}>
               <Text style={styles.toolsTitle}>Tools</Text>
@@ -5405,6 +5413,8 @@ const styles = StyleSheet.create({
   },
   toolsPanelLeft: { left: 0, borderTopRightRadius: TOOLS_PANEL_RADIUS, borderBottomRightRadius: TOOLS_PANEL_RADIUS, borderLeftWidth: 0 },
   toolsPanelRight: { left: TOOLS_TAB_W, borderTopLeftRadius: TOOLS_PANEL_RADIUS, borderBottomLeftRadius: TOOLS_PANEL_RADIUS, borderRightWidth: 0 },
+  // Dropped from the top (an iPhone turned on its side): rounded all round.
+  toolsPanelDropped: { left: 0, borderRadius: TOOLS_PANEL_RADIUS },
   toolsTitle: { color: colors.textMuted, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   toolRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   toolText: { flex: 1, color: colors.text, fontSize: 15, fontWeight: '600' },
