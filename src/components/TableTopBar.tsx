@@ -45,7 +45,8 @@ export function TableTopBar({ controls }: { controls: TableControls | null }) {
   const insets = useSafeAreaInsets();
   if (controls?.hidden) return null;
   return (
-    <View style={[styles.bar, { paddingTop: insets.top + 6 }]}>
+    // Clear of the notch at either side too, on an iPhone turned on its side.
+    <View style={[styles.bar, { paddingTop: insets.top + 6, paddingLeft: 12 + insets.left, paddingRight: 12 + insets.right }]}>
       <TourSpot id="table.back">
         <RoundButton
           icon={{ ios: 'chevron.backward', android: 'arrow_back', web: 'arrow_back' }}

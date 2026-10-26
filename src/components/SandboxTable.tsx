@@ -388,7 +388,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const stored = useSandbox(id);
   const { decks, getDeck } = useDecks();
   const insets = useSafeAreaInsets();
-  const { width: screenW } = useWindowDimensions();
+  const { width: screenW, height: screenH } = useWindowDimensions();
   const [history, setHistory] = useState<SandboxTable[]>([]);
   /** Changes undone, latest last, to make again (gone once anything else changes). */
   const [future, setFuture] = useState<SandboxTable[]>([]);
@@ -727,7 +727,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   // The tray keeps one height whatever's in it. Every portrait card stands that tall (a mini as tall as a standard
   // card; widths follow each deck's shape), and a landscape card is its portrait card turned: as wide as that
   // height, and shorter. The height is table mode's for a standard card.
-  const handW = Math.min(110, screenW * 0.24);
+  // On an iPhone turned on its side, no taller than a little under a third of the screen, so the table keeps most of it.
+  const handW = Math.min(110, screenW * 0.24, (screenH * 0.28 * PRESET_SIZES_MM.standard.w) / PRESET_SIZES_MM.standard.h);
   const handCardH = (handW * PRESET_SIZES_MM.standard.h) / PRESET_SIZES_MM.standard.w;
   const handWidthOf = (c: SandboxCard) => {
     const deck = decksById.get(c.deckId);
@@ -750,13 +751,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const groupLeadTop = groupLeadStack ? groupLeadStack.cards[groupLeadStack.cards.length - 1] : undefined;
   const gapWidth = held ? handWidthOf(held.cards[held.cards.length - 1]) : groupLeadTop ? handWidthOf(groupLeadTop) : handW;
   const rowWidths = handRow.map(handWidthOf);
+  // The row's ends, clear of the notch on an iPhone turned on its side.
+  const handPadL = HAND_PAD + insets.left;
+  const handPadR = HAND_PAD + insets.right;
   const rowXs = rowWidths.reduce<number[]>((xs, w, k) => {
-    const before = k ? xs[k - 1] + rowWidths[k - 1] + HAND_GAP : HAND_PAD;
+    const before = k ? xs[k - 1] + rowWidths[k - 1] + HAND_GAP : handPadL;
     return [...xs, before + (handGap === k ? gapWidth + HAND_GAP : 0)];
   }, []);
   const rowX = (k: number) => rowXs[k];
   const rowWidth =
-    HAND_PAD * 2 + rowWidths.reduce((sum, w) => sum + w + HAND_GAP, 0) + (handGap !== null ? gapWidth + HAND_GAP : 0) - HAND_GAP;
+    handPadL + handPadR + rowWidths.reduce((sum, w) => sum + w + HAND_GAP, 0) + (handGap !== null ? gapWidth + HAND_GAP : 0) - HAND_GAP;
   const maxHandScroll = Math.max(0, rowWidth - area.w);
   /** Where the row's cards sit, down from the tray's top. */
   const rowTop = HAND_TOP_PAD + HAND_ROW_PAD;
@@ -1492,7 +1496,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const handInsertAt = (x: number) => {
     // Before the first card whose middle (as the row is without the gap) lies past the point.
     const at = x + handScroll.get();
-    let edge = HAND_PAD;
+    let edge = handPadL;
     for (let k = 0; k < rowWidths.length; k++) {
       if (edge + rowWidths[k] / 2 > at) return k;
       edge += rowWidths[k] + HAND_GAP;
@@ -1917,8 +1921,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   // buttons; the tray has table mode's scroll view and card handling). Read by the gesture, on the UI thread.
   const tabBand = useSharedValue({ top: 0, bottom: 0, tray: 0, toolsLeft: 0, toolsRight: 0, toolsTop: 0, toolsBottom: 0, panel: false });
   useEffect(() => {
-    const reach = toolsOpen ? TOOLS_W + TOOLS_TAB_W : TOOLS_TAB_W;
     const right = toolsSpot.side === 'right';
+    // From the screen's edge, past the notch it stands clear of (an iPhone on its side), to the tab's inner edge.
+    const reach = (right ? insets.right : insets.left) + (toolsOpen ? TOOLS_W + TOOLS_TAB_W : TOOLS_TAB_W);
     const w = area.w || screenW;
     tabBand.set({
       top: trayGone ? Number.MAX_VALUE : handTop - HAND_TAB_H,
@@ -1932,7 +1937,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // The search, over everything while it's open (and not on its way out): its touches are its own.
       panel: !!searching && !searchLeaving,
     });
-  }, [handTop, folded, trayGone, toolsOpen, toolsTop, toolsH, tabY, toolsSpot, area.w, screenW, tabBand, searching, searchLeaving]);
+  }, [handTop, folded, trayGone, toolsOpen, toolsTop, toolsH, tabY, toolsSpot, area.w, screenW, tabBand, searching, searchLeaving, insets.left, insets.right]);
   /** A touch that landed in the open tray, watched (but not yet claimed) to see if it lifts a card out. */
   const trayTouch = useSharedValue({ id: -1, x: 0, y: 0, t: 0, watching: false, panel: false });
   /** Cards taken out of the search: the next move, the finger nearest this point (on screen) carries them on the table. */
@@ -4479,7 +4484,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                 scrollEventThrottle={16}
                 onScroll={(e) => handScroll.set(e.nativeEvent.contentOffset.x)}
                 style={[styles.handList, { top: HAND_TOP_PAD, height: handCardH + HAND_ROW_PAD * 2, pointerEvents: folded ? 'none' : 'auto' }]}
-                contentContainerStyle={styles.handCards}>
+                contentContainerStyle={[styles.handCards, { paddingLeft: handPadL, paddingRight: handPadR }]}>
                 {/*
                   Every card of the hand in its own place, always, all of it mounted: those being carried stay there,
                   unseen and taking no room. The finger carrying one is attached to the very view it landed on (the
@@ -4514,7 +4519,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           <Animated.View
             style={[
               styles.tools,
-              toolsSpot.side === 'left' ? { left: 0 } : { right: 0 },
+              // Clear of the notch, on an iPhone turned on its side (the overshoot below fills in behind it).
+              toolsSpot.side === 'left' ? { left: insets.left } : { right: insets.right },
               { top: toolsTop, height: toolsH, zIndex: 10 },
               toolsStyle,
               !!searching && styles.hidden,
@@ -4526,7 +4532,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                 style={[
                   styles.overshoot,
                   styles.toolsOvershoot,
-                  { top: 0, height: toolsH, width: SPRING_OVERSHOOT, left: toolsSpot.side === 'left' ? -SPRING_OVERSHOOT : TOOLS_TAB_W + TOOLS_W },
+                  {
+                    top: 0,
+                    height: toolsH,
+                    width: SPRING_OVERSHOOT + Math.max(insets.left, insets.right),
+                    left: toolsSpot.side === 'left' ? -(SPRING_OVERSHOOT + insets.left) : TOOLS_TAB_W + TOOLS_W,
+                  },
                 ]}
               />
             )}

@@ -79,6 +79,7 @@ const OUT_MS = 200;
 /** A window's width (as the table's other windows are: see CardFocus); the dropped panel's width. */
 const WINDOW_W = 372;
 const DROP_W = 440;
+const SIDEWAYS_W = 480;
 
 /**
  * A bottom sheet of actions. Each action closes the sheet when pressed. The dimmed backdrop fades in and out
@@ -92,6 +93,7 @@ export function ActionSheet(props: Props) {
   const [progress] = useState(() => new Animated.Value(0));
   // Starts below the screen, until the sheet has been measured (it slides in only once it has).
   const { height: screenHeight, width: screenWidth } = useWindowDimensions();
+  const sideways = !(Platform.OS === 'ios' && Platform.isPad) && screenWidth > screenHeight && screenWidth > SIDEWAYS_W;
   const [sheetHeight, setSheetHeight] = useState(screenHeight);
   const [measured, setMeasured] = useState(false);
   // A window, dragged by its title or its grip: it stays where it's let go (back to its place, each time it opens).
@@ -401,6 +403,9 @@ export function ActionSheet(props: Props) {
         style={[
           styles.sheet,
           { paddingBottom: insets.bottom + 8 },
+          // An iPhone on its side (at a table): a sheet the whole width of it would stretch every row, so it's kept
+          // to a phone's width, in the middle.
+          sideways && { width: SIDEWAYS_W, alignSelf: 'center' },
           { transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [sheetHeight, 0] }) }] },
         ]}>
         <ScrollView bounces={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>

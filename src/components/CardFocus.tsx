@@ -317,7 +317,7 @@ export function CardFocus(props: Props) {
         style={[
           styles.middle,
           !!spotlight && styles.bottom,
-          { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 },
+          { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16, paddingLeft: insets.left, paddingRight: insets.right },
           {
             opacity: anim.shown,
             transform: [{ scale: anim.shown.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) }],

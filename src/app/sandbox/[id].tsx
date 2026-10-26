@@ -5,12 +5,15 @@ import { StyleSheet, View } from 'react-native';
 import { SandboxBoard } from '../../components/SandboxTable';
 import { TableTopBar } from '../../components/TableTopBar';
 import type { TableControls } from '../../components/TableTopBar';
+import { useTurnableScreen } from '../../lib/phoneOrientation';
 import { tourEvent } from '../../lib/tour';
 import { colors } from '../../theme';
 
 /** A sandbox table: the table fills the screen, with its top bar (back, its name and menu, undo) over it. */
 export default function SandboxScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  // A table can turn to landscape on an iPhone; every other screen stays upright (see lib/phoneOrientation).
+  useTurnableScreen();
   const [controls, setControls] = useState<TableControls | null>(null);
   // The walkthrough may be waiting for a table to open.
   useEffect(() => tourEvent('tables-opened'), []);

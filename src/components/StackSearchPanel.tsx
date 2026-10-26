@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import type { GestureResponderEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -23,6 +23,8 @@ import { Text } from './Text';
 const IN_MS = 240;
 const OUT_MS = 180;
 const COLUMNS = 4;
+/** On an iPhone turned on its side: more to a row, so a row of cards still fits the short screen. */
+const SIDEWAYS_COLUMNS = 7;
 
 /** Something being searched through: a card, or (in a bag) a piece. Its key is the card's instance or the piece's id. */
 export interface SearchEntry {
@@ -139,7 +141,9 @@ export function StackSearchPanel({
     if (leaving) Animated.timing(fade, { toValue: 0, duration: 150, useNativeDriver: true }).start();
   }, [leaving, fade]);
 
-  const cardWidth = (width - 16 * 2 - 8 * (COLUMNS - 1)) / COLUMNS;
+  const columns = !(Platform.OS === 'ios' && Platform.isPad) && width > screenHeight ? SIDEWAYS_COLUMNS : COLUMNS;
+  // Within the notch's room at either side (an iPhone on its side).
+  const cardWidth = (width - insets.left - insets.right - 16 * 2 - 8 * (columns - 1)) / columns;
   const selectedEntry = selected ? cards.find((c) => c.key === selected) : undefined;
   const selectedCard = selectedEntry?.card;
   const deckOf = (c: SandboxCard) => decks.get(c.deckId);
@@ -171,7 +175,7 @@ export function StackSearchPanel({
       style={[
         StyleSheet.absoluteFill,
         styles.screen,
-        { paddingTop: insets.top },
+        { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right },
         // Out of the way once cards are taken out, though still there: the finger carrying them started here.
         { pointerEvents: leaving || !visible ? 'none' : 'auto', opacity: fade },
         { transform: [{ translateY: open.interpolate({ inputRange: [0, 1], outputRange: [height, 0] }) }] },
@@ -193,7 +197,7 @@ export function StackSearchPanel({
         <ReorderableGrid
           items={cards}
           keyOf={(c) => c.key}
-          columns={COLUMNS}
+          columns={columns}
           itemWidth={cardWidth}
           gap={8}
           padding={16}

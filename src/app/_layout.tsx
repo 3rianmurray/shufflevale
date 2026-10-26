@@ -8,6 +8,7 @@ import { NamePrompt } from '../components/NamePrompt';
 import { TipToast } from '../components/TipToast';
 import { TourOverlay } from '../components/TourOverlay';
 import { DecksProvider } from '../lib/DecksContext';
+import { lockPhonePortrait } from '../lib/phoneOrientation';
 import { startPro } from '../lib/pro';
 import { colors } from '../theme';
 
@@ -24,6 +25,8 @@ export default function RootLayout() {
   // The App Store, for Shufflevale Pro: its price, and whether it's owned (see lib/pro).
   useEffect(() => {
     void startPro();
+    // An iPhone starts upright; only a table turns (see sandbox/[id]).
+    lockPhonePortrait();
   }, []);
   return (
     // For swipeable rows (see SwipeRow).
