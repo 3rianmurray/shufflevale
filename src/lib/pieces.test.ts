@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, updatePlayground } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
 const table = () => newSandbox('t', 'Test', 0);
@@ -350,26 +350,34 @@ test('the Playground has every component (a bag of cubes, an endless supply) and
   let n = 0;
   const t = playground(newSandbox('p', 'Playground', 0), undefined, () => `p${n++}`);
   assert.equal(t.stacks.length, 0);
-  const deck = { id: 'pc', name: 'Playing Cards', backImage: null, cards: [{ id: 'a', name: 'A', image: 'a.png' }, { id: 'b', name: 'B', image: 'b.png', copies: 2 }], createdAt: 0, updatedAt: 0 };
+  const deck = { id: 'pc', name: 'Playing Cards', backImage: null, cards: [{ id: 'a', name: 'A', image: 'a.png', copies: 3 }, { id: 'b', name: 'B', image: 'b.png', copies: 3 }], createdAt: 0, updatedAt: 0 };
   const dealt = playground(newSandbox('p', 'Playground', 0), deck, () => `q${n++}`);
-  assert.deepEqual(dealt.stacks.map((s) => [s.cards.length, s.cards.every((c) => !c.faceUp)]), [[3, true]]);
+  // The rest face down in the card spot; four face up, one in each of the market zone's places (its row full).
+  assert.deepEqual(dealt.stacks.map((s) => [s.cards.length, s.cards[0].faceUp]), [[2, false], [1, true], [1, true], [1, true], [1, true]]);
+  const draw = dealt.pieces!.find((p) => p.kind === 'spot')!;
+  assert.deepEqual([dealt.stacks[0].x, dealt.stacks[0].y], [draw.x, draw.y]);
+  const market = dealt.pieces!.find((p) => p.label === 'Market')!;
+  const card = { w: 100, h: 140 };
+  assert.ok(zoneCellAt(dealt, market.x, market.y, card)?.onto, 'every place in the market is taken');
+  // The last card taken out: its place is the free one.
+  assert.equal(zoneCellAt({ ...dealt, stacks: dealt.stacks.slice(0, 4) }, market.x + 200, market.y, card)?.at.x, dealt.stacks[4].x);
+  // Nothing lies on anything else (zones and card spots included), so it reads as tidy rows.
+  const box = (p: TablePiece) => {
+    const { w, h } = pieceSizeOf(p);
+    return { l: p.x - w / 2, r: p.x + w / 2, t: p.y - h / 2, b: p.y + h / 2 };
+  };
+  const all = dealt.pieces!.map((p) => ({ p, ...box(p) }));
+  for (const [i, a] of all.entries()) {
+    for (const b of all.slice(i + 1)) {
+      assert.ok(a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t, `${a.p.kind} ${a.p.label ?? ''} overlaps ${b.p.kind} ${b.p.label ?? ''}`);
+    }
+  }
   const kinds = new Set((t.pieces ?? []).map((p) => p.kind));
   for (const k of ['zone', 'spot', 'score', 'text', 'track', 'meeple', 'bag', 'counter', 'die', 'coin', 'spinner', 'timer', 'marker']) assert.ok(kinds.has(k as never), k);
   const bags = (t.pieces ?? []).filter((p) => p.kind === 'bag');
   assert.equal(bagItems(bags[0]).length, 6);
   assert.equal(bags[1].supply?.piece?.shape, 'disc');
   assert.equal(new Set((t.pieces ?? []).map((p) => p.id)).size, t.pieces!.length);
-});
-
-test('a Playground made before the card spot and score pad gets them, the rest left as it is', () => {
-  let n = 0;
-  const now = playground(newSandbox('p', 'Playground', 0), undefined, () => `p${n++}`);
-  assert.equal(updatePlayground(now, () => 'x'), now);
-  const older = { ...now, pieces: now.pieces!.filter((p) => p.kind !== 'spot' && p.kind !== 'score') };
-  const updated = updatePlayground(older, () => `u${n++}`);
-  assert.deepEqual(updated.pieces!.filter((p) => p.kind === 'spot' || p.kind === 'score').map((p) => p.kind), ['spot', 'score']);
-  assert.equal(updated.pieces!.length, older.pieces!.length + 2);
-  assert.equal(updated.focus!.w, now.focus!.w);
 });
 
 test('keepCards leaves only the cards that pass, everywhere, and drops emptied stacks', () => {

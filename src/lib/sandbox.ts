@@ -1870,14 +1870,17 @@ export function solitaire(t: SandboxTable, deck: Deck, ids: () => string, random
   return { ...t, stacks, snapToGrid: true, focus };
 }
 
+/** How many cards the Playground's market zone has laid out, face up, in a row. */
+const MARKET_CARDS = 4;
+
 /**
  * The Playground example: every component laid out as a little board game, to try them all (without Pro, too:
- * see isPlayground). Along the top a track, with two players' pieces at its start; across the middle a card spot
- * and a zone, a bag of cubes, an endless supply of discs and a score counter, with a score pad beside them; along
- * the bottom dice, a coin, a spinner, a timer and the first-player marker; and a line of words saying how to begin.
- * Its only cards are the Playing Cards example's (shuffled, face down, in the card spot, with the zone for a discard
- * pile): never a deck of someone's own, which would
- * make it a table of their game with every component on it (see deckLook).
+ * see isPlayground). In rows, top to bottom: its name; a track, with two players' pieces at its start; the cards
+ * (the deck in a card spot, a zone beside it for a discard pile, and a market zone lining up four cards dealt face up
+ * from it), with a score pad beside them; a bag of cubes, an endless supply of discs, a counter, a timer, the
+ * first-player marker and a spinner; dice and a coin; and a line of words saying how to begin. Its only cards are
+ * the Playing Cards example's (shuffled): never a deck of someone's own, which would make it a table of their game
+ * with every component on it (see deckLook).
  */
 export function playground(t: SandboxTable, deck: Deck | undefined, ids: () => string, random: () => number = Math.random): SandboxTable {
   const cx = TABLE_W / 2;
@@ -1887,27 +1890,32 @@ export function playground(t: SandboxTable, deck: Deck | undefined, ids: () => s
   const cube = (color: string) => ({ piece: { ...newPiece('meeple', ids(), { x: 0, y: 0 }, 6, 'cube'), color } });
   const cubes = ids();
   const discs = ids();
+  // The cards' row: the deck, the discard pile, and the market (room for its cards in a row, a little between).
+  const cardsY = -120;
+  const step = CARD_W + 12;
+  const market = { x: 40, w: MARKET_CARDS * step + 24, h: Math.round((CARD_W * 88.9) / 63.5) + 36 };
   let table: SandboxTable = {
     ...t,
     pieces: [
-      piece('spot', -330, -40, { label: 'Draw' }),
-      piece('zone', -180, -40, { label: 'Discard', look: 'dashed', w: 150, h: 200 }),
-      piece('score', 590, 0),
-      piece('text', 0, -330, { label: 'Playground', scale: 1.5 }),
-      piece('track', 0, -240, { spaces: 10, first: 1 }),
-      piece('meeple', -300, -240, { color: PIECE_COLORS.Red }),
-      piece('meeple', -350, -240, { shape: 'pawn', color: PIECE_COLORS.Blue }),
-      { ...piece('bag', 20, -40), id: cubes },
-      { ...piece('bag', 130, -40, { color: PIECE_COLORS.Black }), id: discs },
-      piece('counter', 300, -40, { label: 'Score' }),
-      piece('die', -330, 170, { value: 3 }),
-      piece('die', -255, 170, { value: 5 }),
-      piece('die', -170, 170, { sides: 20, value: 20 }),
-      piece('coin', -80, 170),
-      piece('spinner', 40, 170),
-      piece('timer', 180, 170),
-      piece('marker', 300, 170),
-      piece('text', 0, 300, { label: 'Tap, hold or drag anything to try it.' }),
+      piece('spot', -500, cardsY, { label: 'Draw' }),
+      piece('zone', -340, cardsY, { label: 'Discard', look: 'dashed', w: 150, h: 200 }),
+      piece('zone', market.x, cardsY, { label: 'Market', w: market.w, h: market.h }),
+      piece('text', 0, -430, { label: 'Playground', scale: 1.5 }),
+      piece('track', 0, -330, { spaces: 10, first: 1 }),
+      piece('meeple', -280, -330, { color: PIECE_COLORS.Red }),
+      piece('meeple', -330, -330, { shape: 'pawn', color: PIECE_COLORS.Blue }),
+      piece('score', 470, cardsY),
+      { ...piece('bag', -500, 110), id: cubes },
+      { ...piece('bag', -390, 110, { color: PIECE_COLORS.Black }), id: discs },
+      piece('counter', -210, 110, { label: 'Life' }),
+      piece('timer', -10, 110),
+      piece('marker', 130, 110),
+      piece('spinner', 290, 110),
+      piece('die', -120, 280, { value: 3 }),
+      piece('die', -45, 280, { value: 5 }),
+      piece('die', 40, 280, { sides: 20, value: 20 }),
+      piece('coin', 130, 280),
+      piece('text', 0, 420, { label: 'Tap, hold or drag anything to try it.' }),
     ],
   };
   table = putInBag(table, cubes, [PIECE_COLORS.Red, PIECE_COLORS.Blue, PIECE_COLORS.Green, PIECE_COLORS.Yellow, PIECE_COLORS.Red, PIECE_COLORS.Blue].map(cube));
@@ -1917,32 +1925,23 @@ export function playground(t: SandboxTable, deck: Deck | undefined, ids: () => s
       deck.cards.flatMap((c) => Array.from({ length: c.copies ?? 1 }, () => ({ iid: ids(), deckId: deck.id, cardId: c.id, faceUp: false }))),
       random,
     );
-    table = { ...table, stacks: [{ id: ids(), x: cx - 330, y: cy - 40, angle: 0, cards }] };
+    // The first few dealt face up into the market, each in its place; the rest face down in the card spot.
+    const dealt = cards.slice(0, MARKET_CARDS).map((card, i): SandboxStack => {
+      const spot = at(market.x + (i - (MARKET_CARDS - 1) / 2) * step, cardsY);
+      return { id: ids(), x: Math.round(spot.x), y: spot.y, angle: 0, cards: [{ ...card, faceUp: true }] };
+    });
+    const rest = cards.slice(MARKET_CARDS);
+    table = { ...table, stacks: [...(rest.length ? [{ id: ids(), ...at(-500, cardsY), angle: 0, cards: rest }] : []), ...dealt] };
   }
   // In view: all of it, with a little room round.
-  return { ...table, focus: { x: cx - 440, y: cy - 390, w: 1140, h: 740 } };
+  return { ...table, focus: { x: cx - 580, y: cy - 480, w: 1180, h: 950 } };
 }
-
-/** The Playground's layout: raised each time components are added to it (2: the card spot and the score pad). */
-export const PLAYGROUND_VERSION = 2;
 
 /**
- * A Playground made before the card spot and score pad came, with them added where a new one has them (the rest
- * left as the player has it), and room in view for them. The same table if it has them both.
+ * The Playground's layout: raised each time it changes (2: the card spot and the score pad; 3: laid out in rows,
+ * with a market zone), so a Playground made before is laid out again, once.
  */
-export function updatePlayground(t: SandboxTable, ids: () => string): SandboxTable {
-  const has = (kind: PieceKind) => (t.pieces ?? []).some((p) => p.kind === kind);
-  if (has('spot') && has('score')) return t;
-  const cx = TABLE_W / 2;
-  const cy = TABLE_H / 2;
-  const added: TablePiece[] = [
-    // Under everything else, as zones are drawn (their order among the pieces is kept).
-    ...(has('spot') ? [] : [{ ...newPiece('spot', ids(), { x: cx - 330, y: cy - 40 }), label: 'Draw' }]),
-    ...(has('score') ? [] : [newPiece('score', ids(), { x: cx + 590, y: cy })]),
-  ];
-  const focus = t.focus ? { ...t.focus, w: Math.max(t.focus.w, cx + 700 - t.focus.x) } : t.focus;
-  return { ...t, pieces: [...added, ...(t.pieces ?? [])], ...(focus ? { focus } : {}) };
-}
+export const PLAYGROUND_VERSION = 3;
 
 /** The table with only the cards that pass keep (on the table, in the hands and in the trash; empty stacks go). */
 export function keepCards(t: SandboxTable, keep: (c: SandboxCard) => boolean): SandboxTable {

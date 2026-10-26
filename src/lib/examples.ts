@@ -8,7 +8,7 @@ import * as haptics from './haptics';
 import { newId } from './id';
 import { playingCards } from './playingCards';
 import { deckLook } from './pro';
-import { newSandbox, playground, PLAYGROUND_VERSION, solitaire, updatePlayground } from './sandbox';
+import { newSandbox, playground, PLAYGROUND_VERSION, solitaire } from './sandbox';
 import type { SandboxTable } from './sandbox';
 import { createSandboxWith, sandboxes, updateSandbox } from './sandboxStore';
 import type { Deck } from './types';
@@ -124,14 +124,16 @@ export function useExamples() {
 
   /**
    * Just the Playground, if it's never been made (for those who had the other examples before it came); or, made
-   * before components were added to it, those components (the rest left as the player has it).
+   * with an older layout (see PLAYGROUND_VERSION), laid out again as new, once (if it's still there).
    */
   const addPlayground = () => {
     const s = loadSettings();
     if (s.playgroundMade) {
       if ((s.playgroundVersion ?? 1) >= PLAYGROUND_VERSION) return;
-      const table = s.playgroundTableId ? sandboxes().find((t) => t.id === s.playgroundTableId) : undefined;
-      if (table) updateSandbox(updatePlayground(table, newId));
+      const there = !!s.playgroundTableId && sandboxes().some((t) => t.id === s.playgroundTableId);
+      // With the Playing Cards example's cards, while it's as it was made (see deckLook); otherwise none.
+      const deck = playingDeck();
+      if (there) restorePlayground(deck && deckLook(deck) === s.playingCardsLook ? deck : undefined);
       saveSettings({ ...loadSettings(), playgroundVersion: PLAYGROUND_VERSION });
       return;
     }
