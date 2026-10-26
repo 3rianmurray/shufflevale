@@ -1231,8 +1231,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     commit(gridDice(table, pickedDice));
     haptics.drop();
   };
-  // ---- Pro: every component but dice is part of it. The Playground's are there to try, but nothing more comes
-  // onto it (no cards, no more components, nothing pasted) and nothing of it goes elsewhere (copies need Pro). ----
+  // ---- Pro: every component but dice and card spots is part of it. The Playground's are there to try: what's on
+  // it can be copied and pasted there, but no cards of the player's own come onto it, nor more components from the
+  // menu, and none of its Pro components go elsewhere (pasting them anywhere else needs Pro). ----
   const pro = usePro();
   const examples = useExamples();
   const playgroundHere = !!table && isPlayground(table.id);
@@ -2940,8 +2941,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    */
   const pasteClip = (inMiddle = false) => {
     if (!table || !view || !clip) return;
-    if (!pro && playgroundHere) return playgroundOnly();
-    if (!pro && clip.pieces.some(isProPiece)) return openPro();
+    if (!pro && playgroundHere) {
+      // On the Playground, without Pro: anything copied from it (every component, and its own cards), but no
+      // cards of anyone's own decks (it plays with its own).
+      const cardsIn = (p: TablePiece): SandboxCard[] => bagItems(p).flatMap((i) => (i.card ? [i.card] : i.piece ? cardsIn(i.piece) : []));
+      const cards = [...clip.stacks.flatMap((s) => s.cards), ...clip.pieces.flatMap(cardsIn)];
+      if (!cards.every((c) => c.deckId === playgroundDeck?.id && playgroundCardsOk)) return playgroundOnly();
+    } else if (!pro && clip.pieces.some(isProPiece)) {
+      // Anywhere else, Pro's components need Pro (copied from the Playground, too).
+      return openPro();
+    }
     if (!roomFor(table, clipCards(clip))) return;
     if (artCount + clip.pieces.filter((p) => p.kind === 'art').length > ART_MAX) return artFull();
     const { table: next, stackIds, pieceIds } = pasteItems(table, clip, inMiddle ? middleOfView() : addSpot(), newId);
