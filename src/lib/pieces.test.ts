@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
 const table = () => newSandbox('t', 'Test', 0);
@@ -216,6 +216,10 @@ test('a score pad keeps each player’s points and totals; fewer players drops t
   const { w, h } = scoreSize(2);
   assert.deepEqual(scoreSpotAt(pad, 500 + w / 2 - 20, 500 - h / 2 + 20), { player: 1, name: true });
   assert.deepEqual(scoreSpotAt(pad, 500 - w / 2 + 20, 500), { player: 0, name: false });
+  // On the first points written down for the first player (its first row); changed, then crossed off.
+  assert.deepEqual(scoreSpotAt(pad, 500 - w / 2 + 20, 500 - h / 2 + SCORE_PAD + SCORE_HEAD + 5), { player: 0, name: false, entry: 0 });
+  assert.deepEqual(scoreColumns(setScore(t, 'p', 0, 8).pieces![0])[0], { points: [8, -2], total: 6 });
+  assert.deepEqual(setScore(t, 'p', 0, null).pieces![0].scores, [{ player: 1, points: 3 }, { player: 0, points: -2 }]);
   const three = setScorePlayers(t, 'p', 3).pieces![0];
   assert.deepEqual(three.names, ['Player 1', 'Player 2', 'Player 3']);
   const one = setScorePlayers(t, 'p', 1).pieces![0];

@@ -20,6 +20,7 @@ import {
   SCORE_TOTAL,
   scoreColumns,
   scoreNames,
+  scoreText,
   TEXT_SIZE,
   timerText,
 } from '../lib/sandbox';
@@ -48,7 +49,7 @@ const OversampleContext = createContext(OVERSAMPLE);
 /** Room round a die's drawing, as a share of its size, for its shadow. */
 const PAD = 0.2;
 
-/** Where a d6's pips go, on a 3 × 3 grid (0 top-left to 8 bottom-right), for each face. */
+/** Where a d6's pips go, on a 3 Ã— 3 grid (0 top-left to 8 bottom-right), for each face. */
 const PIPS: Record<number, number[]> = {
   1: [4],
   2: [0, 8],
@@ -60,7 +61,7 @@ const PIPS: Record<number, number[]> = {
 
 type Pt = [number, number];
 
-// A d6's cube (in a 0–1 box): its top face, and how far back its sides go (down and to the right).
+// A d6's cube (in a 0â€“1 box): its top face, and how far back its sides go (down and to the right).
 const CUBE_FACE = { x: 0.02, y: 0.02, size: 0.8 };
 const CUBE_DEPTH = 0.14;
 const CUBE_ROUND = 0.1;
@@ -88,7 +89,7 @@ const CUBE_BOTTOM: Pt[] = [
   [FL + CUBE_DEPTH, FB + CUBE_DEPTH],
 ];
 
-/** A color made lighter (toward 1) or darker (toward −1), for a face catching more or less of the light. */
+/** A color made lighter (toward 1) or darker (toward âˆ’1), for a face catching more or less of the light. */
 function shade(hex: string, k: number): string {
   const n = parseInt(hex.slice(1), 16);
   const to = k > 0 ? 255 : 0;
@@ -104,7 +105,7 @@ function isLight(hex: string): boolean {
   return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 160;
 }
 
-/** Points round a middle, starting straight up (−90°), at a given reach (all in a 0–1 box). */
+/** Points round a middle, starting straight up (âˆ’90Â°), at a given reach (all in a 0â€“1 box). */
 const ring = (count: number, reach: number, mid: Pt = [0.5, 0.5], start = -90): Pt[] =>
   Array.from({ length: count }, (_, i) => {
     const a = ((start + (360 / count) * i) * Math.PI) / 180;
@@ -123,7 +124,7 @@ function lightOf(face: Pt[]): number {
   return (-(cx * 0.6 + cy * 0.8) / d) * 0.32 - 0.12;
 }
 
-/** A die's outline, its faces (each with how lit it is), and where its number goes and how big (in a 0–1 box). */
+/** A die's outline, its faces (each with how lit it is), and where its number goes and how big (in a 0â€“1 box). */
 interface DieShape {
   outline: Pt[];
   faces: { pts: Pt[]; light: number }[];
@@ -307,7 +308,7 @@ function Counter({ piece, color, selected, k }: { piece: TablePiece; color: stri
       ]}>
       <View style={[styles.counterButton, button, { backgroundColor: shade(color, isLight(color) ? -0.12 : 0.16) }]}>
         <Text allowFontScaling={false} style={[styles.counterSign, { color: ink, fontSize: z(26), marginTop: z(-2) }]}>
-          −
+          âˆ’
         </Text>
       </View>
       <Text allowFontScaling={false} style={[styles.counterValue, { color: ink, fontSize: z(30) }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -404,7 +405,7 @@ function Die({
     p.close();
     return p;
   };
-  /** A shape with its corners rounded (each by up to `r`, in the 0–1 box), as a solid's edges are. */
+  /** A shape with its corners rounded (each by up to `r`, in the 0â€“1 box), as a solid's edges are. */
   const rounded = (pts: Pt[], r: number) => {
     const p = Skia.Path.Make();
     const last = pts[pts.length - 1];
@@ -488,8 +489,8 @@ function Die({
 }
 
 /**
- * A drawing for a piece `w` × `h` on the table, oversampled to stay sharp zoomed in (see OVERSAMPLE), with room
- * round it for a shadow. `at` takes a point in a 0–1 box over the piece to the drawing's own.
+ * A drawing for a piece `w` Ã— `h` on the table, oversampled to stay sharp zoomed in (see OVERSAMPLE), with room
+ * round it for a shadow. `at` takes a point in a 0â€“1 box over the piece to the drawing's own.
  */
 function artFrame(w: number, h: number, OS: number) {
   const pad = Math.max(w, h) * PAD;
@@ -989,9 +990,6 @@ function Zone({ piece, color, k }: { piece: TablePiece; color: string; k: number
     </View>
   );
 }
-/** A number as written on a score pad: a minus sign for one taken off. */
-const pointsText = (n: number) => (n < 0 ? `−${-n}` : String(n));
-
 /**
  * A score pad: a sheet of paper with a column for each player, their name at its top, their latest points under
  * it (the earliest go off the top once it's full; they still count), and each one's total at the bottom.
@@ -1023,14 +1021,14 @@ function ScorePad({ piece, color, selected, k }: { piece: TablePiece; color: str
               {columns[i].points.slice(-SCORE_ROWS).map((n, j) => (
                 <View key={j} style={[styles.scoreCell, { height: SCORE_ROW * k }]}>
                   <Text allowFontScaling={false} style={[styles.scorePoints, { color: ink, fontSize: 15 * k }]}>
-                    {pointsText(n)}
+                    {scoreText(n)}
                   </Text>
                 </View>
               ))}
             </View>
             <View style={[styles.scoreCell, { height: SCORE_TOTAL * k, borderTopWidth: 2 * k, borderTopColor: rule }]}>
               <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[styles.scoreTotal, { color: ink, fontSize: 19 * k }]}>
-                {pointsText(columns[i].total)}
+                {scoreText(columns[i].total)}
               </Text>
             </View>
           </View>
@@ -1068,7 +1066,7 @@ function Bag({ piece, color, w, h, selected, k }: { piece: TablePiece; color: st
     [0.32, 0.33],
   ];
   // How many things are in it (a supply never runs out).
-  const n = piece.supply ? '∞' : bagItems(piece).length;
+  const n = piece.supply ? 'âˆž' : bagItems(piece).length;
   return (
     <View style={StyleSheet.absoluteFill}>
       <Canvas style={art.style}>

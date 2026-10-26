@@ -570,14 +570,28 @@ export function scoreColumns(p: Pick<TablePiece, 'names' | 'scores'>): { points:
   });
 }
 
-/** Which player's column a table point on a score pad is in, and whether it's on their name (at the top). */
-export function scoreSpotAt(p: TablePiece, x: number, y: number): { player: number; name: boolean } {
+/** Points as a score pad writes them: a minus sign for those taken off. */
+export const scoreText = (n: number) => (n < 0 ? `−${-n}` : String(n));
+
+/** Where in a score pad's `scores` each of a player's points showing on it is, top to bottom (their latest SCORE_ROWS). */
+const shownScores = (p: Pick<TablePiece, 'scores'>, player: number) =>
+  (p.scores ?? []).flatMap((s, i) => (s.player === player ? [i] : [])).slice(-SCORE_ROWS);
+
+/**
+ * Where a table point on a score pad is: which player's column, whether it's on their name (at the top), and
+ * which of their points it's on, if any (where it is in the pad's `scores`).
+ */
+export function scoreSpotAt(p: TablePiece, x: number, y: number): { player: number; name: boolean; entry?: number } {
   const { w, h } = pieceSizeOf(p);
   const k = p.scale ?? 1;
   const players = scoreNames(p).length;
   const across = (x - (p.x - w / 2)) / k - SCORE_PAD;
   const down = (y - (p.y - h / 2)) / k - SCORE_PAD;
-  return { player: Math.min(players - 1, Math.max(0, Math.floor(across / SCORE_COLUMN))), name: down < SCORE_HEAD };
+  const player = Math.min(players - 1, Math.max(0, Math.floor(across / SCORE_COLUMN)));
+  if (down < SCORE_HEAD) return { player, name: true };
+  const row = Math.floor((down - SCORE_HEAD) / SCORE_ROW);
+  const entry = row < SCORE_ROWS ? shownScores(p, player)[row] : undefined;
+  return entry === undefined ? { player, name: false } : { player, name: false, entry };
 }
 
 /** A score pad with points written down for a player. */
@@ -585,6 +599,16 @@ export const addScore = (t: SandboxTable, id: string, player: number, points: nu
   const p = t.pieces?.find((q) => q.id === id);
   return p ? setPiece(t, id, { scores: [...(p.scores ?? []), { player, points }] }) : t;
 };
+
+/** A score pad with the points written down at `entry` (in its `scores`) changed, or (null) crossed off. */
+export function setScore(t: SandboxTable, id: string, entry: number, points: number | null): SandboxTable {
+  const p = t.pieces?.find((q) => q.id === id);
+  const scores = p?.scores ?? [];
+  if (!p || entry < 0 || entry >= scores.length) return t;
+  return setPiece(t, id, {
+    scores: points === null ? scores.filter((_, i) => i !== entry) : scores.map((s, i) => (i === entry ? { ...s, points } : s)),
+  });
+}
 
 /** A score pad with this many players: new ones named in turn, and the points of any let go crossed off. */
 export function setScorePlayers(t: SandboxTable, id: string, players: number): SandboxTable {
@@ -893,7 +917,7 @@ export function newPiece(kind: PieceKind, id: string, at: { x: number; y: number
   if (kind === 'timer') return { id, kind, ...spot, value: 60 };
   // A zone lines up the cards put in it, unless that's turned off.
   if (kind === 'zone') return { id, kind, ...spot, value: 0, label: 'Zone', w: PIECE_SIZE.zone.w, h: PIECE_SIZE.zone.h, grid: true };
-  if (kind === 'spot') return { id, kind, ...spot, value: 0, label: 'Card spot', w: PIECE_SIZE.spot.w, h: PIECE_SIZE.spot.h };
+  if (kind === 'spot') return { id, kind, ...spot, value: 0, label: 'Card spot', look: 'dashed', w: PIECE_SIZE.spot.w, h: PIECE_SIZE.spot.h };
   if (kind === 'score') return { id, kind, ...spot, value: 0, names: scoreNames({}), scores: [] };
   if (kind === 'bag') return { id, kind, ...spot, value: 0, cards: [] };
   if (kind === 'track') return { id, kind, ...spot, value: 0, spaces: 10, first: 1 };

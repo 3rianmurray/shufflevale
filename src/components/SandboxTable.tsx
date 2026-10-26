@@ -146,6 +146,8 @@ import {
   setScorePlayers,
   scoreSpotAt,
   scoreNames,
+  scoreText,
+  setScore,
   SCORE_MAX_PLAYERS,
 } from '../lib/sandbox';
 import type { BagItem, Camera, CardSize, PieceKind, PiecePart, PieceShape, SandboxCard, SandboxStack, SandboxTable, Source, TablePiece } from '../lib/sandbox';
@@ -343,7 +345,11 @@ type Menu =
   /** Setting the face a die shows (changing as the slider moves). */
   | { kind: 'dieValue'; id: string }
   /** How many players a score pad has. */
-  | { kind: 'scorePlayers'; id: string };
+  | { kind: 'scorePlayers'; id: string }
+  /** All the points written down on a score pad, newest first, to change or cross off. */
+  | { kind: 'scoreList'; id: string }
+  /** Points written down on a score pad (where they are in its `scores`): changed, or crossed off. */
+  | { kind: 'scoreEntry'; id: string; entry: number };
 
 /** Counters and dice being dragged: the one under the finger, all of them, and how far they've gone (table units). */
 interface PieceDrag {
@@ -974,9 +980,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       return;
     }
     if (piece.kind === 'score') {
-      // A player's name: changed; their column: points written down for them (taken off, with a minus).
-      const { player, name } = at ? scoreSpotAt(piece, at.x, at.y) : { player: 0, name: false };
+      // A player's name: changed; points written down: changed or crossed off; anywhere else in their column: more
+      // points for them (taken off, with a minus).
+      const { player, name, entry } = at ? scoreSpotAt(piece, at.x, at.y) : { player: 0, name: false, entry: undefined };
       const who = scoreNames(piece)[player];
+      if (entry !== undefined) {
+        setMenu({ kind: 'scoreEntry', id, entry });
+        return;
+      }
       if (name) {
         askName('Player’s name', who, (named) => commit(setPiece(table, id, { names: scoreNames(piece).map((n, i) => (i === player ? named : n)) })));
         return;
@@ -3765,6 +3776,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             'Score pad',
             [
               tile('Players', 'person.2', 'group', next({ kind: 'scorePlayers', id })),
+              // Every one written down (even those gone off the top), to change or cross off.
+              tile('Edit', 'pencil', 'edit', next({ kind: 'scoreList', id }), !written.length),
               // The last points written down, crossed off.
               tile('Undo', 'arrow.uturn.backward', 'undo', () => commit(setPiece(table, id, { scores: written.slice(0, -1) })), !written.length),
               tile('Clear', 'eraser', 'ink_eraser', () => commit(setPiece(table, id, { scores: [] })), !written.length),
@@ -4017,6 +4030,50 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           label: `${n} player${n === 1 ? '' : 's'}${n === players ? ' ✓' : ''}`,
           onPress: () => commit(setScorePlayers(table, menu.id, n)),
         })),
+      };
+    }
+    if (menu.kind === 'scoreList' || menu.kind === 'scoreEntry') {
+      const pad = table.pieces?.find((p) => p.id === menu.id);
+      if (!pad) return null;
+      const names = scoreNames(pad);
+      const scores = pad.scores ?? [];
+      const line = (i: number) => `${names[scores[i].player] ?? 'Player'} · ${scoreText(scores[i].points)}`;
+      if (menu.kind === 'scoreList') {
+        return {
+          title: 'Scores',
+          tiles: [],
+          actions: scores
+            .map((_, i) => i)
+            .reverse()
+            .map((i) => ({ label: line(i), onPress: () => setTimeout(() => setMenu({ kind: 'scoreEntry', id: menu.id, entry: i }), 250) })),
+        };
+      }
+      const { entry } = menu;
+      if (!scores[entry]) return null;
+      return {
+        title: line(entry),
+        tiles: [],
+        actions: [
+          {
+            label: 'Change',
+            onPress: () =>
+              setTimeout(
+                () =>
+                  askNumber(
+                    `Points for ${names[scores[entry].player] ?? 'Player'}`,
+                    String(scores[entry].points),
+                    (text) => {
+                      const n = parseInt(text.replace(/[^\d-]/g, ''), 10);
+                      // (Changed to 0: crossed off.)
+                      if (Number.isFinite(n)) commit(setScore(table, menu.id, entry, n || null));
+                    },
+                    'signed',
+                  ),
+                350,
+              ),
+          },
+          { label: 'Delete', destructive: true, onPress: () => commit(setScore(table, menu.id, entry, null)) },
+        ],
       };
     }
     if (menu.kind === 'addShape') {
@@ -4791,7 +4848,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       <AddCardsModal visible={addingCards} decks={decks} onAdd={addCardsToTable} onClose={() => setAddingCards(false)} />
       {/* The table's menu, and choosing a deck to add. */}
       <ActionSheet
-        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'addCards' || menu?.kind === 'scorePlayers')}
+        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'addCards' || menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
         title={sheet?.title}
         banner={sheet && 'banner' in sheet ? sheet.banner : undefined}
         wideTile={sheet && 'wideTile' in sheet ? sheet.wideTile : undefined}
