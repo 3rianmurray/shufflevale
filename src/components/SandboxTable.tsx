@@ -771,7 +771,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const handH = Math.round(HAND_TOP_PAD + HAND_ROW_PAD * 2 + handCardH + 4);
   // The tray reaches the bottom of the screen; folded, it slides down until just the tops of its cards show.
   const trayH = handH + insets.bottom;
-  // The hands hidden (from the table's menu): no tray at all, and the table down to the bottom of the screen (just
+  // The hands hidden (from the tools): no tray at all, and the table down to the bottom of the screen (just
   // clear of the home bar, where the hand's tabs would stand). Nothing goes into a hand, then.
   const trayGone = !!table?.hideHands;
   const trayOpenTop = trayGone ? area.h - insets.bottom + HAND_TAB_H : area.h - trayH;
@@ -3589,10 +3589,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           ...(clip ? [{ label: clipSize(clip) === 1 ? 'Paste' : `Paste ${clipSize(clip)} things`, onPress: () => pasteClip(true) }] : []),
           { label: 'Table theme…', onPress: () => setTimeout(() => setMenu({ kind: 'color' }), 250) },
           {
-            label: table.hideHands ? 'Show the hands' : 'Hide the hands',
-            onPress: () => updateSandbox({ ...table, hideHands: !table.hideHands || undefined }),
-          },
-          {
             label: 'Reset the view',
             onPress: () => {
               fitView(table);
@@ -4647,6 +4643,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                   ['square.grid.3x3', 'grid_on', 'Snap to grid', gridOn, (on: boolean) => ({ snapToGrid: on }), 'Cards put down line up on the grid. Cards already on the table stay put.'],
                   ['grid', 'grid_4x4', 'Show grid', !!table.showGrid, (on: boolean) => ({ showGrid: on }), 'Draws the grid’s lines on the table.'],
                   ['number', 'tag', 'Stack counts', !table.hideCounts, (on: boolean) => ({ hideCounts: !on }), 'Shows how many cards each stack holds.'],
+                  ['hand.raised', 'back_hand', 'Hands', !table.hideHands, (on: boolean) => ({ hideHands: on ? undefined : true }), 'Shows the hands’ tray. Hidden, the hands keep their cards.'],
                   ['lock', 'lock', 'Lock camera', !!table.lockCamera, (on: boolean) => ({ lockCamera: on }), 'The view stays put: sliding, zooming and turning the table do nothing. Cards still move.'],
                 ] as const
               ).map(([ios, android, label, value, change, hint]) => (
