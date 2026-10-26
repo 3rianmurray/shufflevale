@@ -513,7 +513,11 @@ const SCALE_MAX = 4;
 const scaleFrom = (v: unknown) => (finite(v) && v > 0 && Math.abs(v - 1) >= 0.005 ? { scale: Math.min(SCALE_MAX, Math.max(SCALE_MIN, v)) } : {});
 
 // What a table's pieces can be (as in sandbox.ts).
-const PIECE_KINDS = new Set<PieceKind>(['counter', 'die', 'coin', 'text', 'marker', 'spinner', 'meeple', 'token', 'timer', 'zone', 'bag', 'track', 'art']);
+const PIECE_KINDS = new Set<PieceKind>(['counter', 'die', 'coin', 'text', 'marker', 'spinner', 'meeple', 'token', 'timer', 'zone', 'spot', 'bag', 'track', 'art', 'score']);
+/** A score pad's most players (as SCORE_MAX_PLAYERS), the most points written down, and the biggest any can be. */
+const SCORE_MAX_PLAYERS = 6;
+const MAX_SCORES = 2000;
+const MAX_POINTS = 1_000_000;
 const PIECE_SHAPES = new Set<PieceShape>(['meeple', 'pawn', 'cube', 'disc']);
 const ZONE_LOOKS = new Set<ZoneLook>(['outline', 'filled', 'dashed']);
 const DIE_SIDES = [4, 6, 8, 10, 12, 20];
@@ -547,7 +551,8 @@ function pieceFrom(
   depth = 0,
 ): TablePiece[] {
   if (!isObject(v) || typeof v.kind !== 'string' || !PIECE_KINDS.has(v.kind as PieceKind) || !finite(v.x) || !finite(v.y)) return [];
-  const kind = v.kind as PieceKind;
+  // A zone cards snapped into, from before there were card spots: one.
+  const kind = v.kind === 'zone' && v.snap === true ? 'spot' : (v.kind as PieceKind);
   const p: TablePiece = { id: idFrom(v.id) ?? '', kind, x: v.x, y: v.y, value: finite(v.value) ? v.value : 0 };
   if (kind === 'die') {
     p.sides = DIE_SIDES.includes(v.sides as number) ? (v.sides as number) : 6;
@@ -561,7 +566,19 @@ function pieceFrom(
   if (finite(v.angle)) p.angle = angleFrom(v.angle);
   const picture = typeof v.image === 'string' ? pictureKey(v.image) : undefined;
   if (picture) p.image = picture;
-  for (const flag of ['square', 'snap', 'locked', 'vertical', 'reversed', 'rollInPlace'] as const) if (v[flag] === true) p[flag] = true;
+  for (const flag of ['square', 'grid', 'labelBelow', 'hideNumbers', 'locked', 'vertical', 'reversed', 'rollInPlace'] as const) if (v[flag] === true) p[flag] = true;
+  if (v.labelAlign === 'left' || v.labelAlign === 'center' || v.labelAlign === 'right') p.labelAlign = v.labelAlign;
+  if (kind === 'score') {
+    // Its players (named, up to the most a pad has), and the points written down for them.
+    const names = Array.isArray(v.names) ? v.names.slice(0, SCORE_MAX_PLAYERS).map((n, i) => nameFrom(n, `Player ${i + 1}`)) : [];
+    p.names = names.length ? names : ['Player 1', 'Player 2'];
+    const players = p.names.length;
+    p.scores = (Array.isArray(v.scores) ? v.scores.slice(0, MAX_SCORES) : []).flatMap((s) =>
+      isObject(s) && Number.isInteger(s.player) && (s.player as number) >= 0 && (s.player as number) < players && finite(s.points) && Math.abs(s.points) <= MAX_POINTS
+        ? [{ player: s.player as number, points: Math.round(s.points) }]
+        : [],
+    );
+  }
   if (finite(v.left) && v.left >= 0) p.left = Math.min(TIMER_MAX, v.left);
   if (positive(v.w)) p.w = Math.min(MAX_PIECE_SIDE, v.w);
   if (positive(v.h)) p.h = Math.min(MAX_PIECE_SIDE, v.h);

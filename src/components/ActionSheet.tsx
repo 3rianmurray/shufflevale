@@ -47,6 +47,12 @@ interface Props {
   overlay?: ReactNode;
   /** Actions shown as a grid of icon tiles, in even rows of up to four (see tileRows), above `actions`. */
   tiles?: SheetTile[];
+  /**
+   * A second grid under the first, laid out the same way (e.g. what's part of Pro, under what's free), under one
+   * PRO tag of its own if it's `moreLocked` (part of Pro, not yet unlocked: its tiles open Pro).
+   */
+  moreTiles?: SheetTile[];
+  moreLocked?: boolean;
   /** One more tile, under the grid and centered, as wide as two (e.g. Paste, under what can be added). */
   wideTile?: SheetTile;
   actions: SheetAction[];
@@ -126,7 +132,7 @@ export function ActionSheet(props: Props) {
   }, []);
   if (visible) shown.keep(props);
   const showing = visible ? props : (shown.get() ?? props);
-  const { title, header, banner, tiles, wideTile, actions, overlay, place, onPlace } = showing;
+  const { title, header, banner, tiles, moreTiles, moreLocked, wideTile, actions, overlay, place, onPlace } = showing;
   // A window or a dropped panel closes with a tap elsewhere: no Cancel, only a close button of its own (Done).
   const closeLabel = showing.closeLabel ?? (place ? null : 'Cancel');
   // The modal stays up after `visible` goes false until the sheet has slid away.
@@ -135,7 +141,8 @@ export function ActionSheet(props: Props) {
 
   // The walkthrough, when its step is about one of this menu's choices: the tip shows here, by that choice.
   const tour = useTourStep();
-  const guided = visible && tour?.step.tile && [...(tiles ?? []), ...(wideTile ? [wideTile] : []), ...actions].some((a) => a.label === tour.step.tile) ? tour : null;
+  const guided =
+    visible && tour?.step.tile && [...(tiles ?? []), ...(moreTiles ?? []), ...(wideTile ? [wideTile] : []), ...actions].some((a) => a.label === tour.step.tile) ? tour : null;
   const guide = useMemo(() => {
     const box = { chosen: false, was: false };
     return { box };
@@ -214,9 +221,10 @@ export function ActionSheet(props: Props) {
   // What it holds, whichever way it shows: the title (but in a window, it's in the window's top), what's above
   // the choices, the choices, and its close button.
   // The tiles in even rows of up to four, each centered (see tileRows), every tile as wide as the fullest row's
-  // (a share of the width); the wide tile under them, as wide as two.
+  // (a share of the width), the second grid's too; the wide tile under them, as wide as two.
   const tileRowsShown = tiles?.length ? inTileRows(tiles) : [];
-  const cellShare = 100 / Math.max(2, ...tileRowsShown.map((x) => x.length));
+  const moreRowsShown = moreTiles?.length ? inTileRows(moreTiles) : [];
+  const cellShare = 100 / Math.max(2, ...[...tileRowsShown, ...moreRowsShown].map((x) => x.length));
   const tileButton = (t: SheetTile, span = 1) => (
     <View key={t.label} style={[styles.tileCell, { width: `${cellShare * span}%` }]}>
       <Pressable
@@ -244,10 +252,29 @@ export function ActionSheet(props: Props) {
       {header}
       {title && place?.kind !== 'window' ? <Text style={styles.title}>{title}</Text> : null}
       {banner}
-      {tileRowsShown.length || wideTile ? (
+      {tileRowsShown.length || moreRowsShown.length || wideTile ? (
         <View style={styles.tiles}>
           {tileRowsShown.map((row, r) => (
             <View key={r} style={styles.tileRow}>
+              {row.map((t) => tileButton(t))}
+            </View>
+          ))}
+          {moreRowsShown.length ? (
+            // Part of Pro, not yet unlocked: one tag over all of it (a line either side), not one on each.
+            <View style={[styles.moreHead, !moreLocked && styles.moreHeadPlain]}>
+              {moreLocked ? (
+                <>
+                  <View style={styles.moreLine} />
+                  <View style={styles.proTag}>
+                    <Text style={styles.proTagText}>PRO</Text>
+                  </View>
+                  <View style={styles.moreLine} />
+                </>
+              ) : null}
+            </View>
+          ) : null}
+          {moreRowsShown.map((row, r) => (
+            <View key={`more${r}`} style={styles.tileRow}>
               {row.map((t) => tileButton(t))}
             </View>
           ))}
@@ -438,6 +465,10 @@ const styles = StyleSheet.create({
   // Each tile sits in a cell with a little padding all round, so the gaps between them stay even.
   tiles: { margin: -3 },
   tileRow: { flexDirection: 'row', justifyContent: 'center' },
+  // Between the two grids: the PRO tag, a line either side (or, unlocked, just a little room).
+  moreHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 6, paddingVertical: 8 },
+  moreHeadPlain: { paddingVertical: 4 },
+  moreLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.25)' },
   tileCell: { padding: 3 },
   tile: {
     backgroundColor: colors.surfaceRaised,

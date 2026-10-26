@@ -1,5 +1,5 @@
 // Shufflevale Pro: a one-time purchase from the App Store (StoreKit, through expo-iap), which takes away the free
-// version's card limit, opens up deck files and adds the table's components (all but dice: see isProPiece). Owning
+// version's card limit, opens up deck files and adds the table's components (all but dice and card spots: see isProPiece). Owning
 // it is remembered on the phone, so it works offline; the App Store is asked again each time the app opens (which
 // also catches a refund). The purchase is the only way in.
 import Constants, { ExecutionEnvironment } from 'expo-constants';
@@ -123,8 +123,8 @@ export async function startPro() {
   if (purchases.status === 'fulfilled') setOwned(purchases.value.some((p) => p.productId === PRO_PRODUCT_ID));
 }
 
-/** The table's components that are part of Pro: all but dice (decks and dice are free). */
-export const isProPiece = (p: Pick<TablePiece, 'kind'>) => p.kind !== 'die';
+/** The table's components that are part of Pro: all but dice and card spots (decks, dice and card spots are free). */
+export const isProPiece = (p: Pick<TablePiece, 'kind'>) => p.kind !== 'die' && p.kind !== 'spot';
 
 /**
  * The Playground example (see examples.ts): the one table where Pro's components can be tried without it. Known by

@@ -4,7 +4,7 @@ import { useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 
 import { newId } from './id';
-import { newSandbox } from './sandbox';
+import { newSandbox, upgradeTable } from './sandbox';
 import type { SandboxTable } from './sandbox';
 import { loadSandboxes, saveSandboxes } from './storage';
 
@@ -15,7 +15,8 @@ let tables: SandboxTable[] | null = null;
 const listeners = new Set<() => void>();
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-const all = () => (tables ??= loadSandboxes());
+// As they were saved, brought up to date (see upgradeTable).
+const all = () => (tables ??= loadSandboxes().map(upgradeTable));
 const flush = () => {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = null;

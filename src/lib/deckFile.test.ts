@@ -281,3 +281,22 @@ test('a group lying above a deck not in the file keeps its decks, lying with the
   const read = unpackManifest(JSON.stringify(file), (name, ext) => ({ ext, name, bytes: () => new Uint8Array() }));
   assert.deepEqual(read.groups, [{ fileId: 'g', name: 'G' }]);
 });
+
+test('card spots, score pads, a zone lining up cards, names placed and a track without numbers all travel in a file', () => {
+  const table = { id: 't', name: 'T', createdAt: 0, updatedAt: 0, handNames: [], hands: [[], [], [], []], stacks: [], pieces: [
+    { id: 'a', kind: 'spot' as const, x: 0, y: 0, value: 0, w: 116, h: 156, label: 'Draw', labelAlign: 'right' as const, labelBelow: true },
+    { id: 'b', kind: 'zone' as const, x: 0, y: 0, value: 0, w: 300, h: 200, grid: true },
+    { id: 'c', kind: 'score' as const, x: 0, y: 0, value: 0, names: ['Ann', 'Bo'], scores: [{ player: 0, points: 5 }, { player: 7, points: 1 }, { player: 1, points: -3 }] },
+    { id: 'd', kind: 'track' as const, x: 0, y: 0, value: 0, spaces: 10, hideNumbers: true },
+  ] };
+  const raw = JSON.parse(JSON.stringify(packDecks([], (p) => p, [table])));
+  // A zone cards snapped into, from an older file: a card spot.
+  raw.tables[0].pieces.push({ id: 'e', kind: 'zone', x: 0, y: 0, value: 0, snap: true });
+  const [spot, zone, pad, track, old] = unpackFile(JSON.stringify(raw)).tables[0].pieces!;
+  assert.deepEqual([spot.kind, spot.labelAlign, spot.labelBelow], ['spot', 'right', true]);
+  assert.equal(zone.grid, true);
+  // Points for a player it hasn't got are left out.
+  assert.deepEqual([pad.names, pad.scores], [['Ann', 'Bo'], [{ player: 0, points: 5 }, { player: 1, points: -3 }]]);
+  assert.equal(track.hideNumbers, true);
+  assert.equal(old.kind, 'spot');
+});

@@ -5,7 +5,24 @@ import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 
 import * as haptics from '../lib/haptics';
-import { bagItems, defaultPieceColor, pieceSizeOf, rollDie, TEXT_SIZE, timerText } from '../lib/sandbox';
+import {
+  bagItems,
+  defaultPieceColor,
+  LABEL_SIZE,
+  labelAlignOf,
+  pieceSizeOf,
+  rollDie,
+  SCORE_COLUMN,
+  SCORE_HEAD,
+  SCORE_PAD,
+  SCORE_ROW,
+  SCORE_ROWS,
+  SCORE_TOTAL,
+  scoreColumns,
+  scoreNames,
+  TEXT_SIZE,
+  timerText,
+} from '../lib/sandbox';
 import { imageUri, isSeeThrough } from '../lib/storage';
 import type { TablePiece } from '../lib/sandbox';
 import { colors } from '../theme';
@@ -255,8 +272,10 @@ export const TablePieceView = memo(function TablePieceView({
         <Token piece={piece} color={color} size={w} selected={selected} k={laidOut} />
       ) : piece.kind === 'timer' ? (
         <Timer piece={piece} color={color} size={w} selected={selected} k={laidOut} />
-      ) : piece.kind === 'zone' ? (
+      ) : piece.kind === 'zone' || piece.kind === 'spot' ? (
         <Zone piece={piece} color={color} k={laidOut} />
+      ) : piece.kind === 'score' ? (
+        <ScorePad piece={piece} color={color} selected={selected} k={laidOut} />
       ) : piece.kind === 'bag' ? (
         <Bag piece={piece} color={color} w={w} h={h} selected={selected} k={laidOut} />
       ) : piece.kind === 'track' ? (
@@ -934,27 +953,35 @@ function Timer({ piece, color, size, selected, k }: { piece: TablePiece; color: 
   );
 }
 /**
- * A zone: an area marked out on the cloth, under the cards (outlined, filled in, or dashed), its name just above
- * it (outside, so cards in it, or its fill, never hide it).
- * Unlocked, a grip in its bottom-right corner resizes it.
+ * A zone, or a card spot: an area marked out on the cloth, under the cards (outlined, filled in, or dashed), its
+ * name just over or under it (outside, so cards in it, or its fill, never hide it), at its left, middle or right.
+ * An unlocked zone has a grip in its bottom-right corner that resizes it (a card spot takes its cards' size).
  */
 function Zone({ piece, color, k }: { piece: TablePiece; color: string; k: number }) {
   const look = piece.look ?? 'outline';
+  const spot = piece.kind === 'spot';
   return (
     <View
       style={[
         styles.zone,
-        { borderWidth: 3 * k, borderRadius: 12 * k },
+        { borderWidth: 3 * k, borderRadius: (spot ? 8 : 12) * k },
         // Its edge a little see-through, and filled in faintly (the cloth showing through); its name solid.
         { borderColor: `${color}b3`, borderStyle: look === 'dashed' ? 'dashed' : 'solid' },
         look === 'filled' && { backgroundColor: `${color}38` },
       ]}>
       {piece.label ? (
-        <Text allowFontScaling={false} numberOfLines={1} style={[styles.zoneLabel, { color, fontSize: 18 * k, left: 6 * k, right: 6 * k, marginBottom: 4 * k }]}>
+        <Text
+          allowFontScaling={false}
+          numberOfLines={1}
+          style={[
+            styles.zoneLabel,
+            { color, fontSize: LABEL_SIZE * k, left: 6 * k, right: 6 * k, textAlign: labelAlignOf(piece) },
+            piece.labelBelow ? { top: '100%', marginTop: 4 * k } : { bottom: '100%', marginBottom: 4 * k },
+          ]}>
           {piece.label}
         </Text>
       ) : null}
-      {piece.locked ? null : (
+      {piece.locked || spot ? null : (
         <View
           style={[styles.zoneGrip, { borderColor: color, right: 4 * k, bottom: 4 * k, width: 18 * k, height: 18 * k, borderRightWidth: 3 * k, borderBottomWidth: 3 * k, borderBottomRightRadius: 6 * k }]}
         />
@@ -962,6 +989,57 @@ function Zone({ piece, color, k }: { piece: TablePiece; color: string; k: number
     </View>
   );
 }
+/** A number as written on a score pad: a minus sign for one taken off. */
+const pointsText = (n: number) => (n < 0 ? `−${-n}` : String(n));
+
+/**
+ * A score pad: a sheet of paper with a column for each player, their name at its top, their latest points under
+ * it (the earliest go off the top once it's full; they still count), and each one's total at the bottom.
+ */
+function ScorePad({ piece, color, selected, k }: { piece: TablePiece; color: string; selected: boolean; k: number }) {
+  const ink = isLight(color) ? '#2c2c2a' : '#ffffff';
+  const rule = isLight(color) ? 'rgba(44,44,42,0.28)' : 'rgba(255,255,255,0.3)';
+  const names = scoreNames(piece);
+  const columns = scoreColumns(piece);
+  return (
+    <View
+      style={[
+        styles.scorePad,
+        { backgroundColor: color, borderRadius: 8 * k, borderWidth: k, borderColor: shade(color, isLight(color) ? -0.2 : 0.3), padding: (SCORE_PAD - 1) * k },
+        // (Its edge is inside its room: the columns fill the rest exactly.)
+        selected && { borderColor: colors.accent, borderWidth: 3 * k, padding: (SCORE_PAD - 3) * k },
+      ]}>
+      <View style={styles.scoreColumns}>
+        {names.map((name, i) => (
+          <View
+            key={i}
+            style={[{ width: SCORE_COLUMN * k }, i > 0 && { borderLeftWidth: k, borderLeftColor: rule }]}>
+            <View style={[styles.scoreCell, { height: SCORE_HEAD * k, borderBottomWidth: 2 * k, borderBottomColor: rule, paddingHorizontal: 4 * k }]}>
+              <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[styles.scoreName, { color: ink, fontSize: 14 * k }]}>
+                {name}
+              </Text>
+            </View>
+            <View style={{ height: SCORE_ROWS * SCORE_ROW * k }}>
+              {columns[i].points.slice(-SCORE_ROWS).map((n, j) => (
+                <View key={j} style={[styles.scoreCell, { height: SCORE_ROW * k }]}>
+                  <Text allowFontScaling={false} style={[styles.scorePoints, { color: ink, fontSize: 15 * k }]}>
+                    {pointsText(n)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            <View style={[styles.scoreCell, { height: SCORE_TOTAL * k, borderTopWidth: 2 * k, borderTopColor: rule }]}>
+              <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[styles.scoreTotal, { color: ink, fontSize: 19 * k }]}>
+                {pointsText(columns[i].total)}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 /** A drawstring bag: a pouch, tied at its neck, raised a little off the cloth; how many cards are in it on a badge. */
 function Bag({ piece, color, w, h, selected, k }: { piece: TablePiece; color: string; w: number; h: number; selected: boolean; k: number }) {
   const OS = useContext(OversampleContext);
@@ -1042,9 +1120,11 @@ function Track({ piece, color, selected, k }: { piece: TablePiece; color: string
           ]}>
           {/* The marker: filling its space, but for a hairline round it. */}
           {i === piece.value ? <View style={[styles.trackMarker, { width: 36 * k, height: 36 * k, borderRadius: 6 * k, backgroundColor: marker }]} /> : null}
-          <Text allowFontScaling={false} style={[styles.trackNumber, { fontSize: 16 * k, color: i === piece.value ? markerInk : ink }]}>
-            {first + i}
-          </Text>
+          {piece.hideNumbers ? null : (
+            <Text allowFontScaling={false} style={[styles.trackNumber, { fontSize: 16 * k, color: i === piece.value ? markerInk : ink }]}>
+              {first + i}
+            </Text>
+          )}
         </View>
       ))}
     </View>
@@ -1126,6 +1206,12 @@ const styles = StyleSheet.create({
   timerText: { position: 'absolute', left: 0, top: 0, textAlign: 'center', fontWeight: '800', fontVariant: ['tabular-nums'] },
   timerHint: { position: 'absolute', left: 0, textAlign: 'center', fontSize: 9, fontWeight: '700', opacity: 0.7 },
   zone: { flex: 1, borderWidth: 3, borderRadius: 12 },
+  scorePad: { flex: 1, boxShadow: '1px 3px 8px rgba(0, 0, 0, 0.45)' },
+  scoreColumns: { flex: 1, flexDirection: 'row' },
+  scoreCell: { alignItems: 'center', justifyContent: 'center' },
+  scoreName: { fontWeight: '700' },
+  scorePoints: { fontWeight: '500', fontVariant: ['tabular-nums'] },
+  scoreTotal: { fontWeight: '800', fontVariant: ['tabular-nums'] },
   artShadow: { opacity: 0.4, transform: [{ translateX: 2 }, { translateY: 4 }] },
   artPrint: { borderRadius: 6, boxShadow: '1px 3px 8px rgba(0, 0, 0, 0.45)' },
   artPrintImage: { borderRadius: 6 },
@@ -1135,7 +1221,7 @@ const styles = StyleSheet.create({
   trackSpace: { width: 40, height: 40, marginHorizontal: 2, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   trackMarker: { position: 'absolute', boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.45)' },
   trackNumber: { fontSize: 16, fontWeight: '800' },
-  zoneLabel: { position: 'absolute', left: 6, right: 6, bottom: '100%', fontSize: 18, fontWeight: '700' },
+  zoneLabel: { position: 'absolute', left: 6, right: 6, fontWeight: '700' },
   // Two short lines across the bottom-right corner, as a window's resize grip.
   zoneGrip: { position: 'absolute', right: 4, bottom: 4, width: 18, height: 18, borderRightWidth: 3, borderBottomWidth: 3, borderBottomRightRadius: 6 },
   markerText: { position: 'absolute', left: 0, top: 0, textAlign: 'center', fontWeight: '800', paddingHorizontal: 8 },

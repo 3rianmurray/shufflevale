@@ -50,9 +50,20 @@ export const HAND_COUNT = 4;
 
 /**
  * What a piece on the table is, besides cards: a counter (a number to count up and down), a die, a coin, a text
- * label, a first-player marker, a spinner, a playing piece (a meeple, pawn, cube or disc: see PieceShape), a token\n * (round or square, plain or with a picture of the player's own), a timer, or a zone (an area marked out on the cloth,\n * under the cards; a card spot is one that cards snap into), a bag (cards dropped in, drawn out at random), or a\n * track (a row of numbered spaces with a marker), or custom art (the player's own picture, at its own shape).
+ * label, a first-player marker, a spinner, a playing piece (a meeple, pawn, cube or disc: see PieceShape), a token
+ * (round or square, plain or with a picture of the player's own), a timer, a zone (an area marked out on the cloth,
+ * under the cards, that can line up the cards put in it), a card spot (a card's place marked out on the cloth: cards
+ * put in it settle there, and it takes their size), a bag (cards dropped in, drawn out at random), a track (a row of
+ * numbered spaces with a marker), custom art (the player's own picture, at its own shape), or a score pad (a column
+ * of points for each player, added up).
  */
-export type PieceKind = 'counter' | 'die' | 'coin' | 'text' | 'marker' | 'spinner' | 'meeple' | 'token' | 'timer' | 'zone' | 'bag' | 'track' | 'art';
+export type PieceKind = 'counter' | 'die' | 'coin' | 'text' | 'marker' | 'spinner' | 'meeple' | 'token' | 'timer' | 'zone' | 'spot' | 'bag' | 'track' | 'art' | 'score';
+
+/** Whether a piece is marked out on the cloth, under the cards: a zone or a card spot. */
+export const onCloth = (p: Pick<TablePiece, 'kind'>) => p.kind === 'zone' || p.kind === 'spot';
+
+/** Where a zone's or card spot's name sits along its edge. */
+export type LabelAlign = 'left' | 'center' | 'right';
 
 /** A playing piece's shape. */
 export type PieceShape = 'meeple' | 'pawn' | 'cube' | 'disc';
@@ -96,12 +107,21 @@ export interface TablePiece {
   /** A running timer: when it runs out (ms since 1970). A paused one: how many seconds it had left. */
   endsAt?: number;
   left?: number;
-  /** A zone's (or custom art's) own size (table units, before its scale), and how a zone's drawn. */
+  /** A zone's (or card spot's, or custom art's) own size (table units, before its scale), and how a zone's drawn. */
   w?: number;
   h?: number;
   look?: ZoneLook;
-  /** A zone cards snap into (a card spot): a card dropped in it settles in its middle, onto any already there. */
-  snap?: boolean;
+  /** A zone that lines up the cards put in it: each settles in the free place nearest where it's let go. */
+  grid?: boolean;
+  /**
+   * Where a zone's or card spot's name sits: along its edge (none for its own: a zone's on the left, a card spot's in
+   * the middle), and under it rather than over it.
+   */
+  labelAlign?: LabelAlign;
+  labelBelow?: boolean;
+  /** A score pad's players' names (one column each), and the points written down, in the order they were. */
+  names?: string[];
+  scores?: { player: number; points: number }[];
   /**
    * A zone (or text) that stays put: dragged, the table moves instead. A locked zone's table works as if it weren't\n   * there; a hold still gives either's options, and text can still be tapped to change it.
    */
@@ -118,6 +138,8 @@ export interface TablePiece {
   /** A track standing up (its spaces top to bottom), and one whose numbers run the other way (right to left, or bottom to top). */
   vertical?: boolean;
   reversed?: boolean;
+  /** A track whose spaces show no numbers (just the marker on them). */
+  hideNumbers?: boolean;
   /** A track's marker's color (one of PIECE_COLORS), or none for the app's gold. */
   markerColor?: string;
   /** Its color (one of PIECE_COLORS), or none for its own (see defaultPieceColor). */
@@ -152,7 +174,7 @@ export function defaultPieceColor(p: Pick<TablePiece, 'kind' | 'sides'>): string
   if (p.kind === 'meeple') return PIECE_COLORS.Red;
   if (p.kind === 'token') return '#d9d2c4';
   if (p.kind === 'timer') return '#14202a';
-  if (p.kind === 'zone') return PIECE_COLORS.Ivory;
+  if (p.kind === 'zone' || p.kind === 'spot' || p.kind === 'score') return PIECE_COLORS.Ivory;
   if (p.kind === 'bag') return '#8a5a3c';
   if (p.kind === 'track') return '#14202a';
   const own: Record<number, string> = { 4: PIECE_COLORS.Green, 6: PIECE_COLORS.Ivory, 8: PIECE_COLORS.Blue, 10: PIECE_COLORS.Purple, 12: PIECE_COLORS.Pink, 20: PIECE_COLORS.Red };
@@ -399,13 +421,15 @@ export function pieceSizeOf(p: TablePiece): { w: number; h: number } {
   const base =
     p.kind === 'text'
       ? textSize(p.label ?? '')
-      : p.kind === 'zone'
-        ? { w: p.w ?? PIECE_SIZE.zone.w, h: p.h ?? PIECE_SIZE.zone.h }
+      : onCloth(p)
+        ? { w: p.w ?? PIECE_SIZE[p.kind].w, h: p.h ?? PIECE_SIZE[p.kind].h }
         : p.kind === 'track'
           ? trackSize(p.spaces ?? 10, p.vertical)
           : p.kind === 'art'
             ? { w: p.w ?? PIECE_SIZE.art.w, h: p.h ?? PIECE_SIZE.art.h }
-            : PIECE_SIZE[p.kind];
+            : p.kind === 'score'
+              ? scoreSize(p.names?.length ?? SCORE_PLAYERS)
+              : PIECE_SIZE[p.kind];
   const k = p.scale ?? 1;
   return k === 1 ? base : { w: base.w * k, h: base.h * k };
 }
@@ -504,12 +528,75 @@ export const PIECE_SIZE: Record<PieceKind, { w: number; h: number }> = {
   timer: { w: 100, h: 100 },
   // A new zone's size (each has its own: see TablePiece.w and h).
   zone: { w: 320, h: 220 },
+  // A new card spot's: a standard card's, with a little room round it (it takes the size of the cards put in it).
+  spot: { w: CARD_W + 2 * 8, h: Math.round((CARD_W * 88.9) / 63.5) + 2 * 8 },
   bag: { w: 84, h: 96 },
   // A track's height (its width goes by its spaces: see trackSize).
   track: { w: 0, h: 56 },
   // Custom art's room on its longest side (each has its own shape: see TablePiece.w and h).
   art: { w: 120, h: 120 },
+  // A score pad's height (its width goes by its players: see scoreSize).
+  score: { w: 0, h: 0 },
 };
+
+// ---- Score pads ----
+
+/** A new score pad's players, and the most it can have. */
+export const SCORE_PLAYERS = 2;
+export const SCORE_MAX_PLAYERS = 6;
+/** Each player's column, the room round the pad, its names' row, each row of points, and its totals' row. */
+export const SCORE_COLUMN = 80;
+export const SCORE_PAD = 8;
+export const SCORE_HEAD = 32;
+export const SCORE_ROW = 24;
+export const SCORE_TOTAL = 34;
+/** How many of each player's latest points show (all of them count). */
+export const SCORE_ROWS = 6;
+
+/** A score pad's size, for this many players. */
+export const scoreSize = (players: number) => ({
+  w: players * SCORE_COLUMN + 2 * SCORE_PAD,
+  h: SCORE_HEAD + SCORE_ROWS * SCORE_ROW + SCORE_TOTAL + 2 * SCORE_PAD,
+});
+
+/** A score pad's players' names: its own, or Player 1, Player 2… */
+export const scoreNames = (p: Pick<TablePiece, 'names'>) => p.names ?? Array.from({ length: SCORE_PLAYERS }, (_, i) => `Player ${i + 1}`);
+
+/** Each player's points, in the order they were written down, and their totals. */
+export function scoreColumns(p: Pick<TablePiece, 'names' | 'scores'>): { points: number[]; total: number }[] {
+  return scoreNames(p).map((_, i) => {
+    const points = (p.scores ?? []).filter((s) => s.player === i).map((s) => s.points);
+    return { points, total: points.reduce((sum, n) => sum + n, 0) };
+  });
+}
+
+/** Which player's column a table point on a score pad is in, and whether it's on their name (at the top). */
+export function scoreSpotAt(p: TablePiece, x: number, y: number): { player: number; name: boolean } {
+  const { w, h } = pieceSizeOf(p);
+  const k = p.scale ?? 1;
+  const players = scoreNames(p).length;
+  const across = (x - (p.x - w / 2)) / k - SCORE_PAD;
+  const down = (y - (p.y - h / 2)) / k - SCORE_PAD;
+  return { player: Math.min(players - 1, Math.max(0, Math.floor(across / SCORE_COLUMN))), name: down < SCORE_HEAD };
+}
+
+/** A score pad with points written down for a player. */
+export const addScore = (t: SandboxTable, id: string, player: number, points: number): SandboxTable => {
+  const p = t.pieces?.find((q) => q.id === id);
+  return p ? setPiece(t, id, { scores: [...(p.scores ?? []), { player, points }] }) : t;
+};
+
+/** A score pad with this many players: new ones named in turn, and the points of any let go crossed off. */
+export function setScorePlayers(t: SandboxTable, id: string, players: number): SandboxTable {
+  const p = t.pieces?.find((q) => q.id === id);
+  if (!p) return t;
+  const n = Math.min(SCORE_MAX_PLAYERS, Math.max(1, Math.round(players)));
+  const names = scoreNames(p);
+  return setPiece(t, id, {
+    names: Array.from({ length: n }, (_, i) => names[i] ?? `Player ${i + 1}`),
+    scores: (p.scores ?? []).filter((s) => s.player < n),
+  });
+}
 
 /** The most custom art a table can have (each is a picture to draw). */
 export const ART_MAX = 40;
@@ -563,15 +650,147 @@ function inPiece(p: TablePiece, x: number, y: number) {
   return { x: dx * Math.cos(r) - dy * Math.sin(r), y: dx * Math.sin(r) + dy * Math.cos(r) };
 }
 
-/** The topmost zone under a table point, if any (zones lie under everything else; see pieceAt). */
+/**
+ * The topmost zone or card spot under a table point, if any (they lie under everything else; see pieceAt). Card
+ * spots first: they're small, and often lie in a zone.
+ */
 export function zoneAt(t: SandboxTable, x: number, y: number): TablePiece | null {
-  const zones = (t.pieces ?? []).filter((p) => p.kind === 'zone');
-  for (let i = zones.length - 1; i >= 0; i--) if (onPiece(zones[i], x, y)) return zones[i];
+  const marked = (t.pieces ?? []).filter(onCloth);
+  const order = [...marked.filter((p) => p.kind === 'zone'), ...marked.filter((p) => p.kind === 'spot')];
+  for (let i = order.length - 1; i >= 0; i--) if (onPiece(order[i], x, y)) return order[i];
   return null;
 }
 
-/** The card spot (a zone cards snap into) a table point is in, if any. */
-export const spotAt = (t: SandboxTable, x: number, y: number) => (t.pieces ?? []).find((p) => p.kind === 'zone' && p.snap && onPiece(p, x, y)) ?? null;
+/** The card spot a table point is in, if any (the topmost). */
+export function spotAt(t: SandboxTable, x: number, y: number): TablePiece | null {
+  const spots = (t.pieces ?? []).filter((p) => p.kind === 'spot');
+  for (let i = spots.length - 1; i >= 0; i--) if (onPiece(spots[i], x, y)) return spots[i];
+  return null;
+}
+
+/** A card spot's room round the card it holds, and the room between cards a zone lines up (and round them). */
+const SPOT_ROOM = 8;
+const ZONE_GAP = 12;
+
+/** Where a card spot (or a zone lining up cards) puts a stack: its middle, upright; and the stack it joins there, if any. */
+export interface Settled {
+  at: { x: number; y: number; angle: number };
+  onto?: SandboxStack;
+}
+
+/**
+ * Where a card `card` big lands in a zone that lines up cards, let go at a table point (none if it isn't in one):
+ * the free place nearest it, in rows of that card's size across the zone (centered in it, a little room between).
+ * Every place taken: onto the stack in the nearest one. `t` is the table without the cards being put down.
+ */
+export function zoneCellAt(t: SandboxTable, x: number, y: number, card: { w: number; h: number }): Settled | null {
+  const zones = (t.pieces ?? []).filter((p) => p.kind === 'zone' && p.grid);
+  let zone: TablePiece | null = null;
+  for (let i = zones.length - 1; i >= 0 && !zone; i--) if (onPiece(zones[i], x, y)) zone = zones[i];
+  if (!zone) return null;
+  const { w, h } = pieceSizeOf(zone);
+  const stepX = card.w + ZONE_GAP;
+  const stepY = card.h + ZONE_GAP;
+  const cols = Math.max(1, Math.floor((w - ZONE_GAP) / stepX));
+  const rows = Math.max(1, Math.floor((h - ZONE_GAP) / stepY));
+  const left = zone.x - ((cols - 1) * stepX) / 2;
+  const top = zone.y - ((rows - 1) * stepY) / 2;
+  const cells = Array.from({ length: cols * rows }, (_, i) => ({ x: Math.round(left + (i % cols) * stepX), y: Math.round(top + Math.floor(i / cols) * stepY) }));
+  const there = (c: { x: number; y: number }) => {
+    for (let i = t.stacks.length - 1; i >= 0; i--) if (Math.hypot(t.stacks[i].x - c.x, t.stacks[i].y - c.y) < 2) return t.stacks[i];
+    return undefined;
+  };
+  const near = (c: { x: number; y: number }) => Math.hypot(c.x - x, c.y - y);
+  const byNear = [...cells].sort((a, b) => near(a) - near(b));
+  const free = byNear.find((c) => !there(c));
+  if (free) return { at: { ...free, angle: 0 } };
+  return { at: { ...byNear[0], angle: 0 }, onto: there(byNear[0]) };
+}
+
+/** Whether a stack lies in a card spot (its middle on the spot's). */
+const inSpot = (s: { x: number; y: number }, spot: TablePiece) => Math.hypot(s.x - spot.x, s.y - spot.y) < 1;
+
+/**
+ * Stacks just moved (in order), each settled where it was let go: in a card spot, in its middle; in a zone that
+ * lines up cards, in its nearest free place. The rest stay as they are.
+ */
+export function settleStacks(t: SandboxTable, ids: string[], size: CardSize): SandboxTable {
+  let out = t;
+  for (const id of ids) {
+    const s = out.stacks.find((x) => x.id === id);
+    if (!s || s.locked) continue;
+    const spot = spotAt(out, s.x, s.y);
+    const settled = spot
+      ? { at: { x: spot.x, y: spot.y, angle: 0 } }
+      : zoneCellAt({ ...out, stacks: out.stacks.filter((x) => x.id !== id) }, s.x, s.y, cardSizeOf(s.cards[s.cards.length - 1], size));
+    if (settled) out = updateStack(out, id, (x) => ({ ...x, x: settled.at.x, y: settled.at.y, angle: 0 }));
+  }
+  return out;
+}
+
+/**
+ * Card spots holding cards, each the size of the top card of the stack in it (with a little room round), so it
+ * takes the size of whatever's put in it. Left as it is, if every one already is.
+ */
+export function fitSpots(t: SandboxTable, size: CardSize): SandboxTable {
+  let out = t;
+  for (const spot of (t.pieces ?? []).filter((p) => p.kind === 'spot')) {
+    let held: SandboxStack | undefined;
+    for (let i = t.stacks.length - 1; i >= 0 && !held; i--) if (inSpot(t.stacks[i], spot)) held = t.stacks[i];
+    if (!held) continue;
+    const card = cardSizeOf(held.cards[held.cards.length - 1], size);
+    // A card turned a quarter of the way round lies the other way across.
+    const sideways = Math.abs(Math.abs(normalizeAngle(held.angle)) - 90) < 45;
+    const k = spot.scale ?? 1;
+    const w = Math.round(((sideways ? card.h : card.w) + 2 * SPOT_ROOM) / k);
+    const h = Math.round(((sideways ? card.w : card.h) + 2 * SPOT_ROOM) / k);
+    if (w !== spot.w || h !== spot.h) out = setPiece(out, spot.id, { w, h });
+  }
+  return out;
+}
+
+/** How tall a zone's or card spot's name is (its lettering, and the room by it), before its scale. */
+export const LABEL_SIZE = 18;
+const LABEL_H = 28;
+
+/** Where a zone's or card spot's name sits along its edge: its own, or the left (a zone's) or middle (a spot's). */
+export const labelAlignOf = (p: Pick<TablePiece, 'kind' | 'labelAlign'>): LabelAlign => p.labelAlign ?? (p.kind === 'spot' ? 'center' : 'left');
+
+/**
+ * The zone or card spot whose name is at a table point (just outside it, over or under it), if any: a place to hold
+ * it by when it's full of cards. Caught within `reach` of the name, too.
+ */
+export function labelAt(t: SandboxTable, x: number, y: number, reach = 0): TablePiece | null {
+  const marked = (t.pieces ?? []).filter((p) => onCloth(p) && p.label);
+  for (let i = marked.length - 1; i >= 0; i--) {
+    const p = marked[i];
+    const k = p.scale ?? 1;
+    const { w, h } = pieceSizeOf(p);
+    // Its words' width (roughly, as text labels are measured), no wider than it is.
+    const words = Math.min(w - 12 * k, (p.label!.length * LABEL_SIZE * TEXT_LETTER + 8) * k);
+    const align = labelAlignOf(p);
+    const from = align === 'left' ? p.x - w / 2 + 6 * k : align === 'right' ? p.x + w / 2 - 6 * k - words : p.x - words / 2;
+    const top = p.labelBelow ? p.y + h / 2 : p.y - h / 2 - LABEL_H * k;
+    if (x >= from - reach && x <= from + words + reach && y >= top - reach && y <= top + LABEL_H * k + reach) return p;
+  }
+  return null;
+}
+
+/**
+ * A table as saved by an older version, brought up to date: a zone cards snapped into (as card spots once were) is
+ * a card spot. The same table if there's nothing to change.
+ */
+export function upgradeTable(t: SandboxTable): SandboxTable {
+  if (!t.pieces?.some((p) => p.kind === 'zone' && (p as { snap?: boolean }).snap)) return t;
+  return {
+    ...t,
+    pieces: t.pieces.map((p) => {
+      if (p.kind !== 'zone' || !(p as { snap?: boolean }).snap) return p;
+      const { snap: _snap, ...rest } = p as TablePiece & { snap?: boolean };
+      return { ...rest, kind: 'spot' as const };
+    }),
+  };
+}
 
 /** An unlocked zone whose bottom-right corner (its grip, for resizing it) is within `reach` of a table point. */
 export function zoneGripAt(t: SandboxTable, x: number, y: number, reach: number): TablePiece | null {
@@ -608,7 +827,7 @@ export function fitZone(t: SandboxTable, zoneId: string, size: CardSize): Sandbo
   const zone = t.pieces?.find((p) => p.id === zoneId && p.kind === 'zone');
   if (!zone) return t;
   const stacks = t.stacks.filter((s) => onPiece(zone, s.x, s.y));
-  const inside = (t.pieces ?? []).filter((p) => p.kind !== 'zone' && p.kind !== 'text' && onPiece(zone, p.x, p.y));
+  const inside = (t.pieces ?? []).filter((p) => !onCloth(p) && p.kind !== 'text' && onPiece(zone, p.x, p.y));
   const corners = [
     ...stacks.flatMap((s) => stackCorners(s, size)),
     ...inside.flatMap((p) => {
@@ -643,7 +862,7 @@ export function fitZone(t: SandboxTable, zoneId: string, size: CardSize): Sandbo
  */
 export function pieceAt(t: SandboxTable, x: number, y: number, reach = 0): { piece: TablePiece; part: PiecePart } | null {
   // Custom art lies among the cards, under every other piece: looked for last.
-  const all = (t.pieces ?? []).filter((p) => p.kind !== 'zone');
+  const all = (t.pieces ?? []).filter((p) => !onCloth(p));
   const pieces = [...all.filter((p) => p.kind === 'art'), ...all.filter((p) => p.kind !== 'art')];
   const find = (grow: number) => {
     for (let i = pieces.length - 1; i >= 0; i--) {
@@ -672,7 +891,10 @@ export function newPiece(kind: PieceKind, id: string, at: { x: number; y: number
   // A token's number is how many it stands for (shown when more than one); a timer's, its time in seconds.
   if (kind === 'token') return { id, kind, ...spot, value: 1 };
   if (kind === 'timer') return { id, kind, ...spot, value: 60 };
-  if (kind === 'zone') return { id, kind, ...spot, value: 0, label: 'Zone', w: PIECE_SIZE.zone.w, h: PIECE_SIZE.zone.h };
+  // A zone lines up the cards put in it, unless that's turned off.
+  if (kind === 'zone') return { id, kind, ...spot, value: 0, label: 'Zone', w: PIECE_SIZE.zone.w, h: PIECE_SIZE.zone.h, grid: true };
+  if (kind === 'spot') return { id, kind, ...spot, value: 0, label: 'Card spot', w: PIECE_SIZE.spot.w, h: PIECE_SIZE.spot.h };
+  if (kind === 'score') return { id, kind, ...spot, value: 0, names: scoreNames({}), scores: [] };
   if (kind === 'bag') return { id, kind, ...spot, value: 0, cards: [] };
   if (kind === 'track') return { id, kind, ...spot, value: 0, spaces: 10, first: 1 };
   if (kind === 'art') return { id, kind, ...spot, value: 0, w: PIECE_SIZE.art.w, h: PIECE_SIZE.art.h };
@@ -708,7 +930,7 @@ export function piecesInShape(t: SandboxTable, shape: { x: number; y: number }[]
   return (t.pieces ?? [])
     .filter((p) => {
       // Zones are part of the table's layout, not picked out with what's on it; nor is anything locked in place.
-      if ((kind ? p.kind !== kind : p.kind === 'zone') || p.locked) return false;
+      if ((kind ? p.kind !== kind : onCloth(p)) || p.locked) return false;
       const { w, h } = pieceSizeOf(p);
       if (shape.some((q) => Math.abs(q.x - p.x) <= w / 2 && Math.abs(q.y - p.y) <= h / 2)) return true;
       return shape.length >= 3 && insideShape(p, shape);
@@ -1626,10 +1848,11 @@ export function solitaire(t: SandboxTable, deck: Deck, ids: () => string, random
 
 /**
  * The Playground example: every component laid out as a little board game, to try them all (without Pro, too:
- * see isPlayground). Along the top a track, with two players' pieces at its start; across the middle a zone, a bag
- * of cubes, an endless supply of discs and a score counter; along the bottom dice, a coin, a spinner, a timer and
- * the first-player marker; and a line of words saying how to begin. Its only cards are the Playing Cards
- * example's (shuffled, face down, by the zone, as a discard pile): never a deck of someone's own, which would
+ * see isPlayground). Along the top a track, with two players' pieces at its start; across the middle a card spot
+ * and a zone, a bag of cubes, an endless supply of discs and a score counter, with a score pad beside them; along
+ * the bottom dice, a coin, a spinner, a timer and the first-player marker; and a line of words saying how to begin.
+ * Its only cards are the Playing Cards example's (shuffled, face down, in the card spot, with the zone for a discard
+ * pile): never a deck of someone's own, which would
  * make it a table of their game with every component on it (see deckLook).
  */
 export function playground(t: SandboxTable, deck: Deck | undefined, ids: () => string, random: () => number = Math.random): SandboxTable {
@@ -1643,7 +1866,9 @@ export function playground(t: SandboxTable, deck: Deck | undefined, ids: () => s
   let table: SandboxTable = {
     ...t,
     pieces: [
+      piece('spot', -330, -40, { label: 'Draw' }),
       piece('zone', -180, -40, { label: 'Discard', look: 'dashed', w: 150, h: 200 }),
+      piece('score', 590, 0),
       piece('text', 0, -330, { label: 'Playground', scale: 1.5 }),
       piece('track', 0, -240, { spaces: 10, first: 1 }),
       piece('meeple', -300, -240, { color: PIECE_COLORS.Red }),
@@ -1671,7 +1896,7 @@ export function playground(t: SandboxTable, deck: Deck | undefined, ids: () => s
     table = { ...table, stacks: [{ id: ids(), x: cx - 330, y: cy - 40, angle: 0, cards }] };
   }
   // In view: all of it, with a little room round.
-  return { ...table, focus: { x: cx - 440, y: cy - 390, w: 880, h: 740 } };
+  return { ...table, focus: { x: cx - 440, y: cy - 390, w: 1140, h: 740 } };
 }
 
 /** The table with only the cards that pass keep (on the table, in the hands and in the trash; empty stacks go). */

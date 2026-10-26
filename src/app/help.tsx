@@ -59,6 +59,8 @@ const TIPS: { title: string; tips: [string, string][] }[] = [
       ['Fold the hand away', 'Its cards turn face down while it’s folded, so the phone can be passed round.'],
       ['Hold a hand’s tab', 'Rename that hand.'],
       ['Hold the tools tab', 'Then drag it up or down its edge, or across to the other side.'],
+      ['Hold a zone’s name', 'Its options, even when it’s full of cards. A card spot’s name works the same way.'],
+      ['Score pad', 'Tap a player’s column to add points (a minus takes them off), or their name to change it.'],
     ],
   },
 ];

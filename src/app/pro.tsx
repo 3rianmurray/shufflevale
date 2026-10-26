@@ -16,7 +16,7 @@ type Reason = 'cards' | 'files' | 'components';
 const REASONS: Record<Reason, string> = {
   cards: `The free version holds ${FREE_CARD_LIMIT} cards, and you’ve used them all. Pro removes the limit.`,
   files: 'Sharing, backing up and importing decks and tables are part of Pro.',
-  components: 'Bags, tracks, timers, counters and the rest of the table’s components are part of Pro. Dice are free, and the Playground has them all to try.',
+  components: 'Bags, tracks, timers, score pads and the rest of the table’s components are part of Pro. Dice and card spots are free, and the Playground has them all to try.',
 };
 
 const PERKS: [string, string][] = [

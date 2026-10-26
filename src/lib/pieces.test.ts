@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers } from './sandbox.ts';
+import type { TablePiece } from './sandbox.ts';
 
 const table = () => newSandbox('t', 'Test', 0);
 
@@ -150,11 +151,75 @@ test('a zone resizes from its bottom-right grip, its top-left corner staying put
   assert.deepEqual(resizeZone(z, 420, 10), { w: 420, h: ZONE_MIN, x: 340 + 210, y: 390 + ZONE_MIN / 2 });
 });
 
-test('a card spot is found under a point; a plain zone isn’t one', () => {
-  let t = addPiece(table(), { ...newPiece('zone', 's', { x: 100, y: 100 }), w: 120, h: 160, snap: true });
+test('a card spot is found under a point; a zone isn’t one, and a zone cards snapped into (as spots once were) becomes one', () => {
+  let t = addPiece(table(), { ...newPiece('spot', 's', { x: 100, y: 100 }), w: 120, h: 160 });
   t = addPiece(t, newPiece('zone', 'plain', { x: 800, y: 800 }));
   assert.equal(spotAt(t, 140, 160)?.id, 's');
   assert.equal(spotAt(t, 800, 800), null);
+  // It's under pieces, as zones are, and found before a zone it lies in.
+  t = addPiece(t, { ...newPiece('spot', 'in', { x: 800, y: 800 }) });
+  assert.equal(zoneAt(t, 800, 800)?.id, 'in');
+  assert.equal(pieceAt(t, 800, 800), null);
+  const old = { ...table(), pieces: [{ ...newPiece('zone', 'o', { x: 0, y: 0 }), snap: true } as TablePiece] };
+  const up = upgradeTable(old);
+  assert.equal(up.pieces![0].kind, 'spot');
+  assert.ok(!('snap' in up.pieces![0]));
+  assert.equal(upgradeTable(t), t);
+});
+
+test('a card spot takes the size of the cards put in it, and a stack let go in it settles in its middle', () => {
+  const size = () => ({ w: 100, h: 70 });
+  let t = addPiece(table(), newPiece('spot', 's', { x: 500, y: 500 }));
+  t = { ...t, stacks: [{ id: 'k', x: 510, y: 495, angle: 30, cards: [{ iid: 'a', deckId: 'd', cardId: 'c', faceUp: true }] }] };
+  t = fitSpots(settleStacks(t, ['k'], size), size);
+  assert.deepEqual([t.stacks[0].x, t.stacks[0].y, t.stacks[0].angle], [500, 500, 0]);
+  assert.deepEqual([t.pieces![0].w, t.pieces![0].h], [116, 86]);
+  // Nothing to change: the same table.
+  assert.equal(fitSpots(t, size), t);
+});
+
+test('a zone that lines up cards puts each in the free place nearest where it’s let go', () => {
+  const card = { w: 100, h: 140 };
+  // Room for three across and one down.
+  let t = addPiece(table(), { ...newPiece('zone', 'z', { x: 1000, y: 1000 }), w: 360, h: 170 });
+  const cell = zoneCellAt(t, 1150, 1010, card);
+  assert.deepEqual(cell?.at, { x: 1112, y: 1000, angle: 0 });
+  // That place taken: the next nearest.
+  t = { ...t, stacks: [{ id: 'k', x: 1112, y: 1000, angle: 0, cards: [{ iid: 'a', deckId: 'd', cardId: 'c', faceUp: true }] }] };
+  assert.deepEqual(zoneCellAt(t, 1150, 1010, card)?.at, { x: 1000, y: 1000, angle: 0 });
+  // Not lining up: nothing.
+  const loose = { ...t, pieces: t.pieces!.map((p) => ({ ...p, grid: undefined })) };
+  assert.equal(zoneCellAt(loose, 1150, 1010, card), null);
+  // Every place taken: onto the stack in the nearest.
+  const full = { ...t, stacks: [888, 1000, 1112].map((x, i) => ({ id: `k${i}`, x, y: 1000, angle: 0, cards: [{ iid: `${i}`, deckId: 'd', cardId: 'c', faceUp: true }] })) };
+  assert.equal(zoneCellAt(full, 1150, 1010, card)?.onto?.id, 'k2');
+});
+
+test('a zone’s or card spot’s name can be held: over it, or under it, at its left, middle or right', () => {
+  let t = addPiece(table(), { ...newPiece('zone', 'z', { x: 500, y: 500 }), w: 300, h: 200, label: 'Market' });
+  // Over its top-left edge, but not over its middle, nor inside it.
+  assert.equal(labelAt(t, 365, 385)?.id, 'z');
+  assert.equal(labelAt(t, 600, 385), null);
+  assert.equal(labelAt(t, 500, 500), null);
+  t = setPiece(t, 'z', { labelAlign: 'right', labelBelow: true });
+  assert.equal(labelAt(t, 630, 615)?.id, 'z');
+  assert.equal(labelAt(t, 365, 385), null);
+});
+
+test('a score pad keeps each player’s points and totals; fewer players drops theirs', () => {
+  let t = addPiece(table(), newPiece('score', 'p', { x: 500, y: 500 }));
+  t = addScore(addScore(addScore(t, 'p', 0, 5), 'p', 1, 3), 'p', 0, -2);
+  const pad = t.pieces![0];
+  assert.deepEqual(scoreColumns(pad), [{ points: [5, -2], total: 3 }, { points: [3], total: 3 }]);
+  assert.deepEqual(pieceSizeOf(pad), scoreSize(2));
+  // Its second column, at the top (the name) and lower down.
+  const { w, h } = scoreSize(2);
+  assert.deepEqual(scoreSpotAt(pad, 500 + w / 2 - 20, 500 - h / 2 + 20), { player: 1, name: true });
+  assert.deepEqual(scoreSpotAt(pad, 500 - w / 2 + 20, 500), { player: 0, name: false });
+  const three = setScorePlayers(t, 'p', 3).pieces![0];
+  assert.deepEqual(three.names, ['Player 1', 'Player 2', 'Player 3']);
+  const one = setScorePlayers(t, 'p', 1).pieces![0];
+  assert.deepEqual(scoreColumns(one), [{ points: [5, -2], total: 3 }]);
 });
 test('a bag holds cards and pieces like a stack: the top comes out first; shuffled and searched like one', () => {
   const card = (iid: string) => ({ card: { iid, deckId: 'd', cardId: iid, faceUp: true } });
@@ -285,7 +350,7 @@ test('the Playground has every component (a bag of cubes, an endless supply) and
   const dealt = playground(newSandbox('p', 'Playground', 0), deck, () => `q${n++}`);
   assert.deepEqual(dealt.stacks.map((s) => [s.cards.length, s.cards.every((c) => !c.faceUp)]), [[3, true]]);
   const kinds = new Set((t.pieces ?? []).map((p) => p.kind));
-  for (const k of ['zone', 'text', 'track', 'meeple', 'bag', 'counter', 'die', 'coin', 'spinner', 'timer', 'marker']) assert.ok(kinds.has(k as never), k);
+  for (const k of ['zone', 'spot', 'score', 'text', 'track', 'meeple', 'bag', 'counter', 'die', 'coin', 'spinner', 'timer', 'marker']) assert.ok(kinds.has(k as never), k);
   const bags = (t.pieces ?? []).filter((p) => p.kind === 'bag');
   assert.equal(bagItems(bags[0]).length, 6);
   assert.equal(bags[1].supply?.piece?.shape, 'disc');
