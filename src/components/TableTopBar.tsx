@@ -22,8 +22,11 @@ export interface TableControls {
   openMenu: () => void;
   /** Something covers the table (e.g. a search, with its own title and Close): the bar steps out of the way. */
   hidden?: boolean;
-  /** The table's tools, opened from a button beside its name (an iPhone turned on its side: no room for their tab). */
-  tools?: { open: boolean; toggle: () => void };
+  /**
+   * The table's tools, opened from a button in the bar (an iPhone turned on its side: no room for their tab), over
+   * the middle of where their panel comes to rest (`centerX`, on screen).
+   */
+  tools?: { open: boolean; toggle: () => void; centerX: number };
 }
 
 /** Back to the screen before, or home if there isn't one (e.g. the app was reloaded straight onto the table). */
@@ -58,26 +61,32 @@ export function TableTopBar({ controls }: { controls: TableControls | null }) {
         />
       </TourSpot>
       {controls?.tools ? (
-        // On an iPhone turned on its side: the tools' tab, hanging from the top edge just past the back button, the
-        // drawer's tab (its shape and color) turned to hang down. The panel it opens is on the left.
+        // On an iPhone turned on its side: the tools' button, a pill like the bar's others, in line with them and
+        // over the middle of the panel it opens (on the left).
         <Pressable
           onPress={controls.tools.toggle}
           disabled={controls.busy}
           accessibilityRole="button"
           accessibilityLabel={controls.tools.open ? 'Hide tools' : 'Show tools'}
-          hitSlop={{ bottom: 10, left: 6, right: 6 }}
-          style={({ pressed }) => [styles.toolsTab, { left: 12 + insets.left + SIZE + 14 }, pressed && styles.pressed, controls.busy && styles.disabled]}>
+          hitSlop={8}
+          style={({ pressed }) => [
+            styles.glass,
+            styles.toolsPill,
+            { left: controls.tools!.centerX - TOOLS_PILL_W / 2, top: insets.top + 6 },
+            pressed && styles.pressed,
+            controls.busy && styles.disabled,
+          ]}>
           <SymbolView
             name={controls.tools.open ? { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' } : { ios: 'wrench.and.screwdriver', android: 'build', web: 'build' }}
-            size={14}
+            size={17}
             weight="semibold"
-            tintColor={colors.accent}
+            tintColor={colors.text}
           />
         </Pressable>
       ) : null}
       {controls ? (
-        // (Clear of the tools tab, when there is one.)
-        <View style={[styles.middle, controls.tools && { marginLeft: 72 + 14 }]}>
+        // (Clear of the tools' button, when there is one.)
+        <View style={[styles.middle, controls.tools && { marginLeft: Math.max(0, controls.tools.centerX + TOOLS_PILL_W / 2 + 12 - (12 + insets.left + SIZE + 12)) }]}>
           <TourSpot id="table.title" style={styles.titleSpot}>
             <Pressable
               onPress={controls.openMenu}
@@ -148,6 +157,7 @@ function RoundButton({
 }
 
 const SIZE = 38;
+const TOOLS_PILL_W = 64;
 
 const styles = StyleSheet.create({
   bar: {
@@ -166,21 +176,8 @@ const styles = StyleSheet.create({
   },
   pair: { flexDirection: 'row', gap: 8 },
   middle: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  // The table's tools tab, as on the edge of the table (see SandboxTable's toolsTab) but hanging from the top.
-  toolsTab: {
-    position: 'absolute',
-    top: 0,
-    width: 72,
-    height: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(8,18,26,0.9)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderTopWidth: 0,
-    borderColor: 'rgba(255,255,255,0.22)',
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
-  },
+  // The table's tools' button (an iPhone turned on its side): a pill, as tall as the bar's round buttons.
+  toolsPill: { position: 'absolute', width: TOOLS_PILL_W, height: SIZE, borderRadius: SIZE / 2, alignItems: 'center', justifyContent: 'center' },
   round: { width: SIZE, height: SIZE, borderRadius: SIZE / 2, alignItems: 'center', justifyContent: 'center' },
   title: {
     flexShrink: 1,

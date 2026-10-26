@@ -4266,9 +4266,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       openMenu: () => setMenu({ kind: 'table' }),
       hidden: !!searching,
       // On an iPhone turned on its side, the tools open from beside the table's name.
-      tools: sideways ? { open: toolsOpen, toggle: () => latestToggleTools.get()() } : undefined,
+      // Its button over the middle of where the panel comes to rest.
+      tools: sideways ? { open: toolsOpen, toggle: () => latestToggleTools.get()(), centerX: insets.left + TOOLS_W_SIDEWAYS / 2 } : undefined,
     });
-  }, [history.length, future.length, carrying, onControls, table, latestUndo, latestRedo, searching, setMenu, sideways, toolsOpen, latestToggleTools]);
+  }, [history.length, future.length, carrying, onControls, table, latestUndo, latestRedo, searching, setMenu, sideways, toolsOpen, latestToggleTools, insets.left]);
 
   if (!table) {
     return (
@@ -4531,8 +4532,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               <WoodRail colors={theme.rail} shine={theme.shine} rounded={narrowTray ? TRAY_CORNER : undefined} />
               {/* More of the tray below its bottom (off screen), so its spring's bounce never shows a gap under it. */}
               <View style={[styles.overshoot, { top: trayH, height: SPRING_OVERSHOOT, backgroundColor: theme.rail[2] }]} />
-              {/* (Inside the bevel down a narrowed tray's ends, so it isn't covered.) */}
-              <View style={[styles.groove, { top: HAND_TOP_PAD, height: handCardH + HAND_ROW_PAD * 2 }, narrowTray && { left: 1.5, right: 1.5 }]} />
+              {/* (In a narrowed tray: inside the bevel down its ends, so it isn't covered, and rounded like the tray.) */}
+              <View
+                style={[
+                  styles.groove,
+                  { top: HAND_TOP_PAD, height: handCardH + HAND_ROW_PAD * 2 },
+                  narrowTray && { left: 1.5 + HAND_TOP_PAD, right: 1.5 + HAND_TOP_PAD, borderRadius: TRAY_CORNER - HAND_TOP_PAD / 2, borderWidth: 1, borderColor: 'rgba(0,0,0,0.45)', borderBottomColor: 'rgba(255,220,180,0.12)' },
+                ]}
+              />
               {hand.length === 0 && handGap === null ? (
                 <Text style={[styles.trayEmpty, { top: rowTop + handCardH / 2 - 10, color: ink(0.45) }]}>Drag cards here to put them in {table.handNames[handIndex]}</Text>
               ) : null}
