@@ -122,6 +122,9 @@ export interface TablePiece {
   /** A score pad's players' names (one column each), and the points written down, in the order they were. */
   names?: string[];
   scores?: { player: number; points: number }[];
+  /** How many rows of points a score pad shows (none for SCORE_ROWS), and how many it's scrolled back from the latest. */
+  rows?: number;
+  scroll?: number;
   /**
    * A zone (or text) that stays put: dragged, the table moves instead. A locked zone's table works as if it weren't\n   * there; a hold still gives either's options, and text can still be tapped to change it.
    */
@@ -428,7 +431,7 @@ export function pieceSizeOf(p: TablePiece): { w: number; h: number } {
           : p.kind === 'art'
             ? { w: p.w ?? PIECE_SIZE.art.w, h: p.h ?? PIECE_SIZE.art.h }
             : p.kind === 'score'
-              ? scoreSize(p.names?.length ?? SCORE_PLAYERS)
+              ? scoreSize(p.names?.length ?? SCORE_PLAYERS, scoreRowsOf(p))
               : PIECE_SIZE[p.kind];
   const k = p.scale ?? 1;
   return k === 1 ? base : { w: base.w * k, h: base.h * k };
@@ -544,20 +547,53 @@ export const PIECE_SIZE: Record<PieceKind, { w: number; h: number }> = {
 /** A new score pad's players, and the most it can have. */
 export const SCORE_PLAYERS = 2;
 export const SCORE_MAX_PLAYERS = 6;
-/** Each player's column, the room round the pad, its names' row, each row of points, and its totals' row. */
+/**
+ * Each player's column; the room round the pad; and, top to bottom, its names' row, each row of points, its totals'
+ * row, and the row of + buttons that add points.
+ */
 export const SCORE_COLUMN = 80;
 export const SCORE_PAD = 8;
 export const SCORE_HEAD = 32;
 export const SCORE_ROW = 24;
 export const SCORE_TOTAL = 34;
-/** How many of each player's latest points show (all of them count). */
+export const SCORE_ADD = 34;
+/** How many rows of points a new pad shows (older ones scroll), and the fewest and most it can be made to. */
 export const SCORE_ROWS = 6;
+export const SCORE_ROWS_MIN = 2;
+export const SCORE_ROWS_MAX = 30;
 
-/** A score pad's size, for this many players. */
-export const scoreSize = (players: number) => ({
+/** A score pad's size, for this many players and rows of points. */
+export const scoreSize = (players: number, rows = SCORE_ROWS) => ({
   w: players * SCORE_COLUMN + 2 * SCORE_PAD,
-  h: SCORE_HEAD + SCORE_ROWS * SCORE_ROW + SCORE_TOTAL + 2 * SCORE_PAD,
+  h: SCORE_HEAD + rows * SCORE_ROW + SCORE_TOTAL + SCORE_ADD + 2 * SCORE_PAD,
 });
+
+/** How many rows of points a score pad shows. */
+export const scoreRowsOf = (p: Pick<TablePiece, 'rows'>) => Math.min(SCORE_ROWS_MAX, Math.max(SCORE_ROWS_MIN, p.rows ?? SCORE_ROWS));
+
+/**
+ * Which rows of points a score pad shows: one row a round (each player's first points on the first row, and so
+ * on), the latest ones unless it's scrolled back. `start` is the first row showing; `most`, how far back it can go.
+ */
+export function scoreWindow(p: Pick<TablePiece, 'names' | 'scores' | 'rows' | 'scroll'>): { start: number; rows: number; most: number; scroll: number } {
+  const rows = scoreRowsOf(p);
+  const longest = Math.max(0, ...scoreNames(p).map((_, i) => (p.scores ?? []).filter((s) => s.player === i).length));
+  const most = Math.max(0, longest - rows);
+  const scroll = Math.min(most, Math.max(0, Math.round(p.scroll ?? 0)));
+  return { start: most - scroll, rows, most, scroll };
+}
+
+/**
+ * A score pad made taller or shorter from its bottom edge (its top staying put), to the most rows of points that
+ * fit in `h` (its own height, before its scale).
+ */
+export function resizeScore(p: TablePiece, h: number): Pick<TablePiece, 'rows' | 'y' | 'scroll'> {
+  const k = p.scale ?? 1;
+  const players = scoreNames(p).length;
+  const rows = Math.min(SCORE_ROWS_MAX, Math.max(SCORE_ROWS_MIN, Math.round((h - scoreSize(players, 0).h) / SCORE_ROW)));
+  const top = p.y - pieceSizeOf(p).h / 2;
+  return { rows, y: Math.round(top + (scoreSize(players, rows).h * k) / 2), scroll: 0 };
+}
 
 /** A score pad's players' names: its own, or Player 1, Player 2… */
 export const scoreNames = (p: Pick<TablePiece, 'names'>) => p.names ?? Array.from({ length: SCORE_PLAYERS }, (_, i) => `Player ${i + 1}`);
@@ -573,31 +609,36 @@ export function scoreColumns(p: Pick<TablePiece, 'names' | 'scores'>): { points:
 /** Points as a score pad writes them: a minus sign for those taken off. */
 export const scoreText = (n: number) => (n < 0 ? `−${-n}` : String(n));
 
-/** Where in a score pad's `scores` each of a player's points showing on it is, top to bottom (their latest SCORE_ROWS). */
-const shownScores = (p: Pick<TablePiece, 'scores'>, player: number) =>
-  (p.scores ?? []).flatMap((s, i) => (s.player === player ? [i] : [])).slice(-SCORE_ROWS);
+/** Where in a score pad's `scores` each of a player's points is, in the order they were written down. */
+const playerScores = (p: Pick<TablePiece, 'scores'>, player: number) => (p.scores ?? []).flatMap((s, i) => (s.player === player ? [i] : []));
+
+/** What part of a score pad a point is on: a player's name, their rows of points, their total, or their + button. */
+export type ScoreArea = 'name' | 'rows' | 'total' | 'add';
 
 /**
- * Where a table point on a score pad is: which player's column, whether it's on their name (at the top), and
- * which of their points it's on, if any (where it is in the pad's `scores`).
+ * Where a table point on a score pad is: which player's column, which part of it, and which of their points it's
+ * on, if any (where it is in the pad's `scores`).
  */
-export function scoreSpotAt(p: TablePiece, x: number, y: number): { player: number; name: boolean; entry?: number } {
+export function scoreSpotAt(p: TablePiece, x: number, y: number): { player: number; area: ScoreArea; entry?: number } {
   const { w, h } = pieceSizeOf(p);
   const k = p.scale ?? 1;
   const players = scoreNames(p).length;
   const across = (x - (p.x - w / 2)) / k - SCORE_PAD;
   const down = (y - (p.y - h / 2)) / k - SCORE_PAD;
   const player = Math.min(players - 1, Math.max(0, Math.floor(across / SCORE_COLUMN)));
-  if (down < SCORE_HEAD) return { player, name: true };
-  const row = Math.floor((down - SCORE_HEAD) / SCORE_ROW);
-  const entry = row < SCORE_ROWS ? shownScores(p, player)[row] : undefined;
-  return entry === undefined ? { player, name: false } : { player, name: false, entry };
+  const { start, rows } = scoreWindow(p);
+  if (down < SCORE_HEAD) return { player, area: 'name' };
+  if (down < SCORE_HEAD + rows * SCORE_ROW) {
+    const entry = playerScores(p, player)[start + Math.floor((down - SCORE_HEAD) / SCORE_ROW)];
+    return entry === undefined ? { player, area: 'rows' } : { player, area: 'rows', entry };
+  }
+  return { player, area: down < SCORE_HEAD + rows * SCORE_ROW + SCORE_TOTAL ? 'total' : 'add' };
 }
 
-/** A score pad with points written down for a player. */
+/** A score pad with points written down for a player (and scrolled to the latest, to show them). */
 export const addScore = (t: SandboxTable, id: string, player: number, points: number): SandboxTable => {
   const p = t.pieces?.find((q) => q.id === id);
-  return p ? setPiece(t, id, { scores: [...(p.scores ?? []), { player, points }] }) : t;
+  return p ? setPiece(t, id, { scores: [...(p.scores ?? []), { player, points }], scroll: undefined }) : t;
 };
 
 /** A score pad with the points written down at `entry` (in its `scores`) changed, or (null) crossed off. */
@@ -816,15 +857,22 @@ export function upgradeTable(t: SandboxTable): SandboxTable {
   };
 }
 
-/** An unlocked zone whose bottom-right corner (its grip, for resizing it) is within `reach` of a table point. */
-export function zoneGripAt(t: SandboxTable, x: number, y: number, reach: number): TablePiece | null {
-  const zones = (t.pieces ?? []).filter((p) => p.kind === 'zone' && !p.locked);
-  for (let i = zones.length - 1; i >= 0; i--) {
-    const { w, h } = pieceSizeOf(zones[i]);
-    if (Math.hypot(x - (zones[i].x + w / 2), y - (zones[i].y + h / 2)) <= reach) return zones[i];
+/** The topmost of these pieces whose bottom-right corner (its grip, for resizing it) is within `reach` of a table point. */
+function gripAmong(pieces: TablePiece[], x: number, y: number, reach: number): TablePiece | null {
+  for (let i = pieces.length - 1; i >= 0; i--) {
+    const { w, h } = pieceSizeOf(pieces[i]);
+    if (Math.hypot(x - (pieces[i].x + w / 2), y - (pieces[i].y + h / 2)) <= reach) return pieces[i];
   }
   return null;
 }
+
+/** An unlocked zone whose bottom-right corner (its grip, for resizing it) is within `reach` of a table point. */
+export const zoneGripAt = (t: SandboxTable, x: number, y: number, reach: number) =>
+  gripAmong((t.pieces ?? []).filter((p) => p.kind === 'zone' && !p.locked), x, y, reach);
+
+/** An unlocked score pad whose bottom-right corner (its grip, for making it taller or shorter) is within `reach`. */
+export const scoreGripAt = (t: SandboxTable, x: number, y: number, reach: number) =>
+  gripAmong((t.pieces ?? []).filter((p) => p.kind === 'score' && !p.locked), x, y, reach);
 
 /**
  * A zone resized from its bottom-right corner (its top-left corner staying put), to a new own size (before its

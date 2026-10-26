@@ -60,7 +60,7 @@ const TIPS: { title: string; tips: [string, string][] }[] = [
       ['Hold a hand’s tab', 'Rename that hand.'],
       ['Hold the tools tab', 'Then drag it up or down its edge, or across to the other side.'],
       ['Hold a zone’s name', 'Its options, even when it’s full of cards. A card spot’s name works the same way.'],
-      ['Score pad', 'Tap a player’s column to add points (a minus takes them off), their name to change it, or points already written down to change or delete them.'],
+      ['Score pad', 'Tap the + under a player’s total to add points (a minus takes them off), their name to change it, or points already written down to change or delete them. Slide up or down on the points to see earlier ones, and drag its bottom-right corner to make it taller or shorter.'],
     ],
   },
 ];

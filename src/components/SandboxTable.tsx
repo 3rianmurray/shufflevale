@@ -148,6 +148,10 @@ import {
   scoreNames,
   scoreText,
   setScore,
+  scoreWindow,
+  scoreGripAt,
+  resizeScore,
+  SCORE_ROW,
   SCORE_MAX_PLAYERS,
 } from '../lib/sandbox';
 import type { BagItem, Camera, CardSize, PieceKind, PiecePart, PieceShape, SandboxCard, SandboxStack, SandboxTable, Source, TablePiece } from '../lib/sandbox';
@@ -217,6 +221,8 @@ const FINGER_REACH = 22;
 const TOKEN_PICTURES = 'tokens';
 /** How near a zone's bottom-right corner (screen points) a finger grabs its grip, to resize it. */
 const ZONE_GRIP_REACH = 28;
+/** A score pad's: closer, so its last + button (by the corner) is still a button. */
+const SCORE_GRIP_REACH = 16;
 /** The most dice added at once (from the Add a die menu): enough for big dice games, few enough to roll smoothly. */
 const DICE_AT_ONCE = 20;
 /** Stands in for the finger carrying cards taken out of the search, till the table's gesture says which it is. */
@@ -978,15 +984,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       return;
     }
     if (piece.kind === 'score') {
-      // A player's name: changed; points written down: changed or crossed off; anywhere else in their column: more
+      // A player's name: changed; points written down: changed or crossed off; their + (under their total): more
       // points for them (taken off, with a minus).
-      const { player, name, entry } = at ? scoreSpotAt(piece, at.x, at.y) : { player: 0, name: false, entry: undefined };
+      const { player, area, entry } = at ? scoreSpotAt(piece, at.x, at.y) : { player: 0, area: 'rows' as const, entry: undefined };
       const who = scoreNames(piece)[player];
       if (entry !== undefined) {
         setMenu({ kind: 'scoreEntry', id, entry });
         return;
       }
-      if (name) {
+      if (area !== 'name' && area !== 'add') return;
+      if (area === 'name') {
         askName('Player’s name', who, (named) => commit(setPiece(table, id, { names: scoreNames(piece).map((n, i) => (i === player ? named : n)) })));
         return;
       }
@@ -1210,14 +1217,25 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     } catch (e) {
       Alert.alert('Couldn’t cut it out', e instanceof Error ? e.message : String(e));
     }
-  };  /** A zone being resized by its grip: its own size for now (see resizeZone). */
+  };
+  /** A zone (or score pad) being resized by its grip: its own size for now (see resizeZone and resizeScore). */
   const [zoneSize, setZoneSize] = useState<{ id: string; w: number; h: number } | null>(null);
+  /** Resized: a zone to its new size; a score pad to the rows that fit its new height. */
+  const resized = (p: TablePiece, s: { w: number; h: number }) => (p.kind === 'score' ? resizeScore(p, s.h) : resizeZone(p, s.w, s.h));
   const dropZoneSize = () => {
     const zone = table?.pieces?.find((p) => p.id === zoneSize?.id);
     setZoneSize(null);
     if (!table || !zone || !zoneSize) return;
-    commit(setPiece(table, zone.id, resizeZone(zone, zoneSize.w, zoneSize.h)));
+    commit(setPiece(table, zone.id, resized(zone, zoneSize)));
     haptics.drop();
+  };
+  /** A score pad's rows being scrolled: how far back, for now. */
+  const [scoreScroll, setScoreScroll] = useState<{ id: string; scroll: number } | null>(null);
+  /** Scrolled where it's let go (not something to undo: nothing on it has changed). */
+  const dropScoreScroll = () => {
+    setScoreScroll(null);
+    if (!table || !scoreScroll) return;
+    updateSandbox(setPiece(table, scoreScroll.id, { scroll: scoreScroll.scroll || undefined }));
   };
   /** How much custom art the table has, against ART_MAX (each is a picture to draw, so there's a limit). */
   const artCount = (table?.pieces ?? []).filter((p) => p.kind === 'art').length + (table?.pieces ?? []).reduce((n, p) => n + bagItems(p).filter((i) => i.piece?.kind === 'art').length, 0);
@@ -1544,21 +1562,28 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       openAddAt: (at: { x: number; y: number }) => void;
       dropIntoBag: (bagId: string, items: BagItem[], without: SandboxTable) => void;
       dropZoneSize: () => void;
+      setScoreScroll: (s: { id: string; scroll: number } | null) => void;
+      dropScoreScroll: () => void;
       lockedOut: (id: string) => boolean;
       openPro: () => void;
       zoomTo: (target: ZoomTarget) => void;
     };
     return { set: (next: typeof box) => Object.assign(box, next), get: () => box };
   });
-  latest.set({ table, size, handTop, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, tapPiece, setPieceDrag, dropPieces, onDiceGridButton, gridPickedDice, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, rollDice, lockedOut, openPro, zoomTo: (t) => zoomToTarget(t) });
+  latest.set({ table, size, handTop, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onDiceGridButton, gridPickedDice, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, rollDice, lockedOut, openPro, zoomTo: (t) => zoomToTarget(t) });
 
   // The gesture in progress (never drawn from, so kept outside React state).
   const [gestureState] = useState(() => {
     type Pt = { x: number; y: number };
     const s = {
-      mode: 'none' as 'none' | 'camera' | 'press' | 'carry' | 'handPress' | 'lasso' | 'group' | 'button' | 'piece' | 'zoneResize',
-      /** A zone being resized by its grip: where the finger landed (on the table), and its own size and scale then. */
+      mode: 'none' as 'none' | 'camera' | 'press' | 'carry' | 'handPress' | 'lasso' | 'group' | 'button' | 'piece' | 'zoneResize' | 'scoreScroll',
+      /** A zone (or score pad) being resized by its grip: where the finger landed (on the table), and its own size and scale then. */
       zone: null as null | { id: string; from: Pt; size: { w: number; h: number }; scale: number },
+      /**
+       * A score pad's rows being scrolled: where the finger landed (on screen), how far back it was scrolled then, how
+       * far back it can go, and how tall a row is on screen.
+       */
+      scroll: null as null | { id: string; fromY: number; base: number; most: number; rowPx: number },
       /** The counter or die pressed: which part, where it lay and where the finger landed (on the table), and whether it's been dragged. */
       piece: null as null | {
         id: string;
@@ -2123,6 +2148,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // A counter or die (they lie above every card): a tap counts or rolls, a drag moves it, a hold opens its options.
         // A small piece is easy to get a finger on: caught within a fingertip's reach of it, if nothing else (not a
         // piece, nor a card) is right under the finger.
+        // A score pad's corner grip: dragged, it makes the pad taller or shorter (as a zone's resizes it).
+        const padGrip = L.table ? scoreGripAt(L.table, w.x, w.y, SCORE_GRIP_REACH / cameraZoom(readCamera())) : null;
+        if (padGrip && !L.lockedOut(padGrip.id)) {
+          if (L.selected.length || L.pickedPieces.length) L.setSelected([]);
+          touch.zone = { id: padGrip.id, from: w, size: pieceSizeOf({ ...padGrip, scale: 1 }), scale: padGrip.scale ?? 1 };
+          touch.mode = 'zoneResize';
+          touch.onEmpty = false;
+          haptics.lift();
+          return;
+        }
         const exactly = L.table ? pieceAt(L.table, w.x, w.y) : null;
         const onPiece =
           exactly ?? (L.table && !stackAt(L.table, w.x, w.y, L.size) ? pieceAt(L.table, w.x, w.y, FINGER_REACH / cameraZoom(readCamera())) : null);
@@ -2361,6 +2396,15 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         latest.get().setZoneSize({ id: z.id, w: z.size.w + (w.x - z.from.x) / z.scale, h: z.size.h + (w.y - z.from.y) / z.scale });
         return;
       }
+      if (touch.mode === 'scoreScroll' && touch.scroll) {
+        // Dragged down, further back (older points come down into view); up, toward the latest.
+        const f = touch.fingers.get(touch.first);
+        if (!f) return;
+        const s = touch.scroll;
+        const scroll = Math.min(s.most, Math.max(0, s.base + Math.round((f.now.y - s.fromY) / s.rowPx)));
+        latest.get().setScoreScroll({ id: s.id, scroll });
+        return;
+      }
       if (touch.mode === 'piece' && touch.piece) {
         // Past a little slop, it follows the finger.
         const f = touch.fingers.get(touch.first);
@@ -2368,6 +2412,17 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         if (!touch.piece.moved && Math.hypot(f.now.x - f.start.x, f.now.y - f.start.y) <= TAP_SLOP) return;
         if (!touch.piece.moved) {
           clearHold();
+          // Up or down on a score pad's points, when it has more than it shows: they scroll, rather than it moving.
+          const pad = latest.get().table?.pieces?.find((p) => p.id === touch.piece!.id && p.kind === 'score');
+          if (pad && touch.piece.group.length === 1 && Math.abs(f.now.y - f.start.y) > Math.abs(f.now.x - f.start.x)) {
+            const view = scoreWindow(pad);
+            if (view.most > 0 && scoreSpotAt(pad, touch.piece.from.x, touch.piece.from.y).area === 'rows') {
+              touch.piece = null;
+              touch.mode = 'scoreScroll';
+              touch.scroll = { id: pad.id, fromY: f.start.y, base: view.scroll, most: view.most, rowPx: SCORE_ROW * (pad.scale ?? 1) * cameraZoom(readCamera()) };
+              return move(all);
+            }
+          }
           // A quick drag from a bag (alone) takes its top thing out, as from a stack; held first, the bag moves.
           const pulled = latest.get().table?.pieces?.find((p) => p.id === touch.piece!.id && p.kind === 'bag');
           if (pulled && !touch.piece.whole && touch.piece.group.length === 1 && (pulled.supply || bagItems(pulled).length)) return pullFromBag(pulled, f.now);
@@ -2576,6 +2631,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         touch.zone = null;
         L.dropZoneSize();
         touch.mode = 'none';
+      } else if (touch.mode === 'scoreScroll' && lifted.includes(touch.first)) {
+        touch.scroll = null;
+        L.dropScoreScroll();
+        touch.mode = 'none';
       } else if (touch.mode === 'piece' && lifted.includes(touch.first)) {
         clearHold();
         const pressed = touch.piece;
@@ -2710,6 +2769,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       if (touch.mode === 'zoneResize') {
         L.setZoneSize(null);
         touch.zone = null;
+      }
+      if (touch.mode === 'scoreScroll') {
+        L.setScoreScroll(null);
+        touch.scroll = null;
       }
       if (touch.mode === 'group') {
         // Back where it was, untwisted.
@@ -4174,10 +4237,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const drawPiece = (p: TablePiece) => {
     const dragged = !!pieceDrag?.ids.includes(p.id);
     const turn = dragged && pieceDrag?.lead === p.id ? pieceDrag.turn : undefined;
+    // A score pad being made taller or shorter, or scrolled: as it is for now.
+    const shown = zoneSize?.id === p.id ? { ...p, ...resized(p, zoneSize) } : scoreScroll?.id === p.id ? { ...p, scroll: scoreScroll.scroll } : p;
     return (
       <TablePieceView
         key={p.id}
-        piece={p}
+        piece={shown}
         at={movedTo(p)}
         turn={turn}
         rollKey={rolls[p.id]?.key}

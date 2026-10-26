@@ -572,6 +572,8 @@ function pieceFrom(
     // Its players (named, up to the most a pad has), and the points written down for them.
     const names = Array.isArray(v.names) ? v.names.slice(0, SCORE_MAX_PLAYERS).map((n, i) => nameFrom(n, `Player ${i + 1}`)) : [];
     p.names = names.length ? names : ['Player 1', 'Player 2'];
+    // How many rows of points it shows (as SCORE_ROWS_MIN to SCORE_ROWS_MAX).
+    if (finite(v.rows)) p.rows = Math.min(30, Math.max(2, Math.round(v.rows)));
     const players = p.names.length;
     p.scores = (Array.isArray(v.scores) ? v.scores.slice(0, MAX_SCORES) : []).flatMap((s) =>
       isObject(s) && Number.isInteger(s.player) && (s.player as number) >= 0 && (s.player as number) < players && finite(s.points) && Math.abs(s.points) <= MAX_POINTS

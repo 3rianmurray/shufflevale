@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
 const table = () => newSandbox('t', 'Test', 0);
@@ -212,18 +212,43 @@ test('a score pad keeps each player’s points and totals; fewer players drops t
   const pad = t.pieces![0];
   assert.deepEqual(scoreColumns(pad), [{ points: [5, -2], total: 3 }, { points: [3], total: 3 }]);
   assert.deepEqual(pieceSizeOf(pad), scoreSize(2));
-  // Its second column, at the top (the name) and lower down.
+  // Its second column, at the top (the name); its first, among the rows of points, and its + at the bottom.
   const { w, h } = scoreSize(2);
-  assert.deepEqual(scoreSpotAt(pad, 500 + w / 2 - 20, 500 - h / 2 + 20), { player: 1, name: true });
-  assert.deepEqual(scoreSpotAt(pad, 500 - w / 2 + 20, 500), { player: 0, name: false });
+  assert.deepEqual(scoreSpotAt(pad, 500 + w / 2 - 20, 500 - h / 2 + 20), { player: 1, area: 'name' });
+  assert.deepEqual(scoreSpotAt(pad, 500 - w / 2 + 20, 500), { player: 0, area: 'rows' });
+  assert.deepEqual(scoreSpotAt(pad, 500 - w / 2 + 40, 500 + h / 2 - SCORE_PAD - 10), { player: 0, area: 'add' });
   // On the first points written down for the first player (its first row); changed, then crossed off.
-  assert.deepEqual(scoreSpotAt(pad, 500 - w / 2 + 20, 500 - h / 2 + SCORE_PAD + SCORE_HEAD + 5), { player: 0, name: false, entry: 0 });
+  assert.deepEqual(scoreSpotAt(pad, 500 - w / 2 + 20, 500 - h / 2 + SCORE_PAD + SCORE_HEAD + 5), { player: 0, area: 'rows', entry: 0 });
   assert.deepEqual(scoreColumns(setScore(t, 'p', 0, 8).pieces![0])[0], { points: [8, -2], total: 6 });
   assert.deepEqual(setScore(t, 'p', 0, null).pieces![0].scores, [{ player: 1, points: 3 }, { player: 0, points: -2 }]);
   const three = setScorePlayers(t, 'p', 3).pieces![0];
   assert.deepEqual(three.names, ['Player 1', 'Player 2', 'Player 3']);
   const one = setScorePlayers(t, 'p', 1).pieces![0];
   assert.deepEqual(scoreColumns(one), [{ points: [5, -2], total: 3 }]);
+});
+
+test('a score pad shows its latest rows, scrolls back through older ones, and is made taller or shorter', () => {
+  let t = addPiece(table(), { ...newPiece('score', 'p', { x: 500, y: 500 }), rows: 2 });
+  for (const n of [1, 2, 3, 4]) t = addScore(t, 'p', 0, n);
+  t = addScore(t, 'p', 1, 9);
+  let pad = t.pieces![0];
+  // Four rounds, two showing: the last two, and it can go back two.
+  assert.deepEqual(scoreWindow(pad), { start: 2, rows: 2, most: 2, scroll: 0 });
+  const { w, h } = pieceSizeOf(pad);
+  const firstRow = 500 - h / 2 + SCORE_PAD + SCORE_HEAD + 5;
+  // Its first row now holds the third points written down for the first player.
+  assert.equal(scoreSpotAt(pad, 500 - w / 2 + 20, firstRow).entry, 2);
+  // Scrolled all the way back: the first row is the first points again (and too far is as far as it goes).
+  pad = { ...pad, scroll: 9 };
+  assert.deepEqual(scoreWindow(pad), { start: 0, rows: 2, most: 2, scroll: 2 });
+  assert.equal(scoreSpotAt(pad, 500 - w / 2 + 20, firstRow).entry, 0);
+  // More points: back to the latest.
+  assert.equal(addScore({ ...t, pieces: [pad] }, 'p', 1, 1).pieces![0].scroll, undefined);
+  // Taller by three rows, from its top (which stays put); never fewer than two rows.
+  const taller = resizeScore(pad, pieceSizeOf({ ...pad, scale: 1 }).h + 3 * SCORE_ROW);
+  assert.equal(taller.rows, 5);
+  assert.equal(taller.y - pieceSizeOf({ ...pad, rows: 5 }).h / 2, 500 - h / 2);
+  assert.equal(resizeScore(pad, 10).rows, 2);
 });
 test('a bag holds cards and pieces like a stack: the top comes out first; shuffled and searched like one', () => {
   const card = (iid: string) => ({ card: { iid, deckId: 'd', cardId: iid, faceUp: true } });

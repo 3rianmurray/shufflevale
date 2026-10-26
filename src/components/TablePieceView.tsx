@@ -14,10 +14,11 @@ import {
   rollDie,
   SCORE_COLUMN,
   SCORE_HEAD,
+  SCORE_ADD,
   SCORE_PAD,
   SCORE_ROW,
-  SCORE_ROWS,
   SCORE_TOTAL,
+  scoreWindow,
   scoreColumns,
   scoreNames,
   scoreText,
@@ -991,14 +992,21 @@ function Zone({ piece, color, k }: { piece: TablePiece; color: string; k: number
 }
 
 /**
- * A score pad: a sheet of paper with a column for each player, their name at its top, their latest points under
- * it (the earliest go off the top once it's full; they still count), and each one's total at the bottom.
+ * A score pad: a sheet of paper with a column for each player, their name at its top, their points under it (a row
+ * a round: the latest ones, unless it's scrolled back, with a thin bar at its side when there are more than show),
+ * each one's total, and a + under it to add points. Unlocked, a grip in its bottom-right corner makes it taller or
+ * shorter.
  */
 function ScorePad({ piece, color, selected, k }: { piece: TablePiece; color: string; selected: boolean; k: number }) {
   const ink = isLight(color) ? '#2c2c2a' : '#ffffff';
   const rule = isLight(color) ? 'rgba(44,44,42,0.28)' : 'rgba(255,255,255,0.3)';
   const names = scoreNames(piece);
   const columns = scoreColumns(piece);
+  const { start, rows, most } = scoreWindow(piece);
+  const rowsH = rows * SCORE_ROW * k;
+  // The scroll bar: how much of all the rows shows, and where.
+  const all = rows + most;
+  const bar = most ? { height: Math.max(8 * k, (rowsH * rows) / all), top: (SCORE_PAD + SCORE_HEAD) * k + (rowsH * start) / all } : null;
   return (
     <View
       style={[
@@ -1017,8 +1025,8 @@ function ScorePad({ piece, color, selected, k }: { piece: TablePiece; color: str
                 {name}
               </Text>
             </View>
-            <View style={{ height: SCORE_ROWS * SCORE_ROW * k }}>
-              {columns[i].points.slice(-SCORE_ROWS).map((n, j) => (
+            <View style={{ height: rowsH }}>
+              {columns[i].points.slice(start, start + rows).map((n, j) => (
                 <View key={j} style={[styles.scoreCell, { height: SCORE_ROW * k }]}>
                   <Text allowFontScaling={false} style={[styles.scorePoints, { color: ink, fontSize: 15 * k }]}>
                     {scoreText(n)}
@@ -1031,9 +1039,23 @@ function ScorePad({ piece, color, selected, k }: { piece: TablePiece; color: str
                 {scoreText(columns[i].total)}
               </Text>
             </View>
+            {/* Its + : more points for this player. */}
+            <View style={[styles.scoreCell, { height: SCORE_ADD * k }]}>
+              <View style={[styles.scoreAdd, { width: 26 * k, height: 26 * k, borderRadius: 13 * k, borderWidth: 1.5 * k, borderColor: rule }]}>
+                <Text allowFontScaling={false} style={[styles.scoreAddText, { color: ink, fontSize: 18 * k, lineHeight: 22 * k }]}>
+                  +
+                </Text>
+              </View>
+            </View>
           </View>
         ))}
       </View>
+      {bar ? <View style={[styles.scoreBar, { right: 2 * k, width: 3 * k, borderRadius: 1.5 * k, backgroundColor: rule, ...bar }]} /> : null}
+      {piece.locked ? null : (
+        <View
+          style={[styles.zoneGrip, { borderColor: rule, right: 3 * k, bottom: 3 * k, width: 12 * k, height: 12 * k, borderRightWidth: 2 * k, borderBottomWidth: 2 * k, borderBottomRightRadius: 4 * k }]}
+        />
+      )}
     </View>
   );
 }
@@ -1210,6 +1232,9 @@ const styles = StyleSheet.create({
   scoreName: { fontWeight: '700' },
   scorePoints: { fontWeight: '500', fontVariant: ['tabular-nums'] },
   scoreTotal: { fontWeight: '800', fontVariant: ['tabular-nums'] },
+  scoreAdd: { alignItems: 'center', justifyContent: 'center' },
+  scoreAddText: { fontWeight: '600', textAlign: 'center' },
+  scoreBar: { position: 'absolute' },
   artShadow: { opacity: 0.4, transform: [{ translateX: 2 }, { translateY: 4 }] },
   artPrint: { borderRadius: 6, boxShadow: '1px 3px 8px rgba(0, 0, 0, 0.45)' },
   artPrintImage: { borderRadius: 6 },
