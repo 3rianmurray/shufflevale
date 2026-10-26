@@ -997,7 +997,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         '',
         (text) => {
           const n = parseInt(text.replace(/[^\d-]/g, ''), 10);
-          if (Number.isFinite(n) && n !== 0) {
+          // (0 too: a round that scored nothing.)
+          if (Number.isFinite(n)) {
             commit(addScore(table, id, player, n));
             haptics.tick();
           }
@@ -4064,8 +4065,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                     String(scores[entry].points),
                     (text) => {
                       const n = parseInt(text.replace(/[^\d-]/g, ''), 10);
-                      // (Changed to 0: crossed off.)
-                      if (Number.isFinite(n)) commit(setScore(table, menu.id, entry, n || null));
+                      if (Number.isFinite(n)) commit(setScore(table, menu.id, entry, n));
                     },
                     'signed',
                   ),
