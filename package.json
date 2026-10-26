@@ -50,7 +50,8 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test src/lib/*.test.ts",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "eas-build-pre-install": "node scripts/no-tester-switch.mjs"
   },
   "private": true
 }

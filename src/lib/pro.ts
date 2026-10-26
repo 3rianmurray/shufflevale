@@ -32,6 +32,16 @@ function iap(): Iap | null {
   return iapModule;
 }
 
+/**
+ * FOR TESTING ONLY, AND IT MUST BE TURNED OFF BEFORE ANY APP STORE SUBMISSION (App Review rejected 1.2.0 for a
+ * tester switch): `extra.testerSwitch` in app.json shows a switch in About, to act as free or as Pro without buying.
+ * Every EAS build fails while it's on (scripts/no-tester-switch.mjs), so it never reaches a store build.
+ */
+export const TESTER_BUILD = !!(Constants.expoConfig?.extra as { testerSwitch?: boolean } | undefined)?.testerSwitch;
+
+/** The tester switch: acting as free or as Pro. */
+export type ProOverride = 'free' | 'pro';
+
 export interface ProState {
   /** Bought (or restored) on this Apple Account. */
   owned: boolean;
@@ -41,6 +51,8 @@ export interface ProState {
   available: boolean;
   /** A purchase or restore is under way. */
   busy: boolean;
+  /** The tester switch (only while TESTER_BUILD): acting as free or as Pro, or (null) as the purchase says. */
+  override: ProOverride | null;
 }
 
 let state: ProState = {
@@ -48,6 +60,7 @@ let state: ProState = {
   price: null,
   available: true,
   busy: false,
+  override: TESTER_BUILD ? (loadSettings().proOverride ?? null) : null,
 };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<ProState>) => {
@@ -61,7 +74,16 @@ const subscribe = (l: () => void) => {
 
 /** Whether Pro is on: bought (or restored). Where there's no App Store at all (Expo Go, in development), everything's open. */
 export function isPro(s: ProState = state): boolean {
+  if (TESTER_BUILD && s.override) return s.override === 'pro';
   return s.owned || !s.available;
+}
+
+/** The tester switch (only while TESTER_BUILD): act as free, as Pro, or (null) as the purchase says. */
+export function setProOverride(override: ProOverride | null) {
+  if (!TESTER_BUILD) return;
+  const { proOverride: _old, ...rest } = loadSettings();
+  saveSettings(override ? { ...rest, proOverride: override } : rest);
+  set({ override });
 }
 
 /** Pro's state, redrawing as it changes. */

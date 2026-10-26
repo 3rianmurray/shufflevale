@@ -154,6 +154,8 @@ export interface Settings {
   playThemes?: Record<string, string>;
   /** Shufflevale Pro has been bought on this phone's Apple Account (see lib/pro), remembered for offline use. */
   proOwned?: boolean;
+  /** The tester switch's choice, while there is one (see TESTER_BUILD in lib/pro). */
+  proOverride?: 'free' | 'pro';
   /** Where the player's put the tools drawer on tables: which edge, and how far down it (0 top, 1 bottom). */
   toolsSpot?: { side: 'left' | 'right'; at: number };
   /** What the card camera was last told the cards are (see CardKind in lib/cardCapture): none for rectangles. */

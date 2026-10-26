@@ -3,6 +3,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '../components/AppIcon';
 import { Text } from '../components/Text';
+import { isPro, setProOverride, TESTER_BUILD, useProState } from '../lib/pro';
+import type { ProOverride } from '../lib/pro';
 import { versionLabel } from '../lib/version';
 import { colors } from '../theme';
 
@@ -10,9 +12,17 @@ const SUPPORT = 'https://3rianmurray.github.io/shufflevale/';
 const PRIVACY = 'https://3rianmurray.github.io/shufflevale/privacy.html';
 const EMAIL = 'shufflevale@gmail.com';
 
+/** The tester switch's choices: as the purchase says, or acting as free or as Pro. */
+const TESTER: [ProOverride | null, string][] = [
+  [null, 'Purchase'],
+  ['free', 'Act as Free'],
+  ['pro', 'Act as Pro'],
+];
+
 /** The app's name and icon, which version is running (down to the update), and where to get help. */
 export default function AboutScreen() {
   const insets = useSafeAreaInsets();
+  const proState = useProState();
   const links: [string, string][] = [
     ['Support', SUPPORT],
     ['Privacy Policy', PRIVACY],
@@ -36,6 +46,27 @@ export default function AboutScreen() {
           </Pressable>
         ))}
       </View>
+      {/* TESTING ONLY, out in the open (never hidden): turned off before any App Store submission (see TESTER_BUILD). */}
+      {TESTER_BUILD ? (
+        <View style={styles.tester}>
+          <Text style={styles.testerTitle}>Tester · Pro is {isPro(proState) ? 'on' : 'off'}</Text>
+          <View style={styles.testerRow}>
+            {TESTER.map(([value, label]) => {
+              const on = proState.override === value;
+              return (
+                <Pressable
+                  key={label}
+                  onPress={() => setProOverride(value)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  style={[styles.testerItem, on && styles.testerItemOn]}>
+                  <Text style={[styles.testerText, on && { color: colors.accentText }]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
       <Text style={styles.footnote}>© 2026 Brian Murray</Text>
     </ScrollView>
   );
@@ -53,4 +84,10 @@ const styles = StyleSheet.create({
   linkText: { flex: 1, color: colors.accent, fontSize: 16, fontWeight: '600' },
   chevron: { color: colors.textMuted, fontSize: 20 },
   footnote: { color: colors.textMuted, fontSize: 12, marginTop: 24 },
+  tester: { alignSelf: 'stretch', marginTop: 28, padding: 14, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border, gap: 10 },
+  testerTitle: { color: colors.textMuted, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  testerRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 10, padding: 3 },
+  testerItem: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+  testerItemOn: { backgroundColor: colors.accent },
+  testerText: { color: colors.text, fontSize: 13, fontWeight: '600' },
 });
