@@ -2344,13 +2344,18 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                 return !!hit && L.table.stacks.indexOf(hit.stack) > artLevel(L.table, onPiece.piece);
               })()
             : false;
-        if (onPiece && !overArt) return pressPiece(onPiece.piece.id, onPiece.part, w);
+        // Locked custom art (a board, say), as a locked zone: the table under it works as ever (a pan, a lasso round
+        // what's on it), and a hold still gives its options.
+        const lockedArt =
+          onPiece && !overArt && onPiece.piece.kind === 'art' && onPiece.piece.locked && !L.lockedOut(onPiece.piece.id) ? onPiece.piece : null;
+        if (onPiece && !overArt && !lockedArt) return pressPiece(onPiece.piece.id, onPiece.part, w);
+        if (lockedArt) holdZone(lockedArt.id);
         // A zone's or card spot's name, just outside it: it's held by its name as by itself, however full of cards
         // it is (one that's part of Pro, with Pro off, is just painted on).
         const byName = L.table ? labelAt(L.table, w.x, w.y, FINGER_REACH / 2 / cameraZoom(readCamera())) : null;
         const named = byName && !L.lockedOut(byName.id) ? byName : null;
         if (named && !named.locked) return pressPiece(named.id, 'body', w);
-        if (named) holdZone(named.id);
+        if (named && !touch.holdTimer) holdZone(named.id);
         const hit = L.table && !named ? stackAt(L.table, w.x, w.y, L.size) : null;
         touch.onEmpty = false;
         if (hit) {

@@ -1698,13 +1698,14 @@ function stackCorners(s: SandboxStack, size: CardSize): P[] {
 
 /**
  * The stacks a lasso has caught: any part of the card touched by its line, or lying inside the shape it's drawn
- * (closed back to its start).
+ * (closed back to its start). Not one locked in place (as pieces: see piecesInShape).
  */
 export function stacksInShape(t: SandboxTable, shape: P[], size: CardSize): string[] {
   if (!shape.length) return [];
   const line = shape.slice(1).map((p, i) => [shape[i], p] as const);
   return t.stacks
     .filter((s) => {
+      if (s.locked) return false;
       const corners = stackCorners(s, size);
       const edges = corners.map((c, i) => [c, corners[(i + 1) % 4]] as const);
       if (shape.some((p) => insideShape(p, corners))) return true;

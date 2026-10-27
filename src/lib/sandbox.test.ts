@@ -257,6 +257,9 @@ test('a lasso catches any card its line touches, or that lies inside it', () => 
   assert.deepEqual(stacksInShape(t, loop, size), ['inside', 'touched']);
   // Just a line drawn across a card catches it too.
   assert.deepEqual(stacksInShape(t, [{ x: 650, y: 100 }, { x: 760, y: 110 }], size), ['clear']);
+  // Nothing locked in place is caught.
+  const locked = { ...t, stacks: t.stacks.map((s) => (s.id === 'inside' ? { ...s, locked: true } : s)) };
+  assert.deepEqual(stacksInShape(locked, loop, size), ['touched']);
 });
 test('a group moves together, each keeping its place relative to the rest', () => {
   const t = tableWith(
