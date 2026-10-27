@@ -1,6 +1,6 @@
 import { Canvas, Circle, Group, Image as SkImage, matchFont, Path, Shadow, Skia, Text as SkText, useImage, vec } from '@shopify/react-native-skia';
 import type { SkFont, SkImage as SkiaImage, SkPath } from '@shopify/react-native-skia';
-import { Easing as ReEasing, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import { Easing as ReEasing, makeMutable, useDerivedValue, withTiming } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { drawCubeSlots, restingTurn, SIDE_VALUES, tumbleFor, tumblingTurn } from '../lib/cube3d';
 import type { Mat, SideSlot, Tumble } from '../lib/cube3d';
@@ -473,27 +473,29 @@ function Die({
   const in3D = useContext(Dice3DContext);
   const solid = in3D && sides === 6;
   const poly = in3D && SOLID_SIDES.includes(sides);
-  /**
-   * How far through its tumble it is (0 just thrown, 1 at rest, eased), for a d6 in 3D: run on the animation
-   * thread, which works out and draws each frame without React (see SolidD6).
-   */
-  const spun = useSharedValue(1);
   /** Mid-roll: its gold rim (picked out) waits till it's settled, rather than wobbling round it as it goes. */
   const [rolling, setRolling] = useState(false);
   const [face, setFace] = useState<number | null>(null);
-  // How far through the roll: eased (sliding and spinning to a stop), and steady (for the bounces).
-  const [travel] = useState(() => new Animated.Value(1));
-  const [time] = useState(() => new Animated.Value(1));
+  /**
+   * A roll's motion: how far through it, eased (sliding and spinning to a stop) and steady (for the bounces); and
+   * for a die in 3D, how far through its tumble (0 just thrown, 1 at rest, eased), run on the animation thread,
+   * which works out and draws each frame without React (see SolidD6). Made afresh for each roll, already at its
+   * start, in the very render that has it where it lands: so the first frame drawn shows it where it set off from.
+   * (Set to the start afterward instead, the change reached the screen a frame late: it showed where it lands first.)
+   */
+  const [motion, setMotion] = useState(() => ({ key: 0, travel: new Animated.Value(1), time: new Animated.Value(1), spun: makeMutable(1) }));
+  // Only once it's where it lands: a roll can come a moment before the table that has it there does, and started
+  // early it would tumble back from where it still was.
+  const landed = !rollFrom?.to || (rollFrom.to.x === piece.x && rollFrom.to.y === piece.y);
+  if (rollKey && landed && motion.key !== rollKey && !prefersReducedMotion()) {
+    setMotion({ key: rollKey, travel: new Animated.Value(0), time: new Animated.Value(0), spun: makeMutable(0) });
+  }
+  const { travel, time, spun } = motion;
   /** The roll it last tumbled for (each is played once, even if it's nudged off where it landed afterward). */
   const played = useRef(0);
-  // Only once it's where it lands: a roll can come a moment before the table that has it there does, and started
-  // early it would tumble back from where it still was. Before it's drawn, so it never shows a frame there first.
-  const landed = !rollFrom?.to || (rollFrom.to.x === piece.x && rollFrom.to.y === piece.y);
   useLayoutEffect(() => {
-    if (!rollKey || !landed || played.current === rollKey || prefersReducedMotion()) return;
-    played.current = rollKey;
-    travel.setValue(0);
-    time.setValue(0);
+    if (!motion.key || played.current === motion.key) return;
+    played.current = motion.key;
     Animated.parallel([
       Animated.timing(travel, { toValue: 1, duration: ROLL_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.timing(time, { toValue: 1, duration: ROLL_MS, easing: Easing.linear, useNativeDriver: true }),
@@ -503,7 +505,6 @@ function Die({
     const settled = setTimeout(() => setRolling(false), ROLL_MS);
     // A die in 3D tumbles over its real faces, settling as it lands.
     if (solid || poly) {
-      spun.set(0);
       spun.set(withTiming(1, { duration: ROLL_MS, easing: ReEasing.out(ReEasing.cubic) }));
       return () => {
         clearTimeout(settled);
@@ -532,7 +533,7 @@ function Die({
       setFace(null);
       setRolling(false);
     };
-  }, [rollKey, landed, sides, solid, poly, travel, time, spun]);
+  }, [motion, sides, solid, poly, travel, time, spun]);
   const shown = face ?? piece.value;
   /** The player's own art for the face it shows, if it has some; then the rest of it is in the art's own color. */
   // (None on a die that takes none: a d4 or d8, even one given some before.)
