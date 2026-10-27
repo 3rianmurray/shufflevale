@@ -11,8 +11,7 @@ import { TESTER_BUILD } from './pro';
 
 export const ROLL_DEBUG = TESTER_BUILD;
 
-/** How many frames it's watched on screen, and how many lines are kept. */
-const FRAMES = 24;
+/** How many lines are kept. */
 const MAX_LINES = 40;
 
 let lines: string[] = [];
@@ -45,21 +44,16 @@ export function rollView(id: string, view: View | null) {
   else views.delete(id);
 }
 
-/** A roll starting: its first die watched afresh, and where it is on screen sampled every frame for a while. */
+/**
+ * A roll starting: its first die watched afresh. (Where it was on screen was sampled too, but the measure leaves out
+ * its own motion and the table's camera, so it never changed: it told nothing.)
+ */
 export function watchRoll(id: string) {
   if (!ROLL_DEBUG) return;
   watching = id;
   started = Date.now();
   lines = [];
   rollLog(id, `roll ${id.slice(-4)}`);
-  let frame = 0;
-  const sample = () => {
-    if (watching !== id || frame >= FRAMES) return;
-    const n = frame++;
-    views.get(id)?.measureInWindow((x, y) => rollLog(id, `frame ${n}: on screen ${Math.round(x)}, ${Math.round(y)}`));
-    requestAnimationFrame(sample);
-  };
-  sample();
 }
 
 /** Done looking: the lines go. */

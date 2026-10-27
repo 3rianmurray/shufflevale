@@ -1,6 +1,6 @@
 import { Canvas, Circle, Group, Image as SkImage, matchFont, Path, Shadow, Skia, Text as SkText, useImage, vec } from '@shopify/react-native-skia';
 import type { SkFont, SkImage as SkiaImage, SkPath } from '@shopify/react-native-skia';
-import { Easing as ReEasing, makeMutable, useDerivedValue, withTiming } from 'react-native-reanimated';
+import Reanimated, { Easing as ReEasing, interpolate, makeMutable, useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { drawCubeSlots, restingTurn, SIDE_VALUES, tumbleFor, tumblingTurn } from '../lib/cube3d';
 import { ROLL_DEBUG, rollLog, rollView } from '../lib/rollDebug';
@@ -482,16 +482,14 @@ function Die({
   const [rolling, setRolling] = useState(false);
   const [face, setFace] = useState<number | null>(null);
   /**
-   * A roll's motion: how far through it, eased (sliding and spinning to a stop) and steady (for the bounces); and
-   * for a die in 3D, how far through its tumble (0 just thrown, 1 at rest, eased), run on the animation thread,
-   * which works out and draws each frame without React (see SolidD6). Made afresh for each roll, already at its
-   * start, in the very render that has it where it lands: so the first frame drawn shows it where it set off from.
-   * (Set to the start afterward instead, the change reached the screen a frame late: it showed where it lands first.)
+   * A roll's motion, all of it run on the animation thread (Reanimated): how far through it, eased (sliding and
+   * spinning to a stop) and steady (for the bounces); and for a die in 3D, how far through its tumble (0 just
+   * thrown, 1 at rest, eased; see SolidD6). Made afresh for each roll, already at its start, with how far back it
+   * sets off from, in the very render that has it where it lands: so the first frame drawn shows it where it set off
+   * from. (On React Native's own animations, run natively, a redraw as a roll began could put it out of place for a
+   * frame before they caught up: a flash, wherever, at the start of every roll.)
    */
-  // Where it set off from (how far back) is the roll's own, kept with its motion: a new roll's distance put with the
-  // last roll's finished motion (whose value on this side can still read as just started: it ran natively) drew it
-  // that far back from where it still was, for a frame, before the new roll began.
-  const [motion, setMotion] = useState(() => ({ key: 0, dx: 0, dy: 0, travel: new Animated.Value(1), time: new Animated.Value(1), spun: makeMutable(1) }));
+  const [motion, setMotion] = useState(() => ({ key: 0, dx: 0, dy: 0, travel: makeMutable(1), time: makeMutable(1), spun: makeMutable(1) }));
   // Only once it's where it lands: a roll can come a moment before the table that has it there does, and started
   // early it would tumble back from where it still was.
   const landed = !rollFrom?.to || (rollFrom.to.x === piece.x && rollFrom.to.y === piece.y);
@@ -500,8 +498,8 @@ function Die({
       key: rollKey,
       dx: rollFrom?.dx ?? 0,
       dy: rollFrom?.dy ?? 0,
-      travel: new Animated.Value(0),
-      time: new Animated.Value(0),
+      travel: makeMutable(0),
+      time: makeMutable(0),
       spun: makeMutable(0),
     });
   }
@@ -511,15 +509,8 @@ function Die({
   useLayoutEffect(() => {
     if (!motion.key || played.current === motion.key) return;
     played.current = motion.key;
-    Animated.parallel([
-      Animated.timing(travel, { toValue: 1, duration: ROLL_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(time, { toValue: 1, duration: ROLL_MS, easing: Easing.linear, useNativeDriver: true }),
-      // Ended (run natively), put at the end on this side too: left reading as just started, the next time it was
-      // drawn for any reason (the next roll beginning) it showed for a frame where this roll set off from.
-    ]).start(() => {
-      travel.setValue(1);
-      time.setValue(1);
-    });
+    travel.set(withTiming(1, { duration: ROLL_MS, easing: ReEasing.out(ReEasing.cubic) }));
+    time.set(withTiming(1, { duration: ROLL_MS, easing: ReEasing.linear }));
     // Its rim hidden till it's settled (before it's drawn: this is a layout effect).
     setRolling(true);
     const settled = setTimeout(() => setRolling(false), ROLL_MS);
@@ -567,19 +558,20 @@ function Die({
     piece.id,
     `drawn: lies ${Math.round(piece.x)},${Math.round(piece.y)} roll ${rollKey} motion ${motion.key} ${landed ? 'landed' : 'not landed'} back ${Math.round(dx)},${Math.round(dy)}`,
   );
-  // It spins the way it's thrown.
-  const turn = (dx >= 0 ? 1 : -1) * 360 * ROLL_TURNS;
-  const transform = useMemo(
-    () => [
-      { translateX: travel.interpolate({ inputRange: [0, 1], outputRange: [-dx, 0] }) },
-      { translateY: travel.interpolate({ inputRange: [0, 1], outputRange: [-dy, 0] }) },
-      // (A die in 3D turns over in its own drawing instead, still lit from the same side.)
-      { rotate: solid || poly ? '0deg' : travel.interpolate({ inputRange: [0, 1], outputRange: [`${-turn}deg`, '0deg'] }) },
-      // Off the table and back, lower each bounce.
-      { scale: time.interpolate({ inputRange: [0, 0.16, 0.34, 0.5, 0.64, 0.78, 1], outputRange: [1, 1.32, 1, 1.14, 1, 1.04, 1] }) },
-    ],
-    [travel, time, dx, dy, turn, solid, poly],
-  );
+  // It spins the way it's thrown (a die in 3D turns over in its own drawing instead, still lit from the same side).
+  const turn = solid || poly ? 0 : (dx >= 0 ? 1 : -1) * 360 * ROLL_TURNS;
+  const rollStyle = useAnimatedStyle(() => {
+    const left = 1 - travel.value;
+    return {
+      transform: [
+        { translateX: -dx * left },
+        { translateY: -dy * left },
+        { rotate: `${-turn * left}deg` },
+        // Off the table and back, lower each bounce.
+        { scale: interpolate(time.value, [0, 0.16, 0.34, 0.5, 0.64, 0.78, 1], [1, 1.32, 1, 1.14, 1, 1.04, 1]) },
+      ],
+    };
+  });
   const ink = isLight(color) ? '#2c2c2a' : '#ffffff';
   // Its shape turned as it lies, each face lit as it now faces (the one looking up, as evenly as ever).
   const flat = useMemo(() => dieShape(sides), [sides]);
@@ -635,7 +627,7 @@ function Die({
   const shadow = <Shadow dx={2 * OS} dy={4 * OS} blur={4 * OS} color="rgba(0,0,0,0.45)" shadowOnly />;
   const edge = shade(color, -0.45);
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, { transform }]} ref={ROLL_DEBUG ? (v: View | null) => rollView(piece.id, v) : undefined}>
+    <Reanimated.View style={[StyleSheet.absoluteFill, rollStyle]} ref={ROLL_DEBUG ? (v: View | null) => rollView(piece.id, v) : undefined}>
       <Canvas
         style={{
           position: 'absolute',
@@ -743,7 +735,7 @@ function Die({
           {shown}
         </Text>
       )}
-    </Animated.View>
+    </Reanimated.View>
   );
 }
 
