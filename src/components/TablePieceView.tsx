@@ -509,7 +509,12 @@ function Die({
     Animated.parallel([
       Animated.timing(travel, { toValue: 1, duration: ROLL_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.timing(time, { toValue: 1, duration: ROLL_MS, easing: Easing.linear, useNativeDriver: true }),
-    ]).start();
+      // Ended (run natively), put at the end on this side too: left reading as just started, the next time it was
+      // drawn for any reason (the next roll beginning) it showed for a frame where this roll set off from.
+    ]).start(() => {
+      travel.setValue(1);
+      time.setValue(1);
+    });
     // Its rim hidden till it's settled (before it's drawn: this is a layout effect).
     setRolling(true);
     const settled = setTimeout(() => setRolling(false), ROLL_MS);
@@ -1104,7 +1109,8 @@ function useRollMotion(rollKey: number) {
   useLayoutEffect(() => {
     if (!rollKey || prefersReducedMotion()) return;
     motion.setValue(0);
-    Animated.timing(motion, { toValue: 1, duration: ROLL_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    // (Ended, put at the end on this side too, or it's drawn as just started the next time it's drawn: see Die.)
+    Animated.timing(motion, { toValue: 1, duration: ROLL_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => motion.setValue(1));
   }, [rollKey, motion]);
   return motion;
 }
