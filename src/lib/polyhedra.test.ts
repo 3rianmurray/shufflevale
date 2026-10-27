@@ -70,6 +70,8 @@ test('drawn lying flat, a die shows its top and some sides, all inside its box w
     const m = polyModel(sides);
     const { slots, outline } = drawPoly(m, restingPolyTurn(m, 1, 0));
     assert.equal(slots.length, m.faces.length);
+    // It knows what it shows, however it's turned on the table.
+    for (let v = 1; v <= sides; v++) assert.equal(drawPoly(m, restingPolyTurn(m, v, 73)).top, v, `d${sides} shows ${v}`);
     assert.ok(slots.some((s) => s.seen) && slots.some((s) => !s.seen), `d${sides}`);
     for (const [x, y] of outline) assert.ok(x > -0.15 && x < 1.15 && y > -0.15 && y < 1.15, `d${sides} in its box`);
   }

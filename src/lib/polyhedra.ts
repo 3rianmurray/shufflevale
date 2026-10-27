@@ -185,13 +185,34 @@ export interface PolySlot {
 }
 
 /**
- * A die turned as `turn` says, drawn: every face in its own place in the list (seen or not), and its outline round
- * all of it. Worked out frame by frame on the animation thread as it tumbles.
+ * A die turned as `turn` says, drawn: every face in its own place in the list (seen or not), its outline round all
+ * of it, and the number it shows as it's turned now (the face pointing up; a d4's corner). Worked out frame by
+ * frame on the animation thread as it tumbles.
  */
-export function drawPoly(model: PolyModel, turn: Mat): { slots: PolySlot[]; outline: Pt[] } {
+export function drawPoly(model: PolyModel, turn: Mat): { slots: PolySlot[]; outline: Pt[]; top: number } {
   'worklet';
   const toViewer: Vec = [SLANT, SLANT, 1];
   const pts = model.vertices.map((p) => drawn(apply(turn, p)));
+  // What's up: a d4's highest corner, or any other die's face pointing most nearly up.
+  let top = 1;
+  let highest = -Infinity;
+  if (model.sides === 4) {
+    model.vertices.forEach((p, i) => {
+      const z = apply(turn, p)[2];
+      if (z > highest) {
+        highest = z;
+        top = i + 1;
+      }
+    });
+  } else {
+    model.faces.forEach((f) => {
+      const z = apply(turn, f.n)[2];
+      if (z > highest) {
+        highest = z;
+        top = f.labels[0].value;
+      }
+    });
+  }
   const slots = model.faces.map((f) => {
     const n = apply(turn, f.n);
     const u = apply(turn, f.u);
@@ -206,5 +227,5 @@ export function drawPoly(model: PolyModel, turn: Mat): { slots: PolySlot[]; outl
       down: [(v[0] - SLANT * v[2]) * k, (v[1] - SLANT * v[2]) * k] as Pt,
     };
   });
-  return { slots, outline: hullOf(pts) };
+  return { slots, outline: hullOf(pts), top };
 }

@@ -874,7 +874,7 @@ function SolidPolyFace({
   px,
   OS,
 }: {
-  view: SharedValue<{ slots: PolySlot[]; outline: Pt[] }>;
+  view: SharedValue<{ slots: PolySlot[]; outline: Pt[]; top: number }>;
   i: number;
   labels: FaceLabel[];
   sides: number;
@@ -897,24 +897,50 @@ function SolidPolyFace({
     return Skia.Matrix([s.across[0] * px, s.down[0] * px, (s.origin[0] + PAD) * px, s.across[1] * px, s.down[1] * px, (s.origin[1] + PAD) * px, 0, 0, 1]);
   });
   const seen = useDerivedValue(() => (view.value.slots[i].seen ? 1 : 0));
-  const font = NUMBER_FONT();
   return (
     <>
       <Path path={path} color={fill} />
       <Path path={path} color={shade(color, -0.45)} style="stroke" strokeWidth={0.6 * OS} opacity={0.35} />
       <Group matrix={matrix} opacity={seen}>
-        {labels.map((l, k) => {
-          // A 6 and a 9 marked, on dice that have both, so they're told apart whichever way up.
-          const text = sides >= 9 && (l.value === 6 || l.value === 9) ? `${l.value}.` : String(l.value);
-          const width = font.measureText(text).width;
-          return (
-            <Group key={k} transform={[{ translateX: l.x }, { translateY: l.y }, { rotate: (l.rot * Math.PI) / 180 }, { scale: l.size / 100 }]}>
-              <SkText x={-width / 2} y={36} text={text} font={font} color={ink} />
-            </Group>
-          );
-        })}
+        {labels.map((l, k) => (
+          <SolidPolyLabel key={k} view={view} i={i} label={l} sides={sides} ink={ink} />
+        ))}
       </Group>
     </>
+  );
+}
+
+/**
+ * A number on a solid die's face, printed on it: shaded as its face is lit; the number it shows at full strength
+ * and the rest faded, so it reads at a glance (a d4's, at its top corner, bigger too, the others fainter still).
+ */
+function SolidPolyLabel({
+  view,
+  i,
+  label,
+  sides,
+  ink,
+}: {
+  view: SharedValue<{ slots: PolySlot[]; outline: Pt[]; top: number }>;
+  i: number;
+  label: FaceLabel;
+  sides: number;
+  ink: string;
+}) {
+  const font = NUMBER_FONT();
+  // A 6 and a 9 marked, on dice that have both, so they're told apart whichever way up.
+  const text = sides >= 9 && (label.value === 6 || label.value === 9) ? `${label.value}.` : String(label.value);
+  const width = font.measureText(text).width;
+  const shown = useDerivedValue(() => (view.value.top === label.value ? 1 : sides === 4 ? 0.35 : 0.6));
+  const tint = useDerivedValue(() => shade(ink, view.value.slots[i].light));
+  const transform = useDerivedValue(() => {
+    const big = sides === 4 && view.value.top === label.value ? 1.35 : 1;
+    return [{ translateX: label.x }, { translateY: label.y }, { rotate: (label.rot * Math.PI) / 180 }, { scale: (big * label.size) / 100 }];
+  });
+  return (
+    <Group transform={transform} opacity={shown}>
+      <SkText x={-width / 2} y={36} text={text} font={font} color={tint} />
+    </Group>
   );
 }
 
@@ -966,6 +992,8 @@ function SolidSide({
   const seen = useDerivedValue(() => (view.value.slots[i].seen ? 1 : 0));
   const isFront = useDerivedValue(() => (front.value === i ? 1 : 0));
   const fill = useDerivedValue(() => shade(color, view.value.slots[i].light));
+  // Its pips printed on it: shaded as it's lit.
+  const pipTint = useDerivedValue(() => shade(ink, view.value.slots[i].light));
   // Art shaded as its side is: darker turned from the light, a touch lighter turned to it.
   const tint = useDerivedValue(() => {
     const light = view.value.slots[i].light;
@@ -985,7 +1013,7 @@ function SolidSide({
         </Group>
       ) : (
         (PIPS[value] ?? []).map((cell) => (
-          <Circle key={cell} cx={(cell % 3) * 0.3 + 0.2} cy={Math.floor(cell / 3) * 0.3 + 0.2} r={0.085 / CUBE_FACE.size} color={ink} />
+          <Circle key={cell} cx={(cell % 3) * 0.3 + 0.2} cy={Math.floor(cell / 3) * 0.3 + 0.2} r={0.085 / CUBE_FACE.size} color={pipTint} />
         ))
       )}
     </Group>
