@@ -1372,6 +1372,9 @@ const THROW_EDGE = 40;
  * Throws dice: each lands on a new face a little way off, in its own random direction (kept on the table). Gives
  * the table as they land, and where each set off from relative to where it landed (for it to tumble across).
  */
+/** The turn a rolled die comes to rest at: any way round, as a real one lands (whole degrees). */
+const landingAngle = (random: () => number) => normalizeAngle(Math.round(random() * 360));
+
 export function throwDice(t: SandboxTable, ids: string[], random: () => number = Math.random) {
   let table = t;
   // Coins flip and spinners spin, where they lie.
@@ -1383,14 +1386,14 @@ export function throwDice(t: SandboxTable, ids: string[], random: () => number =
   for (const d of dice) {
     // One that rolls in place stays where it is; the rest go a little way off.
     if (d.rollInPlace) {
-      table = setPiece(table, d.id, { value: rollDie(d.sides ?? 6, random) });
+      table = setPiece(table, d.id, { value: rollDie(d.sides ?? 6, random), angle: landingAngle(random) });
       continue;
     }
     const a = random() * Math.PI * 2;
     const dist = THROW_MIN + random() * (THROW_MAX - THROW_MIN);
     const x = Math.round(Math.min(TABLE_W - THROW_EDGE, Math.max(THROW_EDGE, d.x + Math.cos(a) * dist)));
     const y = Math.round(Math.min(TABLE_H - THROW_EDGE, Math.max(THROW_EDGE, d.y + Math.sin(a) * dist)));
-    table = setPiece(table, d.id, { value: rollDie(d.sides ?? 6, random), x, y });
+    table = setPiece(table, d.id, { value: rollDie(d.sides ?? 6, random), x, y, angle: landingAngle(random) });
   }
   // None lands on another (those rolling in place stay put; the others come to rest beside them).
   table = separateDice(

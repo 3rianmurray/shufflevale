@@ -4,6 +4,20 @@ import { test } from 'node:test';
 import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
+test('a rolled die comes to rest turned any way round, whether thrown or rolled in place', () => {
+  let t = addPiece(table(), newPiece('die', 'a', { x: 600, y: 600 }));
+  t = addPiece(t, { ...newPiece('die', 'b', { x: 900, y: 600 }), rollInPlace: true });
+  const angles = new Set<number>();
+  for (let i = 0; i < 20; i++) {
+    t = throwDice(t, ['a', 'b']).table;
+    for (const d of t.pieces!) {
+      assert.ok(d.angle! > -180 && d.angle! <= 180 && Number.isInteger(d.angle));
+      angles.add(d.angle!);
+    }
+  }
+  assert.ok(angles.size > 5);
+});
+
 test('a die has a face for art on each side (not a d4 or d8), and a coin two; other pieces none', () => {
   const at = { x: 0, y: 0, value: 1 };
   assert.equal(faceCount({ kind: 'die', sides: 6 }), 6);
