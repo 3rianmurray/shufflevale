@@ -126,6 +126,10 @@ export interface TablePiece {
    */
   labelAlign?: LabelAlign;
   labelBelow?: boolean;
+  /** A zone's or card spot's name isn't shown (it keeps it, for when it's shown again). */
+  hideLabel?: boolean;
+  /** How see-through a zone or card spot is drawn (0.1 to 1; none for 1). */
+  opacity?: number;
   /** A score pad's players' names (one column each), and the points written down, in the order they were. */
   names?: string[];
   scores?: { player: number; points: number }[];
@@ -859,7 +863,8 @@ export const labelAlignOf = (p: Pick<TablePiece, 'kind' | 'labelAlign'>): LabelA
  * it by when it's full of cards. Caught within `reach` of the name, too.
  */
 export function labelAt(t: SandboxTable, x: number, y: number, reach = 0): TablePiece | null {
-  const marked = (t.pieces ?? []).filter((p) => onCloth(p) && p.label);
+  // (Not one whose name is hidden.)
+  const marked = (t.pieces ?? []).filter((p) => onCloth(p) && p.label && !p.hideLabel);
   for (let i = marked.length - 1; i >= 0; i--) {
     const p = marked[i];
     const k = p.scale ?? 1;
@@ -1326,14 +1331,15 @@ export const raiseArt = (t: SandboxTable, ids: string[]): SandboxTable => {
 };
 
 /**
- * Custom art whose stack has gone (taken up, put into another, off the table) keeps its place: over the nearest
- * stack that was under it before and is still there (or under every card, if none). `prev` is the table before.
+ * Custom art (or a zone, or card spot) whose stack has gone (taken up, put into another, off the table) keeps its
+ * place: over the nearest stack that was under it before and is still there (or under every card, if none). `prev`
+ * is the table before.
  */
 export function keepArtLevels(prev: SandboxTable, next: SandboxTable): SandboxTable {
   const here = new Set(next.stacks.map((s) => s.id));
-  if (!(next.pieces ?? []).some((p) => p.kind === 'art' && p.over && !here.has(p.over))) return next;
+  if (!(next.pieces ?? []).some((p) => liesFlat(p) && p.over && !here.has(p.over))) return next;
   const pieces = next.pieces!.map((p) => {
-    if (p.kind !== 'art' || !p.over || here.has(p.over)) return p;
+    if (!liesFlat(p) || !p.over || here.has(p.over)) return p;
     let k = prev.stacks.findIndex((s) => s.id === p.over);
     while (k >= 0 && !here.has(prev.stacks[k].id)) k--;
     return { ...p, over: k >= 0 ? prev.stacks[k].id : undefined };
@@ -1341,40 +1347,84 @@ export function keepArtLevels(prev: SandboxTable, next: SandboxTable): SandboxTa
   return { ...next, pieces };
 }
 
-/** Whether a stack and custom art overlap on the table (roughly: their boxes). */
-function artOverlaps(art: TablePiece, s: SandboxStack, size: CardSize): boolean {
-  const a = pieceSizeOf(art);
-  const corners = stackCorners(s, size);
-  const xs = corners.map((c) => c.x);
-  const ys = corners.map((c) => c.y);
-  return Math.min(...xs) < art.x + a.w / 2 && Math.max(...xs) > art.x - a.w / 2 && Math.min(...ys) < art.y + a.h / 2 && Math.max(...ys) > art.y - a.h / 2;
+/**
+ * Whether a piece lies flat among the cards, layered with them: custom art, zones and card spots (each over a stack,
+ * `over`, or under every card; those at one place in the order they're kept).
+ */
+export const liesFlat = (p: Pick<TablePiece, 'kind'>) => p.kind === 'art' || onCloth(p);
+
+/** The faintest a zone or card spot is drawn (see `opacity`). */
+export const ZONE_OPACITY_MIN = 0.1;
+
+/** Every stack and everything lying flat, bottom first, as they're drawn. */
+export function flatOrder(t: SandboxTable): ({ stack: SandboxStack } | { piece: TablePiece })[] {
+  const here = new Set(t.stacks.map((s) => s.id));
+  const flat = (t.pieces ?? []).filter(liesFlat);
+  return [
+    ...flat.filter((p) => !p.over || !here.has(p.over)).map((piece) => ({ piece })),
+    ...t.stacks.flatMap((stack) => [{ stack }, ...flat.filter((p) => p.over === stack.id).map((piece) => ({ piece }))]),
+  ];
+}
+
+/** Whether one flat piece lies over another (see flatOrder). */
+export function liesOver(t: SandboxTable, a: string, b: string): boolean {
+  const order = flatOrder(t).map((e) => ('stack' in e ? e.stack.id : e.piece.id));
+  return order.indexOf(a) > order.indexOf(b);
 }
 
 /**
- * Custom art moved among the cards' layers, as a stack is (see moveLayer): to the back (under every card), the
- * front (over every card), or down or up past the nearest stack it overlaps.
+ * Something lying flat (custom art, a zone, a card spot) moved among the layers, as a stack is (see moveLayer): to
+ * the back (under every card), the front (over every card), or down or up past the nearest thing it overlaps (a
+ * stack, or another lying flat).
  */
-export function layerArt(t: SandboxTable, id: string, to: 'back' | 'down' | 'up' | 'front', size: CardSize): SandboxTable {
-  const art = t.pieces?.find((p) => p.id === id && p.kind === 'art');
-  if (!art) return t;
-  const level = artLevel(t, art);
-  let over: string | undefined;
-  if (to === 'back') over = undefined;
-  else if (to === 'front') over = t.stacks[t.stacks.length - 1]?.id;
+export function layerFlat(t: SandboxTable, id: string, to: 'back' | 'down' | 'up' | 'front', size: CardSize): SandboxTable {
+  const order = flatOrder(t);
+  const i = order.findIndex((e) => 'piece' in e && e.piece.id === id);
+  if (i < 0) return t;
+  const me = order[i];
+  const boxOfEntry = (e: (typeof order)[number]) => ('stack' in e ? stackBox(e.stack, size) : pieceBox(e.piece));
+  const mine = boxOfEntry(me);
+  const overlaps = (e: (typeof order)[number]) => {
+    const b = boxOfEntry(e);
+    return b.x < mine.x + mine.w && b.x + b.w > mine.x && b.y < mine.y + mine.h && b.y + b.h > mine.y;
+  };
+  const rest = order.filter((_, k) => k !== i);
+  let at: number;
+  if (to === 'back') at = 0;
+  else if (to === 'front') at = rest.length;
   else if (to === 'down') {
-    // Under the nearest stack it's over that it overlaps.
-    let k = level;
-    while (k >= 0 && !artOverlaps(art, t.stacks[k], size)) k--;
+    // Under the nearest thing under it that it overlaps.
+    let k = i - 1;
+    while (k >= 0 && !overlaps(order[k])) k--;
     if (k < 0) return t;
-    over = k > 0 ? t.stacks[k - 1].id : undefined;
+    at = k;
   } else {
-    // Over the nearest stack above it that it overlaps.
-    let k = level + 1;
-    while (k < t.stacks.length && !artOverlaps(art, t.stacks[k], size)) k++;
-    if (k >= t.stacks.length) return t;
-    over = t.stacks[k].id;
+    // Over the nearest thing over it that it overlaps.
+    let k = i + 1;
+    while (k < order.length && !overlaps(order[k])) k++;
+    if (k >= order.length) return t;
+    at = k;
   }
-  return over === art.over ? t : setPiece(t, id, { over });
+  const next = [...rest.slice(0, at), me, ...rest.slice(at)];
+  if (next.every((e, k) => e === order[k])) return t;
+  // Each flat piece over the stack just under it (or none), in the new order among the rest.
+  const overOf = new Map<string, string | undefined>();
+  let under: string | undefined;
+  for (const e of next) {
+    if ('stack' in e) under = e.stack.id;
+    else overOf.set(e.piece.id, under);
+  }
+  const flatIds = next.flatMap((e) => ('piece' in e ? [e.piece.id] : []));
+  const byId = new Map((t.pieces ?? []).map((p) => [p.id, p]));
+  // The flat pieces take the places they had in the list, in their new order; the rest stay where they are.
+  let n = 0;
+  const pieces = (t.pieces ?? []).map((p) => {
+    if (!liesFlat(p)) return p;
+    const q = byId.get(flatIds[n++])!;
+    const over = overOf.get(q.id);
+    return { ...q, over };
+  });
+  return { ...t, pieces };
 }
 
 /** Takes a piece off the table. */

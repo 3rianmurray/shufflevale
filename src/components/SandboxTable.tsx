@@ -48,6 +48,10 @@ import {
   gridItems,
   groupBoxes,
   groupItems,
+  layerFlat,
+  liesFlat,
+  liesOver,
+  ZONE_OPACITY_MIN,
   groupMembers,
   ungroupItems,
   withGroups,
@@ -84,7 +88,6 @@ import {
   normalizeAngle,
   artLevel,
   keepArtLevels,
-  layerArt,
   raiseArt,
   ART_MAX,
   reorderBag,
@@ -368,6 +371,8 @@ type Menu =
   | { kind: 'addDie' }
   /** A token's shape. */
   | { kind: 'tokenShape'; id: string }
+  /** How see-through a zone or card spot is. */
+  | { kind: 'zoneOpacity'; id: string }
   /** For one counter or die, or (with no id) every one picked out. */
   | { kind: 'dieKind'; id?: string }
   /** For one counter or die, or (with no id) every one picked out; marker for a track's marker. */
@@ -731,6 +736,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const previewDieValue = (value: number) => {
     if (!scaleBase || menu?.kind !== 'dieValue') return;
     updateSandbox(setPiece(scaleBase, menu.id, { value }));
+  };
+  /** A zone's or card spot's opacity set as its slider moves (in percent): one undo, as scaling is. */
+  const openZoneOpacity = (id: string) => {
+    if (!table) return;
+    setScaleBase(table);
+    setTimeout(() => setMenu({ kind: 'zoneOpacity', id }), 300);
+  };
+  const previewZoneOpacity = (percent: number) => {
+    if (!scaleBase || menu?.kind !== 'zoneOpacity') return;
+    updateSandbox(setPiece(scaleBase, menu.id, { opacity: percent >= 100 ? undefined : percent / 100 }));
   };
   const previewScale = (k: number) => {
     if (!scaleBase || menu?.kind !== 'scale') return;
@@ -2426,12 +2441,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         const exactly = L.table ? pieceAt(L.table, w.x, w.y) : null;
         const onPiece =
           exactly ?? (L.table && !stackAt(L.table, w.x, w.y, L.size) ? pieceAt(L.table, w.x, w.y, FINGER_REACH / cameraZoom(readCamera())) : null);
-        // Custom art lies among the cards: a card over it is what's touched.
+        // Custom art lies among the cards: a card over it is what's touched; so is a zone or card spot over it.
         const overArt =
           onPiece?.piece.kind === 'art' && L.table
             ? (() => {
                 const hit = stackAt(L.table, w.x, w.y, L.size);
-                return !!hit && L.table.stacks.indexOf(hit.stack) > artLevel(L.table, onPiece.piece);
+                if (hit && L.table.stacks.indexOf(hit.stack) > artLevel(L.table, onPiece.piece)) return true;
+                const zone = zoneAt(L.table, w.x, w.y);
+                return !!zone && liesOver(L.table, zone.id, onPiece.piece.id);
               })()
             : false;
         // Locked custom art (a board, say), as a locked zone: the table under it works as ever (a pan, a lasso round
@@ -3984,6 +4001,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // For what usually sits in one place through a game: locked, it stays put (dragging it moves the table).
       const lockRow: FocusRow = { kind: 'toggle', label: 'Lock', value: !!piece.locked, onChange: (on) => commit(setPiece(table, id, { locked: on || undefined })) };
       const takeOffRow: FocusRow = { kind: 'action', label: 'Take off the table', destructive: true, onPress: () => commit(removePiece(table, id)) };
+      // Custom art, a zone or a card spot among the cards (and each other), as a stack's Layer: under or over those
+      // it overlaps.
+      const layerRow: FocusRow = {
+        kind: 'pair',
+        label: 'Layer',
+        options: (['back', 'down', 'up', 'front'] as const).map((to) => ({
+          label: to === 'back' ? 'Back' : to === 'down' ? 'Down' : to === 'up' ? 'Up' : 'Front',
+          onPress: () => commit(layerFlat(table, id, to, size)),
+        })),
+      };
       // It, big: as it lies on the table, fitted to the middle of the screen.
       const own = pieceSizeOf({ ...piece, scale: 1 });
       const fit = Math.min(3, 220 / own.w, 220 / own.h);
@@ -4139,7 +4166,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           const look = piece.look ?? 'outline';
           const spot = piece.kind === 'spot';
           const align = labelAlignOf(piece);
-          // How it's drawn, and where its name sits: along its edge, and over or under it.
+          // How it's drawn (and how see-through), its layer, and its name: shown or not; where it sits along its
+          // edge, and over or under it.
           const clothRows: FocusRow[] = [
             {
               kind: 'pair',
@@ -4149,22 +4177,29 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                 onPress: () => commit(setPiece(table, id, { look: l === 'outline' ? undefined : l })),
               })),
             },
-            {
-              kind: 'pair',
-              label: 'Name',
-              options: (['left', 'center', 'right'] as const).map((a) => ({
-                label: `${a === 'left' ? 'Left' : a === 'center' ? 'Center' : 'Right'}${align === a ? ' ✓' : ''}`,
-                onPress: () => commit(setPiece(table, id, { labelAlign: a })),
-              })),
-            },
-            {
-              kind: 'pair',
-              label: 'Name at',
-              options: [false, true].map((below) => ({
-                label: `${below ? 'Bottom' : 'Top'}${!!piece.labelBelow === below ? ' ✓' : ''}`,
-                onPress: () => commit(setPiece(table, id, { labelBelow: below || undefined })),
-              })),
-            },
+            { kind: 'action', label: `Opacity · ${Math.round((piece.opacity ?? 1) * 100)}%`, more: true, onPress: () => openZoneOpacity(id) },
+            layerRow,
+            { kind: 'toggle', label: 'Show name', value: !piece.hideLabel, onChange: (on) => commit(setPiece(table, id, { hideLabel: on ? undefined : true })) },
+            ...(piece.hideLabel
+              ? []
+              : [
+                  {
+                    kind: 'pair' as const,
+                    label: 'Name',
+                    options: (['left', 'center', 'right'] as const).map((a) => ({
+                      label: `${a === 'left' ? 'Left' : a === 'center' ? 'Center' : 'Right'}${align === a ? ' ✓' : ''}`,
+                      onPress: () => commit(setPiece(table, id, { labelAlign: a })),
+                    })),
+                  },
+                  {
+                    kind: 'pair' as const,
+                    label: 'Name at',
+                    options: [false, true].map((below) => ({
+                      label: `${below ? 'Bottom' : 'Top'}${!!piece.labelBelow === below ? ' ✓' : ''}`,
+                      onPress: () => commit(setPiece(table, id, { labelBelow: below || undefined })),
+                    })),
+                  },
+                ]),
           ];
           if (spot) {
             return focus(
@@ -4275,15 +4310,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               ...(canCutOut() && piece.image && !isSeeThrough(piece.image) ? [tile('Cut out', 'scissors', 'content_cut', () => void cutOutArt(id))] : []),
             ],
             [
-              // Among the cards, as a stack's Layer: under or over those it overlaps.
-              {
-                kind: 'pair',
-                label: 'Layer',
-                options: (['back', 'down', 'up', 'front'] as const).map((to) => ({
-                  label: to === 'back' ? 'Back' : to === 'down' ? 'Down' : to === 'up' ? 'Up' : 'Front',
-                  onPress: () => commit(layerArt(table, id, to, size)),
-                })),
-              },
+              layerRow,
               // A board or a map lies still; a figure is moved about.
               lockRow,
               takeOffRow,
@@ -4401,6 +4428,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         actions: piece.faces
           ? [{ label: coin ? 'Use the gold coin' : 'Use the standard faces', onPress: () => commit(setPiece(table, piece.id, { faces: undefined })) }]
           : [],
+      };
+    }
+    if (menu.kind === 'zoneOpacity') {
+      const zone = table.pieces?.find((p) => p.id === menu.id);
+      if (!zone) return null;
+      return {
+        title: 'Opacity',
+        tiles: [],
+        banner: <NumberSlider min={ZONE_OPACITY_MIN * 100} max={100} value={Math.round((zone.opacity ?? 1) * 100)} onChange={previewZoneOpacity} />,
+        actions: [],
       };
     }
     if (menu.kind === 'dieValue') {
@@ -4719,11 +4756,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const order = [...inDrawOrder(all).filter((p) => !airborne.includes(p.id)), ...all.filter((p) => airborne.includes(p.id))];
     return new Map(order.map((p, i) => [p.id, i + 1]));
   })();
-  /** The custom art lying just over a stack (or, for null, under every card), where it lies. */
+  /** What lies flat (custom art, zones, card spots) just over a stack (or, for null, under every card), where it lies. */
   const stackIds = new Set(table?.stacks.map((s) => s.id));
   const artOver = (stackId: string | null) =>
     (table?.pieces ?? [])
-      .filter((p) => p.kind === 'art' && (stackId ? p.over === stackId : !p.over || !stackIds.has(p.over)))
+      .filter((p) => liesFlat(p) && (stackId ? p.over === stackId : !p.over || !stackIds.has(p.over)))
       // (No layer: it lies where it's drawn, among the cards.)
       .map((p) => drawPiece(p));
   const theme = themeOf(table.background);
@@ -4767,14 +4804,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                 <GridLines step={gridStep} />
               </Animated.View>
             ) : null}
-            {/* Zones and card spots, painted on the cloth: under every card. */}
-            {(table.pieces ?? [])
-              .filter(onCloth)
-              .map((p) => {
-                const shown = zoneSize?.id === p.id ? { ...p, ...resizeZone(p, zoneSize.w, zoneSize.h) } : p;
-                return <TablePieceView key={p.id} piece={shown} at={movedTo(p)} />;
-              })}
-            {/* Custom art under every card, then the stacks, each with any custom art lying just over it. */}
+            {/*
+              What lies flat (custom art, zones, card spots) under every card, then the stacks, each with what lies
+              just over it (see flatOrder).
+            */}
             {artOver(null)}
             {table.stacks.map((s) => (
               <Fragment key={s.id}>
@@ -5488,7 +5521,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       />
       {/* The table's menu, and choosing a deck to add. */}
       <ActionSheet
-        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'tokenShape' ||menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
+        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'tokenShape' || menu?.kind === 'zoneOpacity' ||menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
         title={sheet?.title}
         banner={sheet && 'banner' in sheet ? sheet.banner : undefined}
         wideTile={sheet && 'wideTile' in sheet ? sheet.wideTile : undefined}

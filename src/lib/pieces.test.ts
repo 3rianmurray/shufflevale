@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies, groupItems, ungroupItems, withGroups, groupMembers, groupBoxes } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerFlat, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies, groupItems, ungroupItems, withGroups, groupMembers, groupBoxes, liesOver } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
 test('dice are drawn (and found) the one further down and right in front; other pieces keep their places', () => {
@@ -428,9 +428,17 @@ test('custom art lies among the cards: over the stack it was put on, under any p
   const withB = { ...t, stacks: [...t.stacks, { id: 'B', x: 530, y: 530, angle: 0, cards: [card('b')] }] };
   assert.ok(withB.stacks.findIndex((s) => s.id === 'B') > artLevel(withB, withB.pieces![0]));
   // Up past B; back under everything; front again.
-  assert.equal(layerArt(withB, 'art', 'up', size).pieces![0].over, 'B');
-  assert.equal(layerArt(withB, 'art', 'back', size).pieces![0].over, undefined);
-  assert.equal(layerArt(withB, 'art', 'down', size).pieces![0].over, undefined);
+  assert.equal(layerFlat(withB, 'art', 'up', size).pieces![0].over, 'B');
+  assert.equal(layerFlat(withB, 'art', 'back', size).pieces![0].over, undefined);
+  assert.equal(layerFlat(withB, 'art', 'down', size).pieces![0].over, undefined);
+  // A zone over a board: layered among the art as art is among the cards, and still found by where it is.
+  let board = addPiece({ ...table(), stacks: [] }, { ...newPiece('art', 'board', { x: 500, y: 500 }), w: 800, h: 800 });
+  board = addPiece(board, { ...newPiece('zone', 'z', { x: 500, y: 500 }), w: 200, h: 200 });
+  assert.equal(liesOver(board, 'z', 'board'), true);
+  const sunk = layerFlat(board, 'z', 'back', size);
+  assert.equal(liesOver(sunk, 'z', 'board'), false);
+  assert.equal(liesOver(layerFlat(sunk, 'z', 'up', size), 'z', 'board'), true);
+  assert.equal(zoneAt(sunk, 500, 500)?.id, 'z');
   // Its stack taken up: it stays over the one under that (none here: under every card).
   const gone = keepArtLevels(withB, { ...withB, stacks: withB.stacks.filter((s) => s.id !== 'A') });
   assert.equal(gone.pieces![0].over, undefined);

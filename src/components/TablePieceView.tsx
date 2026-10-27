@@ -1615,11 +1615,13 @@ function Zone({ piece, color, k }: { piece: TablePiece; color: string; k: number
       style={[
         styles.zone,
         { borderWidth: 3 * k, borderRadius: (spot ? 8 : 12) * k },
-        // Its edge a little see-through, and filled in faintly (the cloth showing through); its name solid.
-        { borderColor: `${color}b3`, borderStyle: look === 'dashed' ? 'dashed' : 'solid' },
+        // Its edge a little see-through, or (filled) none, just its area filled in faintly (the cloth showing
+        // through); its name solid. All of it as see-through as it's set.
+        { borderColor: look === 'filled' ? 'transparent' : `${color}b3`, borderStyle: look === 'dashed' ? 'dashed' : 'solid' },
         look === 'filled' && { backgroundColor: `${color}38` },
+        piece.opacity !== undefined && { opacity: piece.opacity },
       ]}>
-      {piece.label ? (
+      {piece.label && !piece.hideLabel ? (
         <Text
           allowFontScaling={false}
           numberOfLines={1}

@@ -523,6 +523,8 @@ const MAX_SCORES = 2000;
 const MAX_POINTS = 1_000_000;
 const PIECE_SHAPES = new Set<PieceShape>(['meeple', 'pawn', 'cube', 'disc']);
 const ZONE_LOOKS = new Set<ZoneLook>(['outline', 'filled', 'dashed']);
+/** The faintest a zone or card spot is drawn (as ZONE_OPACITY_MIN in sandbox.ts). */
+const ZONE_OPACITY_MIN = 0.1;
 const TOKEN_SHAPES = new Set<TokenShape>(['circle', 'square', 'hexagon', 'triangle', 'diamond', 'star']);
 const DIE_SIDES = [4, 6, 8, 10, 12, 20, 100];
 /** The most pieces a table is opened with, the most custom art (as ART_MAX), and a track's spaces (as TRACK_MAX). */
@@ -590,7 +592,8 @@ function pieceFrom(
       if (faceColors.some(Boolean)) p.faceColors = faceColors;
     }
   }
-  for (const flag of ['square', 'grid', 'labelBelow', 'hideNumbers', 'locked', 'vertical', 'reversed', 'rollInPlace'] as const) if (v[flag] === true) p[flag] = true;
+  for (const flag of ['square', 'grid', 'labelBelow', 'hideLabel', 'hideNumbers', 'locked', 'vertical', 'reversed', 'rollInPlace'] as const) if (v[flag] === true) p[flag] = true;
+  if (finite(v.opacity) && v.opacity < 1) p.opacity = Math.max(ZONE_OPACITY_MIN, v.opacity);
   if (v.labelAlign === 'left' || v.labelAlign === 'center' || v.labelAlign === 'right') p.labelAlign = v.labelAlign;
   if (kind === 'score') {
     // Its players (named, up to the most a pad has), and the points written down for them.
