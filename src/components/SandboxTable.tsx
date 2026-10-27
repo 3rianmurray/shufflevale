@@ -5585,6 +5585,8 @@ const StackView = memo(function StackView({
   // No paper edges under a see-through card (a die-cut shape): they'd show round it.
   const showing = top.faceUp ? card?.image : (card?.back ?? topDeck.backImage);
   const edges = isSeeThrough(showing) ? 0 : Math.min(2, shown.length - 1);
+  // The deck's corners (as rounded as in the deck editor), for the edges under it and its outline.
+  const radius = cardRadius(topDeck, size.w);
   return (
     <View
       style={[
@@ -5593,7 +5595,7 @@ const StackView = memo(function StackView({
       ]}>
       <RNAnimated.View style={[StyleSheet.absoluteFill, { transform: edgeTransform }]} pointerEvents="none">
         {Array.from({ length: edges }, (_, i) => (
-          <View key={i} style={[styles.edge, { left: (edges - i) * 2, top: (edges - i) * 2, width: size.w, height: size.h }]} />
+          <View key={i} style={[styles.edge, { left: (edges - i) * 2, top: (edges - i) * 2, width: size.w, height: size.h, borderRadius: radius }]} />
         ))}
       </RNAnimated.View>
       {/*
@@ -5601,7 +5603,7 @@ const StackView = memo(function StackView({
         every frame as the table moves: with hundreds of cards, that made sliding and zooming slow). A die-cut card
         keeps the traced one, which follows its shape.
       */}
-      <View style={isSeeThrough(showing) ? styles.shadow : [styles.boxShadow, { width: size.w, height: size.h, borderRadius: cardRadius(topDeck, size.w) }]}>
+      <View style={isSeeThrough(showing) ? styles.shadow : [styles.boxShadow, { width: size.w, height: size.h, borderRadius: radius }]}>
         <CardView deck={topDeck} card={card} faceUp={top.faceUp} width={size.w} sharp />
       </View>
       {shown.length > 1 && showCount ? (
@@ -5609,7 +5611,7 @@ const StackView = memo(function StackView({
           <Text style={styles.badgeText}>{shown.length}</Text>
         </View>
       ) : null}
-      {target || selected ? <View style={styles.target} /> : null}
+      {target || selected ? <View style={[styles.target, { borderRadius: radius + 5 }]} /> : null}
       {/* Locked in place: a small padlock on its corner, but only while it's picked out (not on every locked card). */}
       {stack.locked && selected ? (
         <View style={styles.lockBadge}>
@@ -5640,11 +5642,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#3b2414',
   },
   stack: { position: 'absolute' },
-  edge: { position: 'absolute', borderRadius: 6, backgroundColor: '#d9d2c4', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.3)' },
+  edge: { position: 'absolute', backgroundColor: '#d9d2c4', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.3)' },
   shadow: { shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 4, shadowOffset: { width: 1, height: 3 } },
   // The same shadow, as a box shadow (see StackView).
   boxShadow: { boxShadow: '1px 3px 8px rgba(0, 0, 0, 0.45)' },
-  target: { position: 'absolute', left: -5, top: -5, right: -5, bottom: -5, borderRadius: 10, borderWidth: 3, borderColor: colors.accent },
+  target: { position: 'absolute', left: -5, top: -5, right: -5, bottom: -5, borderWidth: 3, borderColor: colors.accent },
   badge: {
     position: 'absolute',
     top: -8,
