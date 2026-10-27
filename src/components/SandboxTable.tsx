@@ -991,8 +991,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   // ---- Pieces: counters and dice ----
   /** A piece being dragged: where it's drawn for now (it's put down where it's let go). */
   const [pieceDrag, setPieceDrag] = useState<PieceDrag | null>(null);
-  /** Each die's latest roll here: how many so far (so it tumbles each time), and where it set off from. */
-  const [rolls, setRolls] = useState<Record<string, { key: number; dx: number; dy: number }>>({});
+  /**
+   * Each die's latest roll here: how many so far (so it tumbles each time), where it set off from, and where it
+   * lands (it tumbles only once it's there on the table: see drawPiece).
+   */
+  const [rolls, setRolls] = useState<Record<string, { key: number; dx: number; dy: number; to: { x: number; y: number } }>>({});
   /** Counters and dice picked out with the lasso; the dice among them roll together (tap any, or the roll button). */
   const [pickedPieceIds, setPickedPieces] = useState<string[]>([]);
   const pickedPieces = pickedPieceIds.filter((id) => table?.pieces?.some((p) => p.id === id));
@@ -1018,7 +1021,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const { table: next, from } = throwDice(table, ids);
     if (!Object.keys(from).length) return;
     commit(next);
-    setRolls((r) => Object.fromEntries([...Object.entries(r), ...Object.entries(from).map(([id, f]) => [id, { key: (r[id]?.key ?? 0) + 1, ...f }])]));
+    const landing = (id: string) => {
+      const p = next.pieces?.find((q) => q.id === id);
+      return { x: p?.x ?? 0, y: p?.y ?? 0 };
+    };
+    setRolls((r) => Object.fromEntries([...Object.entries(r), ...Object.entries(from).map(([id, f]) => [id, { key: (r[id]?.key ?? 0) + 1, ...f, to: landing(id) }])]));
     // Felt as it's thrown, and as it bounces.
     haptics.deal();
     setTimeout(haptics.tick, 280);

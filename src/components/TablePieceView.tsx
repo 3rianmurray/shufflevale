@@ -317,7 +317,7 @@ export const TablePieceView = memo(function TablePieceView({
   turn?: number;
   rollKey?: number;
   /** Where a rolled die set off from, relative to where it now lies (it tumbles across from there). */
-  rollFrom?: { dx: number; dy: number };
+  rollFrom?: { dx: number; dy: number; to?: { x: number; y: number } };
   lifted?: boolean;
   /** Picked out with the lasso: outlined in gold. */
   selected?: boolean;
@@ -429,7 +429,7 @@ function Die({
   piece: TablePiece;
   color: string;
   rollKey: number;
-  rollFrom?: { dx: number; dy: number };
+  rollFrom?: { dx: number; dy: number; to?: { x: number; y: number } };
   size: number;
   selected: boolean;
   /**
@@ -444,9 +444,14 @@ function Die({
   // How far through the roll: eased (sliding and spinning to a stop), and steady (for the bounces).
   const [travel] = useState(() => new Animated.Value(1));
   const [time] = useState(() => new Animated.Value(1));
-  // Before it's drawn: it's already where it lands, so started any later it would show there for a frame first.
+  /** The roll it last tumbled for (each is played once, even if it's nudged off where it landed afterward). */
+  const played = useRef(0);
+  // Only once it's where it lands: a roll can come a moment before the table that has it there does, and started
+  // early it would tumble back from where it still was. Before it's drawn, so it never shows a frame there first.
+  const landed = !rollFrom?.to || (rollFrom.to.x === piece.x && rollFrom.to.y === piece.y);
   useLayoutEffect(() => {
-    if (!rollKey || prefersReducedMotion()) return;
+    if (!rollKey || !landed || played.current === rollKey || prefersReducedMotion()) return;
+    played.current = rollKey;
     travel.setValue(0);
     time.setValue(0);
     Animated.parallel([
@@ -468,8 +473,12 @@ function Die({
       timer = setTimeout(next, gap);
     };
     timer = setTimeout(next, gap);
-    return () => clearTimeout(timer);
-  }, [rollKey, sides, travel, time]);
+    // (Cut short, say if it's moved mid-roll: it shows where it landed, not a face it was flickering past.)
+    return () => {
+      clearTimeout(timer);
+      setFace(null);
+    };
+  }, [rollKey, landed, sides, travel, time]);
   const shown = face ?? piece.value;
   /** The player's own art for the face it shows, if it has some; then the rest of it is in the art's own color. */
   // (None on a die that takes none: a d4 or d8, even one given some before.)
