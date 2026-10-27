@@ -1,8 +1,11 @@
 import { Canvas, Circle, Group, Image as SkImage, Path, Shadow, Skia, useImage, vec } from '@shopify/react-native-skia';
-import type { SkPath } from '@shopify/react-native-skia';
-import { drawCube, restingTurn, tumbleFor, tumblingTurn } from '../lib/cube3d';
-import type { DrawnSide } from '../lib/cube3d';
+import type { SkImage as SkiaImage, SkPath } from '@shopify/react-native-skia';
+import { Easing as ReEasing, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import type { SharedValue } from 'react-native-reanimated';
+import { drawCubeSlots, restingTurn, SIDE_VALUES, tumbleFor, tumblingTurn } from '../lib/cube3d';
+import type { Mat, SideSlot, Tumble } from '../lib/cube3d';
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ReactElement } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
 import { Image } from 'expo-image';
@@ -35,7 +38,7 @@ import { colors } from '../theme';
 import { prefersReducedMotion } from './CardView';
 
 /** How long a die tumbles when rolled; and how often its face changes as it starts, slowing as it settles. */
-const ROLL_MS = 820;
+export const ROLL_MS = 820;
 const ROLL_FACE_MS = 45;
 const ROLL_FACE_SLOWING = 1.22;
 /** How many whole turns a rolled die spins as it goes. */
@@ -160,6 +163,8 @@ function cubeAt(deg: number) {
 
 /** A color made lighter (toward 1) or darker (toward −1), for a face catching more or less of the light. */
 function shade(hex: string, k: number): string {
+  // (A worklet too: a 3D die's sides are shaded on the animation thread as it tumbles.)
+  'worklet';
   const n = parseInt(hex.slice(1), 16);
   const to = k > 0 ? 255 : 0;
   const t = Math.min(1, Math.abs(k));
@@ -461,8 +466,13 @@ function Die({
   const sides = piece.sides ?? 6;
   /** A d6 as a cube in 3D (see lib/cube3d): it tumbles over its real faces as it's rolled. */
   const solid = useContext(Dice3DContext) && sides === 6;
-  /** How far through its tumble it is (0 just thrown, 1 at rest), for a d6 in 3D. */
-  const [tumbled, setTumbled] = useState(1);
+  /**
+   * How far through its tumble it is (0 just thrown, 1 at rest, eased), for a d6 in 3D: run on the animation
+   * thread, which works out and draws each frame without React (see SolidD6).
+   */
+  const spun = useSharedValue(1);
+  /** Mid-roll: its gold rim (picked out) waits till it's settled, rather than wobbling round it as it goes. */
+  const [rolling, setRolling] = useState(false);
   const [face, setFace] = useState<number | null>(null);
   // How far through the roll: eased (sliding and spinning to a stop), and steady (for the bounces).
   const [travel] = useState(() => new Animated.Value(1));
@@ -481,22 +491,16 @@ function Die({
       Animated.timing(travel, { toValue: 1, duration: ROLL_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.timing(time, { toValue: 1, duration: ROLL_MS, easing: Easing.linear, useNativeDriver: true }),
     ]).start();
-    // A d6 in 3D tumbles over its real faces, frame by frame, settling as it lands.
+    // Its rim hidden till it's settled (before it's drawn: this is a layout effect).
+    setRolling(true);
+    const settled = setTimeout(() => setRolling(false), ROLL_MS);
+    // A d6 in 3D tumbles over its real faces, settling as it lands.
     if (solid) {
-      const start = Date.now();
-      let frame = 0;
-      const step = () => {
-        const t = Math.min(1, (Date.now() - start) / ROLL_MS);
-        setTumbled(t);
-        if (t < 1) frame = requestAnimationFrame(step);
-      };
-      // At the start of its tumble before it's drawn (this is a layout effect), or it'd show as it lands for a frame.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setTumbled(0);
-      frame = requestAnimationFrame(step);
+      spun.set(0);
+      spun.set(withTiming(1, { duration: ROLL_MS, easing: ReEasing.out(ReEasing.cubic) }));
       return () => {
-        cancelAnimationFrame(frame);
-        setTumbled(1);
+        clearTimeout(settled);
+        setRolling(false);
       };
     }
     // Faces flicker past, slower and slower, then it shows where it landed.
@@ -517,9 +521,11 @@ function Die({
     // (Cut short, say if it's moved mid-roll: it shows where it landed, not a face it was flickering past.)
     return () => {
       clearTimeout(timer);
+      clearTimeout(settled);
       setFace(null);
+      setRolling(false);
     };
-  }, [rollKey, landed, sides, solid, travel, time]);
+  }, [rollKey, landed, sides, solid, travel, time, spun]);
   const shown = face ?? piece.value;
   /** The player's own art for the face it shows, if it has some; then the rest of it is in the art's own color. */
   // (None on a die that takes none: a d4 or d8, even one given some before.)
@@ -555,11 +561,9 @@ function Die({
     [flat, angle],
   );
   const cube = useMemo(() => cubeAt(angle), [angle]);
-  // A d6 in 3D: as it lies, or partway through its tumble (eased, settling as it lands).
-  const solidCube = useMemo(
-    () => (solid ? drawCube(tumblingTurn(restingTurn(piece.value, angle), tumbleFor(rollKey || 1), 1 - (1 - tumbled) ** 3)) : null),
-    [solid, piece.value, angle, rollKey, tumbled],
-  );
+  // A d6 in 3D: how it lies, and how this roll tumbles it (each frame of it worked out on the animation thread).
+  const rest = useMemo(() => restingTurn(piece.value, angle), [piece.value, angle]);
+  const spin = useMemo(() => tumbleFor(rollKey || 1), [rollKey]);
   // Each face's own art (a d6's, in 3D, where any face can be seen as it tumbles).
   const artOf = (value: number) => (solid && faceCount(piece) ? (piece.faces?.[value - 1] ?? null) : null);
   const faceArts = [
@@ -592,11 +596,6 @@ function Die({
     p.close();
     return p;
   };
-  /** A side's own square (0–1 across and down) onto the drawing (see DrawnSide). */
-  const faceMatrix = (s: DrawnSide) =>
-    Skia.Matrix([s.across[0] * px, s.down[0] * px, (s.origin[0] + PAD) * px, s.across[1] * px, s.down[1] * px, (s.origin[1] + PAD) * px, 0, 0, 1]);
-  /** How big a side's drawn (the one facing the viewer most is the biggest). */
-  const area = (s: DrawnSide) => Math.abs(s.across[0] * s.down[1] - s.across[1] * s.down[0]);
   const shadow = <Shadow dx={2 * OS} dy={4 * OS} blur={4 * OS} color="rgba(0,0,0,0.45)" shadowOnly />;
   const edge = shade(color, -0.45);
   return (
@@ -610,49 +609,8 @@ function Die({
           top: -size * PAD - (canvas - size * (1 + PAD * 2)) / 2,
           transform: [{ scale: 1 / OS }],
         }}>
-        {solidCube ? (
-          <>
-            {/*
-              A d6 as a cube in 3D (see lib/cube3d): its outline, rounded, under its shadow; the sides that face the
-              viewer, each lit as it faces; on each, its pips or the player's art, its own square mapped onto it; and
-              on the one facing the viewer most, its rounded face and the light along its edge, as the flat d6 has.
-            */}
-            <Path path={rounded(solidCube.outline, CUBE_ROUND)} color={shade(color, -0.3)}>
-              {shadow}
-            </Path>
-            <Group clip={rounded(solidCube.outline, CUBE_ROUND)}>
-              {solidCube.sides.map((s) => (
-                <Path key={`s${s.value}`} path={path(s.corners)} color={shade(color, s.light)} />
-              ))}
-            </Group>
-            {(() => {
-              const FACE_SQUARE = FACE_SQUARE_PATH();
-              const front = solidCube.sides.reduce((a, b) => (area(b) > area(a) ? b : a));
-              return solidCube.sides.map((s) => {
-                const art = faceArts[s.value - 1];
-                return (
-                  <Group key={`f${s.value}`} matrix={faceMatrix(s)}>
-                    {s === front ? (
-                      <>
-                        <Path path={FACE_SQUARE} color={shade(color, s.light)} />
-                        <Path path={FACE_SQUARE} color={shade(color, 0.35)} style="stroke" strokeWidth={0.8 / (CUBE_FACE.size * size)} opacity={0.5} />
-                      </>
-                    ) : null}
-                    {art ? (
-                      <Group clip={FACE_SQUARE}>
-                        <SkImage image={art} x={0} y={0} width={1} height={1} fit="cover" />
-                      </Group>
-                    ) : (
-                      (PIPS[s.value] ?? []).map((cell) => (
-                        <Circle key={cell} cx={(cell % 3) * 0.3 + 0.2} cy={Math.floor(cell / 3) * 0.3 + 0.2} r={0.085 / CUBE_FACE.size} color={ink} />
-                      ))
-                    )}
-                  </Group>
-                );
-              });
-            })()}
-            {selected ? <Path path={rounded(solidCube.outline, CUBE_ROUND)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
-          </>
+        {solid ? (
+          <SolidD6 rest={rest} spin={spin} spun={spun} color={color} ink={ink} arts={faceArts} px={px} size={size} OS={OS} rimmed={selected && !rolling} shadow={shadow} />
         ) : sides === 6 ? (
           <>
             {/*
@@ -672,7 +630,7 @@ function Die({
             <Path path={rounded(cube.top, CUBE_ROUND)} color={shade(color, 0.04)} />
             {/* The light catching the top face's edge. */}
             <Path path={rounded(cube.top, CUBE_ROUND)} color={shade(color, 0.35)} style="stroke" strokeWidth={0.8 * OS} opacity={0.5} />
-            {selected ? <Path path={rounded(cube.outline, CUBE_ROUND)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
+            {selected && !rolling ? <Path path={rounded(cube.outline, CUBE_ROUND)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
             {/* (The player's own art for this face, if it has some, is drawn over the face instead: below.) */}
             {(faceArt ? [] : (PIPS[shown] ?? [])).map((cell) => {
               const pip = turned([[CUBE_FACE.x + CUBE_FACE.size * ((cell % 3) * 0.3 + 0.2), CUBE_FACE.y + CUBE_FACE.size * (Math.floor(cell / 3) * 0.3 + 0.2)]], angle, CUBE_MID)[0];
@@ -707,7 +665,7 @@ function Die({
             {shape.faces.map((f, i) => (
               <Path key={`e${i}`} path={path(f.pts)} color={edge} style="stroke" strokeWidth={0.6 * OS} opacity={0.35} />
             ))}
-            {selected ? <Path path={path(shape.outline)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
+            {selected && !rolling ? <Path path={path(shape.outline)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
           </>
         )}
       </Canvas>
@@ -748,6 +706,158 @@ function Die({
         </Text>
       )}
     </Animated.View>
+  );
+}
+
+/**
+ * A d6 as a cube in 3D (see lib/cube3d), drawn on the animation thread: its outline, rounded, under its shadow; the
+ * sides that face the viewer, each lit as it faces; on each, its pips or the player's art (shaded as its side is),
+ * its own square mapped onto it; and on the one facing the viewer most, its rounded face and the light along its
+ * edge, as the flat d6 has. Every side has its own place, shown only while it faces the viewer, so a tumble is
+ * worked out and drawn frame by frame there, with no React at all (`spun` runs it: 0 thrown, 1 at rest).
+ */
+function SolidD6({
+  rest,
+  spin,
+  spun,
+  color,
+  ink,
+  arts,
+  px,
+  size,
+  OS,
+  rimmed,
+  shadow,
+}: {
+  rest: Mat;
+  spin: Tumble;
+  spun: SharedValue<number>;
+  color: string;
+  ink: string;
+  /** Each face's own art (1 to 6), if it has some. */
+  arts: (SkiaImage | null)[];
+  px: number;
+  size: number;
+  OS: number;
+  /** Its gold rim (picked out, and settled). */
+  rimmed: boolean;
+  shadow: ReactElement;
+}) {
+  const view = useDerivedValue(() => drawCubeSlots(tumblingTurn(rest, spin, spun.value)));
+  const outline = useDerivedValue(() => {
+    const pts = view.value.outline;
+    const p = Skia.Path.Make();
+    const last = pts[pts.length - 1];
+    p.moveTo(((last[0] + pts[0][0]) / 2 + PAD) * px, ((last[1] + pts[0][1]) / 2 + PAD) * px);
+    pts.forEach((pt, i) => {
+      const next = pts[(i + 1) % pts.length];
+      p.arcToTangent((pt[0] + PAD) * px, (pt[1] + PAD) * px, (next[0] + PAD) * px, (next[1] + PAD) * px, CUBE_ROUND * px);
+    });
+    p.close();
+    return p;
+  });
+  // The side facing the viewer most (drawn biggest): it has the rounded face and the light along its edge.
+  const front = useDerivedValue(() => {
+    let best = -1;
+    let most = 0;
+    view.value.slots.forEach((s, i) => {
+      const area = Math.abs(s.across[0] * s.down[1] - s.across[1] * s.down[0]);
+      if (s.seen && area > most) {
+        most = area;
+        best = i;
+      }
+    });
+    return best;
+  });
+  return (
+    <>
+      <Path path={outline} color={shade(color, -0.3)}>
+        {shadow}
+      </Path>
+      <Group clip={outline}>
+        {SIDE_VALUES.map((value, i) => (
+          <SolidSideFill key={value} view={view} i={i} color={color} px={px} />
+        ))}
+      </Group>
+      {SIDE_VALUES.map((value, i) => (
+        <SolidSide key={value} view={view} front={front} i={i} value={value} color={color} ink={ink} art={arts[value - 1]} px={px} size={size} />
+      ))}
+      {rimmed ? <Path path={outline} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
+    </>
+  );
+}
+
+type CubeView = SharedValue<{ slots: SideSlot[]; outline: Pt[] }>;
+
+/** A side of a 3D d6, filled in its shade (nothing while it faces away). */
+function SolidSideFill({ view, i, color, px }: { view: CubeView; i: number; color: string; px: number }) {
+  const path = useDerivedValue(() => {
+    const s = view.value.slots[i];
+    const p = Skia.Path.Make();
+    if (!s.seen) return p;
+    s.corners.forEach((c, k) => (k ? p.lineTo((c[0] + PAD) * px, (c[1] + PAD) * px) : p.moveTo((c[0] + PAD) * px, (c[1] + PAD) * px)));
+    p.close();
+    return p;
+  });
+  const fill = useDerivedValue(() => shade(color, view.value.slots[i].light));
+  return <Path path={path} color={fill} />;
+}
+
+/**
+ * What's on a side of a 3D d6, in its own square mapped onto it: its pips, or the player's art darkened or lightened
+ * as the side's lit; and, the side facing the viewer most, its rounded face and the light along its edge.
+ */
+function SolidSide({
+  view,
+  front,
+  i,
+  value,
+  color,
+  ink,
+  art,
+  px,
+  size,
+}: {
+  view: CubeView;
+  front: SharedValue<number>;
+  i: number;
+  value: number;
+  color: string;
+  ink: string;
+  art: SkiaImage | null;
+  px: number;
+  size: number;
+}) {
+  const matrix = useDerivedValue(() => {
+    const s = view.value.slots[i];
+    return Skia.Matrix([s.across[0] * px, s.down[0] * px, (s.origin[0] + PAD) * px, s.across[1] * px, s.down[1] * px, (s.origin[1] + PAD) * px, 0, 0, 1]);
+  });
+  const seen = useDerivedValue(() => (view.value.slots[i].seen ? 1 : 0));
+  const isFront = useDerivedValue(() => (front.value === i ? 1 : 0));
+  const fill = useDerivedValue(() => shade(color, view.value.slots[i].light));
+  // Art shaded as its side is: darker turned from the light, a touch lighter turned to it.
+  const tint = useDerivedValue(() => {
+    const light = view.value.slots[i].light;
+    return light < 0 ? `rgba(0, 0, 0, ${Math.min(0.65, -light * 1.1)})` : `rgba(255, 255, 255, ${Math.min(0.3, light * 0.8)})`;
+  });
+  const square = FACE_SQUARE_PATH();
+  return (
+    <Group matrix={matrix} opacity={seen}>
+      <Group opacity={isFront}>
+        <Path path={square} color={fill} />
+        <Path path={square} color={shade(color, 0.35)} style="stroke" strokeWidth={0.8 / (CUBE_FACE.size * size)} opacity={0.5} />
+      </Group>
+      {art ? (
+        <Group clip={square}>
+          <SkImage image={art} x={0} y={0} width={1} height={1} fit="cover" />
+          <Path path={square} color={tint} />
+        </Group>
+      ) : (
+        (PIPS[value] ?? []).map((cell) => (
+          <Circle key={cell} cx={(cell % 3) * 0.3 + 0.2} cy={Math.floor(cell / 3) * 0.3 + 0.2} r={0.085 / CUBE_FACE.size} color={ink} />
+        ))
+      )}
+    </Group>
   );
 }
 

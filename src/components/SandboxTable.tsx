@@ -180,7 +180,7 @@ import { TrashModal } from './TrashModal';
 import { DealPanel } from './DealPanel';
 import { Riffle } from './Riffle';
 import { StackSearchPanel } from './StackSearchPanel';
-import { Dice3DContext, TablePieceView, faceShape } from './TablePieceView';
+import { Dice3DContext, ROLL_MS, TablePieceView, faceShape } from './TablePieceView';
 import { NumberSlider } from './NumberSlider';
 import { ScaleControl } from './ScaleControl';
 import { RotationControl } from './RotationControl';
@@ -999,6 +999,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    * lands (it tumbles only once it's there on the table: see drawPiece).
    */
   const [rolls, setRolls] = useState<Record<string, { key: number; dx: number; dy: number; to: { x: number; y: number } }>>({});
+  /** Dice mid-roll: drawn over the rest (they're in the air, coming from where they were) till they've settled. */
+  const [airborne, setAirborne] = useState<string[]>([]);
   /** Counters and dice picked out with the lasso; the dice among them roll together (tap any, or the roll button). */
   const [pickedPieceIds, setPickedPieces] = useState<string[]>([]);
   const pickedPieces = pickedPieceIds.filter((id) => table?.pieces?.some((p) => p.id === id));
@@ -1029,6 +1031,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       return { x: p?.x ?? 0, y: p?.y ?? 0 };
     };
     setRolls((r) => Object.fromEntries([...Object.entries(r), ...Object.entries(from).map(([id, f]) => [id, { key: (r[id]?.key ?? 0) + 1, ...f, to: landing(id) }])]));
+    // In the air till they've settled (a little after, so none drops behind another as it lands).
+    const thrown = Object.keys(from);
+    setAirborne((a) => [...a.filter((id) => !thrown.includes(id)), ...thrown]);
+    setTimeout(() => setAirborne((a) => a.filter((id) => !thrown.includes(id))), ROLL_MS + 120);
     // Felt as it's thrown, and as it bounces.
     haptics.deal();
     setTimeout(haptics.tick, 280);
@@ -4517,8 +4523,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               </Fragment>
             ))}
             {/* Counters and dice, above every card (and custom art, while it's being moved). */}
-            {/* (Overlapping dice, the one further down and right in front: see inDrawOrder.) */}
-            {inDrawOrder(table.pieces ?? []).map((p) => (onCloth(p) || p.kind === 'art' ? null : drawPiece(p)))}
+            {/* (Overlapping dice, the one further down and right in front: see inDrawOrder; any mid-roll over them all.) */}
+            {[...inDrawOrder(table.pieces ?? []).filter((p) => !airborne.includes(p.id)), ...(table.pieces ?? []).filter((p) => airborne.includes(p.id))].map((p) =>
+              onCloth(p) || p.kind === 'art' ? null : drawPiece(p),
+            )}
             {/* A piece just taken out of a bag, under the finger (it's on the table once it's put down). */}
             {pieceDrag?.out ? (
               <TablePieceView

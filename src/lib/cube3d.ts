@@ -8,7 +8,7 @@
  */
 
 export type Vec = [number, number, number];
-type Mat = [Vec, Vec, Vec];
+export type Mat = [Vec, Vec, Vec];
 /** A point in the die's 0–1 box. */
 export type Pt = [number, number];
 
@@ -33,15 +33,24 @@ const SIDES: { value: number; n: Vec; u: Vec; v: Vec }[] = [
   { value: 4, n: [0, -1, 0], u: [0, 0, -1], v: [1, 0, 0] },
 ];
 
-const dot = (a: Vec, b: Vec) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const apply = (m: Mat, p: Vec): Vec => [dot(m[0], p), dot(m[1], p), dot(m[2], p)];
-const times = (a: Mat, b: Mat): Mat => {
+// (Each of these is a worklet too: a die's tumble is worked out frame by frame on the animation thread.)
+function dot(a: Vec, b: Vec) {
+  'worklet';
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+function apply(m: Mat, p: Vec): Vec {
+  'worklet';
+  return [dot(m[0], p), dot(m[1], p), dot(m[2], p)];
+}
+function times(a: Mat, b: Mat): Mat {
+  'worklet';
   const cols: Vec[] = [0, 1, 2].map((j) => [b[0][j], b[1][j], b[2][j]] as Vec);
   return a.map((row) => cols.map((c) => dot(row, c)) as Vec) as Mat;
-};
+}
 
 /** A turn of `rad` about an axis (through the middle). */
 function turnAbout(axis: Vec, rad: number): Mat {
+  'worklet';
   const len = Math.hypot(...axis) || 1;
   const [x, y, z] = axis.map((a) => a / len);
   const [c, s, t] = [Math.cos(rad), Math.sin(rad), 1 - Math.cos(rad)];
@@ -73,10 +82,14 @@ export function tumbleFor(seed: number): Tumble {
 }
 
 /** Where a point in space is drawn, in the die's 0–1 box. */
-const drawn = (p: Vec): Pt => [MIDDLE[0] + p[0] - SLANT * p[2], MIDDLE[1] + p[1] - SLANT * p[2]];
+function drawn(p: Vec): Pt {
+  'worklet';
+  return [MIDDLE[0] + p[0] - SLANT * p[2], MIDDLE[1] + p[1] - SLANT * p[2]];
+}
 
 /** The smallest shape round some points that bulges nowhere inward. */
 function hullOf(pts: Pt[]): Pt[] {
+  'worklet';
   const sorted = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
   const half = (list: Pt[]) => {
@@ -107,11 +120,25 @@ export interface DrawnSide {
  * outline round all of it.
  */
 export function drawCube(turn: Mat): { sides: DrawnSide[]; outline: Pt[] } {
+  'worklet';
+  const { slots, outline } = drawCubeSlots(turn);
+  return { sides: slots.filter((s) => s.seen), outline };
+}
+
+/** A side as drawn (see DrawnSide), and whether it's seen at all (facing the viewer). */
+export type SideSlot = DrawnSide & { seen: boolean };
+
+/**
+ * A d6 turned as `turn` says, drawn, with every side in its own place in the list (see SIDE_VALUES), seen or not:
+ * for drawing each side in one place as it tumbles (shown only while it faces the viewer).
+ */
+export function drawCubeSlots(turn: Mat): { slots: SideSlot[]; outline: Pt[] } {
+  'worklet';
   // Which way the viewer looks from (a side's seen if it faces this way at all).
   const toViewer: Vec = [SLANT, SLANT, 1];
   const half = EDGE / 2;
   const corners: Pt[] = [];
-  const sides: DrawnSide[] = [];
+  const slots: SideSlot[] = [];
   for (const side of SIDES) {
     const n = apply(turn, side.n);
     const u = apply(turn, side.u).map((a) => a * EDGE) as Vec;
@@ -122,20 +149,23 @@ export function drawCube(turn: Mat): { sides: DrawnSide[]; outline: Pt[] } {
     const at = (a: number, b: number) => drawn([0, 1, 2].map((k) => start[k] + a * u[k] + b * v[k]) as Vec);
     const quad = [at(0, 0), at(1, 0), at(1, 1), at(0, 1)];
     corners.push(...quad);
-    if (dot(n, toViewer) <= 1e-6) continue;
     const origin = at(0, 0);
     const across: Pt = [at(1, 0)[0] - origin[0], at(1, 0)[1] - origin[1]];
     const down: Pt = [at(0, 1)[0] - origin[0], at(0, 1)[1] - origin[1]];
-    sides.push({ value: side.value, corners: quad, light: LIT.base + LIT.by * dot(n, LIGHT), origin, across, down });
+    slots.push({ value: side.value, seen: dot(n, toViewer) > 1e-6, corners: quad, light: LIT.base + LIT.by * dot(n, LIGHT), origin, across, down });
   }
-  return { sides, outline: hullOf(corners) };
+  return { slots, outline: hullOf(corners) };
 }
+
+/** Each side's number, in the order drawCubeSlots lists them. */
+export const SIDE_VALUES = SIDES.map((s) => s.value);
 
 /**
  * How a d6 is turned partway through its tumble (`t`, 0 just thrown to 1 at rest, eased): spun about the tumble's
  * axis, less and less, till it lies as it lands.
  */
 export function tumblingTurn(rest: Mat, tumble: Tumble, t: number): Mat {
+  'worklet';
   const left = 1 - t;
   return times(rest, turnAbout(tumble.axis, left * tumble.turns * Math.PI * 2));
 }
