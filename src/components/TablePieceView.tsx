@@ -248,6 +248,13 @@ function dieShape(sides: number): DieShape {
     const round = inner.map((p, i) => [p, outer[2 * i], outer[2 * i + 1], outer[(2 * i + 2) % 10], inner[(i + 1) % 5]]);
     return { outline: outer, faces: faces(round, inner), number: { at: [0.5, 0.52], size: 0.28 }, front: inner };
   }
+  if (sides === 100) {
+    // A ball of many faces (as a hundred-sided die is): a ring of them round the one facing up, its outline round.
+    const outer = ring(20, 0.5);
+    const inner = ring(10, 0.27, [0.5, 0.52]);
+    const round = inner.map((p, i) => [p, outer[2 * i], outer[2 * i + 1], outer[(2 * i + 2) % 20], inner[(i + 1) % 10]]);
+    return { outline: outer, faces: faces(round, inner), number: { at: [0.5, 0.53], size: 0.2 }, front: inner };
+  }
   if (sides === 20) {
     // An icosahedron: a triangle facing up in a six-sided outline, the faces round it filling the rest.
     const hex = ring(6, 0.5);
@@ -752,7 +759,8 @@ function Coin({ piece, rollKey, size, selected }: { piece: TablePiece; rollKey: 
         </Circle>
       </Canvas>
       {/* The player's own art for the side it shows, if it has some: round, with a gold rim; or the gold coin's. */}
-      {piece.faces?.[shown - 1] ? (
+      {/* (Only if it takes face art: see faceCount. One given some before shows the gold coin's.) */}
+      {faceCount(piece) && piece.faces?.[shown - 1] ? (
         <Image
           source={{ uri: imageUri(piece.faces[shown - 1]!) }}
           style={[StyleSheet.absoluteFill, styles.coinOwn, { borderRadius: size / 2, borderWidth: size * 0.05 }]}

@@ -18,13 +18,11 @@ test('a rolled die comes to rest turned any way round, whether thrown or rolled 
   assert.ok(angles.size > 5);
 });
 
-test('a die has a face for art on each side (not a d4 or d8), and a coin two; other pieces none', () => {
+test('only a six-sided die (six faces) and a coin (two) take face art; other dice and pieces none', () => {
   const at = { x: 0, y: 0, value: 1 };
   assert.equal(faceCount({ kind: 'die', sides: 6 }), 6);
   assert.equal(faceCount({ kind: 'die' }), 6);
-  assert.equal(faceCount({ kind: 'die', sides: 20 }), 20);
-  assert.equal(faceCount({ kind: 'die', sides: 4 }), 0);
-  assert.equal(faceCount({ kind: 'die', sides: 8 }), 0);
+  for (const sides of [4, 8, 10, 12, 20, 100]) assert.equal(faceCount({ kind: 'die', sides }), 0);
   assert.equal(faceCount({ kind: 'coin' }), 2);
   assert.equal(faceCount({ kind: 'counter' }), 0);
   // A face given art (and its color), and put back: none at all once every face is standard again.

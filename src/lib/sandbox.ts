@@ -160,16 +160,11 @@ export interface TablePiece {
   faceColors?: (string | null)[];
 }
 
-/**
- * How many faces a piece's own art can be given for: a die's, one for each side (not a d4's or d8's: drawn point up,
- * neither has a face turned up to show it); a coin's two; none for anything else.
- */
+/** How many faces a piece's own art can be given for: a six-sided die's six, a coin's two; none for anything else. */
 export function faceCount(p: Pick<TablePiece, 'kind' | 'sides'>): number {
   if (p.kind === 'coin') return 2;
-  if (p.kind === 'die') return NO_FACE_ART.includes(p.sides ?? 6) ? 0 : (p.sides ?? 6);
-  return 0;
+  return p.kind === 'die' && (p.sides ?? 6) === 6 ? 6 : 0;
 }
-const NO_FACE_ART = [4, 8];
 
 /**
  * A piece's faces (and their colors) with face `i` (from 0) given a picture and its color, or put back to standard
@@ -544,7 +539,7 @@ export function stackAt(
 // ---- Pieces: counters and dice ----
 
 /** The dice a die can be: how many faces. */
-export const DIE_SIDES = [4, 6, 8, 10, 12, 20] as const;
+export const DIE_SIDES = [4, 6, 8, 10, 12, 20, 100] as const;
 
 /** A piece's size on the table, in table units (a standard card is CARD_W wide). */
 export const PIECE_SIZE: Record<PieceKind, { w: number; h: number }> = {

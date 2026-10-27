@@ -3803,14 +3803,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               colorTile,
               rotateTile,
               scaleTile,
-              // Its own art for its faces (Pro), with custom art's icon: not for a d4 or d8 (see faceCount).
+              // Its own art for its faces (Pro), with custom art's icon: a d6's only (see faceCount).
               ...(faceCount(piece) ? [faceTile] : []),
             ],
             [{ kind: 'toggle', label: 'Roll in place', value: !!piece.rollInPlace, onChange: (on) => commit(setPiece(table, id, { rollInPlace: on || undefined })) }, takeOffRow],
           );
         case 'coin':
           // (Gold, as its art is: no color to choose.)
-          return focus('Coin', [tile('Flip', 'arrow.triangle.2.circlepath', 'sync', () => rollDice([id])), scaleTile, faceTile], [takeOffRow]);
+          return focus('Coin', [tile('Flip', 'arrow.triangle.2.circlepath', 'sync', () => rollDice([id])), scaleTile, ...(faceCount(piece) ? [faceTile] : [])], [takeOffRow]);
         case 'spinner':
           return focus('Spinner', [tile('Spin', 'arrow.clockwise.circle', 'autorenew', () => rollDice([id])), colorTile, scaleTile], [lockRow, takeOffRow]);
         case 'text':

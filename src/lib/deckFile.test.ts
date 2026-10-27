@@ -192,7 +192,7 @@ test('a table’s components, custom art and card sizes come with it', () => {
   assert.ok(t.pieces!.every((p) => p.id.startsWith('n')));
 });
 
-test('a die’s and a coin’s own face art come with the table', () => {
+test('a d6’s and a coin’s own face art come with the table', () => {
   const d = deck();
   const table = {
     id: 't1', name: 'T', createdAt: 0, updatedAt: 0, stacks: [], hands: [[], [], [], []], handNames: ['Hand 1', 'Hand 2', 'Hand 3', 'Hand 4'],
