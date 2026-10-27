@@ -1,4 +1,4 @@
-import { Canvas, Circle, Group, Image as SkImage, Path, Shadow, Skia, useImage } from '@shopify/react-native-skia';
+import { Canvas, Circle, Group, Image as SkImage, Path, Shadow, Skia, useImage, vec } from '@shopify/react-native-skia';
 import type { SkPath } from '@shopify/react-native-skia';
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
@@ -91,6 +91,53 @@ const CUBE_BOTTOM: Pt[] = [
   [FR + CUBE_DEPTH, FB + CUBE_DEPTH],
   [FL + CUBE_DEPTH, FB + CUBE_DEPTH],
 ];
+
+/** Points turned `deg` degrees clockwise round a middle (all in the 0–1 box). */
+function turned(pts: Pt[], deg: number, mid: Pt = [0.5, 0.5]): Pt[] {
+  if (!deg) return pts;
+  const r = (deg * Math.PI) / 180;
+  const [c, s] = [Math.cos(r), Math.sin(r)];
+  return pts.map(([x, y]) => [mid[0] + (x - mid[0]) * c - (y - mid[1]) * s, mid[1] + (x - mid[0]) * s + (y - mid[1]) * c]);
+}
+
+/** The smallest shape round some points that bulges nowhere inward, clockwise on screen. */
+function hullOf(pts: Pt[]): Pt[] {
+  const sorted = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list: Pt[]) => {
+    const out: Pt[] = [];
+    for (const p of list) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  return [...half(sorted), ...half([...sorted].reverse())].reverse();
+}
+
+/** The middle of a d6's top face, which it turns about. */
+const CUBE_MID: Pt = [FL + CUBE_FACE.size / 2, FT + CUBE_FACE.size / 2];
+
+/**
+ * A d6 lying turned `deg` degrees, still seen from a little above and to the left: its top face turned, and the
+ * sides that face down and right (where it's seen from) slanting back from it, each shaded by which way it faces;
+ * and its whole outline round both. Unturned, it's the cube as it always was (see CUBE_OUTLINE).
+ */
+function cubeAt(deg: number) {
+  const top = turned(CUBE_TOP, deg, CUBE_MID);
+  const back = top.map(([x, y]) => [x + CUBE_DEPTH, y + CUBE_DEPTH] as Pt);
+  const sides = top.flatMap((a, i) => {
+    const b = top[(i + 1) % top.length];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const [nx, ny] = [(b[1] - a[1]) / len, -(b[0] - a[0]) / len];
+    // Only those turned toward where it's seen from (down and to the right) show.
+    if (nx + ny <= 0) return [];
+    // A right side's as dark as it was, a bottom one darker, and those between, between.
+    return [{ pts: [a, b, back[(i + 1) % top.length], back[i]] as Pt[], light: -0.39 + 0.09 * nx - 0.09 * ny }];
+  });
+  return { top, outline: hullOf([...top, ...back]), sides };
+}
 
 /** A color made lighter (toward 1) or darker (toward −1), for a face catching more or less of the light. */
 function shade(hex: string, k: number): string {
@@ -285,12 +332,13 @@ export const TablePieceView = memo(function TablePieceView({
       pointerEvents="none"
       style={[
         styles.piece,
-        { left: x - w / 2, top: y - h / 2, width: w, height: h, transform: [{ rotate: `${turn ?? piece.angle ?? 0}deg` }, { scale: ((piece.scale ?? 1) / laidOut) * (lifted ? LIFT : 1) }] },
+        // (A die turns its shape itself, still lit and seen from the top left: see Die.)
+        { left: x - w / 2, top: y - h / 2, width: w, height: h, transform: [{ rotate: `${piece.kind === 'die' ? 0 : (turn ?? piece.angle ?? 0)}deg` }, { scale: ((piece.scale ?? 1) / laidOut) * (lifted ? LIFT : 1) }] },
       ]}>
       {piece.kind === 'counter' ? (
         <Counter piece={piece} color={color} selected={selected} k={laidOut} />
       ) : piece.kind === 'die' ? (
-        <Die piece={piece} color={color} rollKey={rollKey} rollFrom={rollFrom} size={w} selected={selected} />
+        <Die piece={piece} color={color} rollKey={rollKey} rollFrom={rollFrom} size={w} selected={selected} angle={turn ?? piece.angle ?? 0} />
       ) : piece.kind === 'coin' ? (
         <Coin piece={piece} rollKey={rollKey} size={w} selected={selected} />
       ) : piece.kind === 'text' ? (
@@ -369,6 +417,7 @@ function Die({
   rollFrom,
   size,
   selected,
+  angle,
 }: {
   piece: TablePiece;
   color: string;
@@ -376,6 +425,11 @@ function Die({
   rollFrom?: { dx: number; dy: number };
   size: number;
   selected: boolean;
+  /**
+   * Its turn on the table (degrees clockwise). The drawing isn't turned whole (its sides, shading and shadow would
+   * turn too, as if seen from somewhere else): the die's shape is turned in it, still lit and seen from the top left.
+   */
+  angle: number;
 }) {
   const OS = useContext(OversampleContext);
   const sides = piece.sides ?? 6;
@@ -430,7 +484,18 @@ function Die({
     [travel, time, dx, dy, turn],
   );
   const ink = isLight(color) ? '#2c2c2a' : '#ffffff';
-  const shape = useMemo(() => dieShape(sides), [sides]);
+  // Its shape turned as it lies, each face lit as it now faces (the one looking up, as evenly as ever).
+  const flat = useMemo(() => dieShape(sides), [sides]);
+  const shape = useMemo(
+    () => ({
+      outline: turned(flat.outline, angle),
+      faces: flat.faces.map((f) => ({ pts: turned(f.pts, angle), light: f.pts === flat.front ? f.light : lightOf(turned(f.pts, angle)) })),
+      front: turned(flat.front, angle),
+      number: { ...flat.number, at: turned([flat.number.at], angle)[0] },
+    }),
+    [flat, angle],
+  );
+  const cube = useMemo(() => cubeAt(angle), [angle]);
   // The drawing, oversampled (see OVERSAMPLE), with room round it for the shadow.
   const px = size * OS;
   const canvas = px * (1 + PAD * 2);
@@ -473,20 +538,23 @@ function Die({
               back to the far corner. One rounded outline round the whole cube, so its corners all meet; the sides
               are cut to it, and the top face's own rounded corners sit inside it.
             */}
-            <Path path={rounded(CUBE_OUTLINE, CUBE_ROUND)} color={shade(color, -0.3)}>
+            <Path path={rounded(cube.outline, CUBE_ROUND)} color={shade(color, -0.3)}>
               {shadow}
             </Path>
-            <Path path={rounded(CUBE_OUTLINE, CUBE_ROUND)} color={shade(color, -0.3)} />
-            <Group clip={rounded(CUBE_OUTLINE, CUBE_ROUND)}>
-              <Path path={path(CUBE_BOTTOM)} color={shade(color, -0.48)} />
+            <Path path={rounded(cube.outline, CUBE_ROUND)} color={shade(color, -0.3)} />
+            <Group clip={rounded(cube.outline, CUBE_ROUND)}>
+              {cube.sides.map((s, i) => (
+                <Path key={i} path={path(s.pts)} color={shade(color, s.light)} />
+              ))}
             </Group>
-            <Path path={rounded(CUBE_TOP, CUBE_ROUND)} color={shade(color, 0.04)} />
+            <Path path={rounded(cube.top, CUBE_ROUND)} color={shade(color, 0.04)} />
             {/* The light catching the top face's edge. */}
-            <Path path={rounded(CUBE_TOP, CUBE_ROUND)} color={shade(color, 0.35)} style="stroke" strokeWidth={0.8 * OS} opacity={0.5} />
-            {selected ? <Path path={rounded(CUBE_OUTLINE, CUBE_ROUND)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
+            <Path path={rounded(cube.top, CUBE_ROUND)} color={shade(color, 0.35)} style="stroke" strokeWidth={0.8 * OS} opacity={0.5} />
+            {selected ? <Path path={rounded(cube.outline, CUBE_ROUND)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
             {/* (The player's own art for this face, if it has some, is drawn over the face instead: below.) */}
             {(faceArt ? [] : (PIPS[shown] ?? [])).map((cell) => {
-              const [cx, cy] = at([CUBE_FACE.x + CUBE_FACE.size * ((cell % 3) * 0.3 + 0.2), CUBE_FACE.y + CUBE_FACE.size * (Math.floor(cell / 3) * 0.3 + 0.2)]);
+              const pip = turned([[CUBE_FACE.x + CUBE_FACE.size * ((cell % 3) * 0.3 + 0.2), CUBE_FACE.y + CUBE_FACE.size * (Math.floor(cell / 3) * 0.3 + 0.2)]], angle, CUBE_MID)[0];
+              const [cx, cy] = at(pip);
               return <Circle key={cell} cx={cx} cy={cy} r={0.085 * px} color={ink} />;
             })}
           </>
@@ -499,16 +567,19 @@ function Die({
               <Path key={i} path={path(f.pts)} color={shade(color, f.light)} />
             ))}
             {/* The player's own art on its front face, cut to the face's shape (it covers the face's box). */}
-            {artImage && shape.front.length ? (
-              <Group clip={path(shape.front)}>
-                <SkImage
-                  image={artImage}
-                  x={at([boundsOf(shape.front).x, 0])[0]}
-                  y={at([0, boundsOf(shape.front).y])[1]}
-                  width={boundsOf(shape.front).w * px}
-                  height={boundsOf(shape.front).h * px}
-                  fit="cover"
-                />
+            {/* (Laid out on the unturned face, then turned with it, round the die's middle.) */}
+            {artImage && flat.front.length ? (
+              <Group transform={[{ rotate: (angle * Math.PI) / 180 }]} origin={vec(...at([0.5, 0.5]))}>
+                <Group clip={path(flat.front)}>
+                  <SkImage
+                    image={artImage}
+                    x={at([boundsOf(flat.front).x, 0])[0]}
+                    y={at([0, boundsOf(flat.front).y])[1]}
+                    width={boundsOf(flat.front).w * px}
+                    height={boundsOf(flat.front).h * px}
+                    fit="cover"
+                  />
+                </Group>
               </Group>
             ) : null}
             {shape.faces.map((f, i) => (
@@ -529,6 +600,8 @@ function Die({
             width: CUBE_FACE.size * size,
             height: CUBE_FACE.size * size,
             borderRadius: CUBE_ROUND * size,
+            // Turned with the face, round its middle.
+            transform: [{ rotate: `${angle}deg` }],
           }}
           contentFit="cover"
           cachePolicy="memory-disk"
@@ -545,6 +618,8 @@ function Die({
               left: shape.number.at[0] * size - size / 2,
               top: shape.number.at[1] * size - shape.number.size * size * 0.62,
               width: size,
+              // Turned as the die lies, round its own middle (where the number is).
+              transform: [{ rotate: `${angle}deg` }],
             },
           ]}>
           {shown}
