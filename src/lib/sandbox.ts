@@ -1639,10 +1639,10 @@ export function pasteCopies(t: SandboxTable, clip: TableClip, count: number, at:
 
 // ---- Groups: things picked out, and moved, as one ----
 
-/** Stacks and pieces made one group (a new one, `id`), out of any they were in. Locked ones and zones stay out. */
+/** Stacks and pieces made one group (a new one, `id`), out of any they were in. Zones stay out. */
 export function groupItems(t: SandboxTable, stackIds: string[], pieceIds: string[], id: string): SandboxTable {
-  const stacks = t.stacks.filter((s) => stackIds.includes(s.id) && !s.locked).map((s) => s.id);
-  const pieces = (t.pieces ?? []).filter((p) => pieceIds.includes(p.id) && !p.locked && !onCloth(p)).map((p) => p.id);
+  const stacks = t.stacks.filter((s) => stackIds.includes(s.id)).map((s) => s.id);
+  const pieces = (t.pieces ?? []).filter((p) => pieceIds.includes(p.id) && !onCloth(p)).map((p) => p.id);
   if (stacks.length + pieces.length < 2) return t;
   return {
     ...t,
@@ -1682,11 +1682,16 @@ export function withGroups(t: SandboxTable, stackIds: string[], pieceIds: string
   };
 }
 
-/** The group a stack or piece is in, as its stacks' and pieces' ids, if it's in one (of two or more). */
-export function groupMembers(t: SandboxTable, id: string): { stackIds: string[]; pieceIds: string[] } | null {
+/**
+ * The group a stack or piece is in, as its stacks' and pieces' ids, if it's in one (of two or more); and whether
+ * it's locked in place (every one of it is).
+ */
+export function groupMembers(t: SandboxTable, id: string): { stackIds: string[]; pieceIds: string[]; locked: boolean } | null {
   const group = t.stacks.find((s) => s.id === id)?.group ?? t.pieces?.find((p) => p.id === id)?.group;
   if (!group || !liveGroups(t).has(group)) return null;
-  return { stackIds: t.stacks.filter((s) => s.group === group).map((s) => s.id), pieceIds: (t.pieces ?? []).filter((p) => p.group === group).map((p) => p.id) };
+  const stacks = t.stacks.filter((s) => s.group === group);
+  const pieces = (t.pieces ?? []).filter((p) => p.group === group);
+  return { stackIds: stacks.map((s) => s.id), pieceIds: pieces.map((p) => p.id), locked: stacks.every((s) => s.locked) && pieces.every((p) => p.locked) };
 }
 
 /** A box on the table (its left, top, width and height), level with the table. */

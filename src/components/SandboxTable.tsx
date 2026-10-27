@@ -2208,14 +2208,17 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       }
       // One in a group (see groupItems), not yet picked out: its group's picked out, and goes with it as one (a tap
       // just picks it out).
-      const members = L.pickedPieces.includes(pressed) ? null : groupMembers(L.table!, pressed);
+      // (A locked group stays where it is, picked out or not: its piece is pressed as any locked one is, on its own.)
+      const found = groupMembers(L.table!, pressed);
+      const lockedGroup = !!found?.locked;
+      const members = found && !lockedGroup && !L.pickedPieces.includes(pressed) ? found : null;
       touch.groupFresh = !!members;
       if (members) {
         L.setSelected(members.stackIds);
         L.setPickedPieces(members.pieceIds);
       }
       const selectedNow = members ? members.stackIds : L.selected;
-      const pickedNow = members ? members.pieceIds : L.pickedPieces;
+      const pickedNow = members ? members.pieceIds : lockedGroup ? [] : L.pickedPieces;
       // Picked out along with cards: dragged, it all goes (as if from one of the cards); held, the group's options.
       if (pickedNow.includes(pressed) && selectedNow.length) {
         touch.pressed = { kind: 'top', stackId: selectedNow[selectedNow.length - 1] };
@@ -2234,8 +2237,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         return;
       }
       // Pressing one of the picked-out dice keeps them picked out (a tap rolls them all); anything else lets them go.
-      if (L.selected.length && !pickedNow.includes(pressed)) L.setSelected([]);
-      else if (L.pickedPieces.length && !pickedNow.includes(pressed)) L.setPickedPieces([]);
+      // (A locked group picked out stays picked out.)
+      if (!(lockedGroup && L.pickedPieces.includes(pressed))) {
+        if (L.selected.length && !pickedNow.includes(pressed)) L.setSelected([]);
+        else if (L.pickedPieces.length && !pickedNow.includes(pressed)) L.setPickedPieces([]);
+      }
       // One of several picked out: a drag takes them all.
       const group = pickedNow.includes(pressed) && pickedNow.length > 1 ? pickedNow : [pressed];
       touch.piece = { id: pressed, part, group, from: w, moved: false };
@@ -2445,15 +2451,18 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         if (hit) {
           // A selected stack: dragging it moves the whole group. Any other card lets the selection go; one in a group
           // (see groupItems) picks out its group instead, which it moves with as one.
-          touch.groupPress = L.selected.includes(hit.stack.id);
+          // (A locked group stays where it is, picked out or not: its stack's pressed as any locked one is, and a tap
+          // picks out its group.)
+          const members = groupMembers(L.table!, hit.stack.id);
+          const pickedOut = L.selected.includes(hit.stack.id);
+          touch.groupPress = pickedOut && !members?.locked;
           touch.groupFresh = false;
-          const members = touch.groupPress ? null : groupMembers(L.table!, hit.stack.id);
-          if (members) {
+          if (members && !members.locked && !pickedOut) {
             L.setSelected(members.stackIds);
             L.setPickedPieces(members.pieceIds);
             touch.groupPress = true;
             touch.groupFresh = true;
-          } else if (!touch.groupPress && L.selected.length) L.setSelected([]);
+          } else if (!touch.groupPress && L.selected.length && !(members?.locked && pickedOut)) L.setSelected([]);
           // A quick drag takes its top card; held a moment first, the whole stack comes (unless it's locked).
           touch.pressed = { kind: 'top', stackId: hit.stack.id };
           touch.mode = 'press';
@@ -3862,7 +3871,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const dice = pieces.filter((p) => p.kind === 'die');
       const turning = pieces.filter((p) => turnsFreely(p) && !p.locked);
       const total = n + pieces.length;
-      const allLocked = chosen.every((id) => table.stacks.find((s) => s.id === id)?.locked);
+      const allLocked = chosen.every((id) => table.stacks.find((s) => s.id === id)?.locked) && pieces.every((p) => p.locked);
       const shufflable = chosen.filter((id) => (table.stacks.find((s) => s.id === id)?.cards.length ?? 0) > 1);
       const takeAllOff = () => {
         commit(pieces.reduce((t, p) => removePiece(t, p.id), n ? removeStacks(table, chosen) : table));
@@ -3933,9 +3942,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               },
             ]
           : []),
-        ...(n
-          ? [{ kind: 'toggle' as const, label: 'Lock', value: allLocked, onChange: (on: boolean) => commit(chosen.reduce((t, id) => setStack(t, id, { locked: on }), table)) }]
-          : []),
+        // Cards and pieces alike (a group all at once): on if every one's locked.
+        {
+          kind: 'toggle' as const,
+          label: 'Lock',
+          value: allLocked,
+          onChange: (on: boolean) =>
+            commit(pieceIds.reduce((t, id) => setPiece(t, id, { locked: on || undefined }), chosen.reduce((t, id) => setStack(t, id, { locked: on }), table))),
+        },
         { kind: 'action', label: total === 1 ? 'Take off the table' : `Take all ${total} off the table`, destructive: true, onPress: takeAllOff },
       ];
       return {
