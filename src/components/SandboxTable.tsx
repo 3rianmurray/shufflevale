@@ -1,7 +1,7 @@
 import { Canvas, Path, Skia } from '@shopify/react-native-skia';
 import { router } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { ActionSheetIOS, Alert, Animated as RNAnimated, Easing, Image, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Switch, View, useWindowDimensions } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -396,6 +396,32 @@ interface Held {
   /** Where each was taken from (the first picked up, then any tapped with another finger). */
   sources: Source[];
   cards: SandboxCard[];
+}
+
+/**
+ * State kept as the table's own is (in a store read with useSyncExternalStore, as useSandbox does), rather than as
+ * React state: changes to it and to the table, made together, reach the screen together, in the same frame. (React
+ * state set beside a change to the table could come a frame later.)
+ */
+function useStoreState<T>(initial: T): [T, (next: T | ((was: T) => T)) => void] {
+  const [store] = useState(() => {
+    let value = initial;
+    const listeners = new Set<() => void>();
+    return {
+      get: () => value,
+      set: (next: T | ((was: T) => T)) => {
+        value = typeof next === 'function' ? (next as (was: T) => T)(value) : next;
+        listeners.forEach((l) => l());
+      },
+      subscribe: (l: () => void) => {
+        listeners.add(l);
+        return () => {
+          listeners.delete(l);
+        };
+      },
+    };
+  });
+  return [useSyncExternalStore(store.subscribe, store.get), store.set];
 }
 
 /**
@@ -996,11 +1022,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const [pieceDrag, setPieceDrag] = useState<PieceDrag | null>(null);
   /**
    * Each die's latest roll here: how many so far (so it tumbles each time), where it set off from, and where it
-   * lands (it tumbles only once it's there on the table: see drawPiece).
+   * lands (it tumbles only once it's there on the table: see drawPiece). Kept as the table itself is (see
+   * useStoreState), so a roll reaches the screen in the very frame its dice move to where they land: as React
+   * state it came a frame after them, and for that frame each die showed with the last roll's motion, out of place.
    */
-  const [rolls, setRolls] = useState<Record<string, { key: number; dx: number; dy: number; to: { x: number; y: number } }>>({});
+  const [rolls, setRolls] = useStoreState<Record<string, { key: number; dx: number; dy: number; to: { x: number; y: number } }>>({});
   /** Dice mid-roll: drawn over the rest (they're in the air, coming from where they were) till they've settled. */
-  const [airborne, setAirborne] = useState<string[]>([]);
+  const [airborne, setAirborne] = useStoreState<string[]>([]);
   /** Counters and dice picked out with the lasso; the dice among them roll together (tap any, or the roll button). */
   const [pickedPieceIds, setPickedPieces] = useState<string[]>([]);
   const pickedPieces = pickedPieceIds.filter((id) => table?.pieces?.some((p) => p.id === id));
@@ -1028,16 +1056,19 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (!table) return;
     const { table: next, from } = throwDice(table, ids);
     if (!Object.keys(from).length) return;
-    commit(next);
     const landing = (id: string) => {
       const p = next.pieces?.find((q) => q.id === id);
       return { x: p?.x ?? 0, y: p?.y ?? 0 };
     };
+    // The rolls first, then the table with the dice where they land: the table can reach the screen a frame before
+    // what's set after it, and with the dice already there but their rolls not yet known, each showed for a frame
+    // where it lands. Known first, each starts its tumble back the moment it's there (see Die).
     setRolls((r) => Object.fromEntries([...Object.entries(r), ...Object.entries(from).map(([id, f]) => [id, { key: (r[id]?.key ?? 0) + 1, ...f, to: landing(id) }])]));
     // In the air till they've settled (a little after, so none drops behind another as it lands).
     const thrown = Object.keys(from);
     setAirborne((a) => [...a.filter((id) => !thrown.includes(id)), ...thrown]);
     setTimeout(() => setAirborne((a) => a.filter((id) => !thrown.includes(id))), ROLL_MS + 120);
+    commit(next);
     // Felt as it's thrown, and as it bounces.
     haptics.deal();
     setTimeout(haptics.tick, 280);
