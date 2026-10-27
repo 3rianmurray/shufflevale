@@ -1469,7 +1469,8 @@ export function movePieces(t: SandboxTable, ids: string[], by: { x: number; y: n
 
 /**
  * Dice lined up in a tight grid (rows of as many as make it near square), in the order they lay (top to bottom,
- * left to right), round where they were on the whole. Other dice in the way move aside.
+ * left to right), round where they were on the whole, each set straight (however it landed). Other dice in the
+ * way move aside.
  */
 export function gridDice(t: SandboxTable, ids: string[]): SandboxTable {
   const dice = (t.pieces ?? []).filter((p) => p.kind === 'die' && ids.includes(p.id));
@@ -1486,6 +1487,7 @@ export function gridDice(t: SandboxTable, ids: string[]): SandboxTable {
       {
         x: Math.round(mid.x + ((i % cols) - (cols - 1) / 2) * cell),
         y: Math.round(mid.y + (Math.floor(i / cols) - (rows - 1) / 2) * cell),
+        angle: 0,
       },
     ]),
   );

@@ -133,13 +133,15 @@ test('a group of pieces moves together, and dice dropped on others are moved off
 
 test('picked-out dice line up in a near-square grid round where they were', () => {
   let t = table();
-  for (const [i, x] of [300, 900, 600, 1200, 100].entries()) t = addPiece(t, newPiece('die', `d${i}`, { x, y: 500 + i * 37 }));
+  for (const [i, x] of [300, 900, 600, 1200, 100].entries()) t = addPiece(t, { ...newPiece('die', `d${i}`, { x, y: 500 + i * 37 }), angle: i * 31 });
   const g = gridDice(t, t.pieces!.map((p) => p.id));
   const xs = new Set(g.pieces!.map((p) => p.x));
   const ys = new Set(g.pieces!.map((p) => p.y));
   assert.equal(xs.size, 3);
   assert.equal(ys.size, 2);
   assert.equal(overlaps(g), false);
+  // Each set straight, however it lay.
+  assert.ok(g.pieces!.every((p) => p.angle === 0));
 });
 test('a timer starts, pauses keeping what it had left, and is set back once it runs out', () => {
   let t = addPiece(table(), newPiece('timer', 'tm', { x: 0, y: 0 }));
