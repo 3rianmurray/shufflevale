@@ -1,4 +1,5 @@
 import { Canvas, Circle, Group, Image as SkImage, Path, Shadow, Skia, useImage } from '@shopify/react-native-skia';
+import type { SkPath } from '@shopify/react-native-skia';
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
@@ -613,6 +614,13 @@ function cylinderPath(c: readonly [number, number], r: number, d: readonly [numb
   return p;
 }
 
+/** A shape made of overlapping parts as one outline, round its outside only (so a rim drawn on it skips the joins). */
+function outsideOf(path: SkPath) {
+  const one = path.copy();
+  one.simplify();
+  return one;
+}
+
 /** Starts a tumble (or flip, or spin) each time `rollKey` changes, over ROLL_MS: 0 to 1, eased out. */
 function useRollMotion(rollKey: number) {
   const [motion] = useState(() => new Animated.Value(1));
@@ -830,6 +838,18 @@ function PlayingPiece({ piece, color, w, h, selected }: { piece: TablePiece; col
     );
   }
   const sideColor = shade(color, -0.42);
+  /** Its whole outline, its parts and its side as one (for its gold rim, picked out: only round the outside). */
+  const silhouette = () => {
+    const all = Skia.Path.Make();
+    for (const moved of [false, true]) {
+      for (const o of outlines) all.addPath(art.poly(moved ? shift(o) : o));
+      for (const ci of circles) {
+        const q = art.at(moved ? [ci.at[0] + PIECE_DEPTH[0], ci.at[1] + PIECE_DEPTH[1]] : ci.at);
+        all.addCircle(q[0], q[1], art.len(ci.r));
+      }
+    }
+    return outsideOf(all);
+  };
   const draw = (fill: string, moved: boolean, extra?: object) => (
     <>
       {outlines.map((o, i) => (
@@ -865,7 +885,8 @@ function PlayingPiece({ piece, color, w, h, selected }: { piece: TablePiece; col
           ) : (
             <Circle cx={c[0]} cy={c[1]} r={art.len(0.42)} color={shade(color, 0.3)} style="stroke" strokeWidth={art.len(0.02)} opacity={0.55} />
           )}
-          {selected ? <Path path={body} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
+          {/* (Round the outside only: a disc's body is its two circles and their join, overlapping.) */}
+          {selected ? <Path path={outsideOf(body)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
         </Canvas>
       </View>
     );
@@ -891,7 +912,7 @@ function PlayingPiece({ piece, color, w, h, selected }: { piece: TablePiece; col
         </Group>
         {draw(sideColor, true)}
         {draw(color, false)}
-        {selected ? draw(colors.accent, false, { style: 'stroke', strokeWidth: 3 * OS }) : null}
+        {selected ? <Path path={silhouette()} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
       </Canvas>
     </View>
   );

@@ -4279,7 +4279,33 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       return {
         title: 'Add a piece',
         tiles: [],
-        actions: PIECE_SHAPES.map(({ shape, name }) => ({ label: name, onPress: () => addPieceToTable('meeple', undefined, shape) })),
+        // Each piece as it looks on the table, as the dice are.
+        banner: (
+          <View style={styles.dicePicks}>
+            {PIECE_SHAPES.map(({ shape, name }) => {
+              const piece = newPiece('meeple', `pick-${shape}`, { x: 0, y: 0 }, 6, shape);
+              const own = pieceSizeOf(piece);
+              const fit = Math.min(1.1, 60 / own.w, 60 / own.h);
+              return (
+                <Pressable
+                  key={shape}
+                  onPress={() => {
+                    setMenu(null);
+                    addPieceToTable('meeple', undefined, shape);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`A ${name.toLowerCase()}`}
+                  style={({ pressed }) => [styles.dicePick, pressed && { opacity: 0.6 }]}>
+                  <View style={styles.dicePickArt}>
+                    <TablePieceView piece={{ ...piece, x: 30, y: 30, scale: fit }} />
+                  </View>
+                  <Text style={styles.dicePickText}>{name}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ),
+        actions: [],
       };
     }
     if (menu.kind === 'addDie') {
