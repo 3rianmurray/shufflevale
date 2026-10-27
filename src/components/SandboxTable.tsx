@@ -155,6 +155,7 @@ import {
   SCORE_MAX_PLAYERS,
   faceCount,
   withFace,
+  inDrawOrder,
 } from '../lib/sandbox';
 import type { BagItem, Camera, CardSize, PieceKind, PiecePart, PieceShape, SandboxCard, SandboxStack, SandboxTable, Source, TablePiece } from '../lib/sandbox';
 import * as DocumentPicker from 'expo-document-picker';
@@ -4512,7 +4513,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               </Fragment>
             ))}
             {/* Counters and dice, above every card (and custom art, while it's being moved). */}
-            {(table.pieces ?? []).map((p) => (onCloth(p) || p.kind === 'art' ? null : drawPiece(p)))}
+            {/* (Overlapping dice, the one further down and right in front: see inDrawOrder.) */}
+            {inDrawOrder(table.pieces ?? []).map((p) => (onCloth(p) || p.kind === 'art' ? null : drawPiece(p)))}
             {/* A piece just taken out of a bag, under the finger (it's on the table once it's put down). */}
             {pieceDrag?.out ? (
               <TablePieceView

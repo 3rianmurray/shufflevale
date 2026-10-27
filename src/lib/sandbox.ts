@@ -952,13 +952,25 @@ export function fitZone(t: SandboxTable, zoneId: string, size: CardSize): Sandbo
 }
 
 /**
+ * Pieces in the order they're drawn (and so found, last first): as they lie, but the dice among them (each in a
+ * die's place) by how far down and to the right they are. Dice are seen from a little above and to the left, their
+ * sides running down and right, so where two overlap, the one further that way is in front.
+ */
+export function inDrawOrder(pieces: TablePiece[]): TablePiece[] {
+  const dice = pieces.filter((p) => p.kind === 'die').sort((a, b) => a.x + a.y - (b.x + b.y));
+  let next = 0;
+  return pieces.map((p) => (p.kind === 'die' ? dice[next++] : p));
+}
+
+/**
  * The topmost piece (not a zone: see zoneAt) under a table point, if any, and which part of it the point is on.
  * A small piece can be caught a little way off it too (`reach`: at least this far from its middle each way, in
  * table units), so it's easy to get a finger on; but only when nothing's right under the point.
  */
 export function pieceAt(t: SandboxTable, x: number, y: number, reach = 0): { piece: TablePiece; part: PiecePart } | null {
   // Custom art lies among the cards, under every other piece: looked for last.
-  const all = (t.pieces ?? []).filter((p) => !onCloth(p));
+  // (The rest in the order they're drawn: see inDrawOrder.)
+  const all = inDrawOrder((t.pieces ?? []).filter((p) => !onCloth(p)));
   const pieces = [...all.filter((p) => p.kind === 'art'), ...all.filter((p) => p.kind !== 'art')];
   const find = (grow: number) => {
     for (let i = pieces.length - 1; i >= 0; i--) {

@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
+
+test('dice are drawn (and found) the one further down and right in front; other pieces keep their places', () => {
+  let t = addPiece(table(), newPiece('die', 'low', { x: 500, y: 560 }));
+  t = addPiece(t, newPiece('counter', 'c', { x: 0, y: 0 }));
+  t = addPiece(t, newPiece('die', 'high', { x: 480, y: 500 }));
+  assert.deepEqual(inDrawOrder(t.pieces!).map((p) => p.id), ['high', 'c', 'low']);
+  // Where the two overlap, the lower one's under the finger, though it was put down first.
+  assert.equal(pieceAt(t, 490, 530)!.piece.id, 'low');
+});
 
 test('a rolled die comes to rest turned any way round, whether thrown or rolled in place', () => {
   let t = addPiece(table(), newPiece('die', 'a', { x: 600, y: 600 }));
@@ -51,7 +60,8 @@ test('a counter has − on its left end, + on its right, and its number between'
 });
 
 test('the topmost piece is the one found, and moving one brings it to the top', () => {
-  let t = addPiece(addPiece(table(), newPiece('die', 'a', { x: 100, y: 100 })), newPiece('die', 'b', { x: 110, y: 100 }));
+  // (Counters: dice lie in front of one another by where they are, not when they were moved: see inDrawOrder.)
+  let t = addPiece(addPiece(table(), newPiece('counter', 'a', { x: 100, y: 100 })), newPiece('counter', 'b', { x: 110, y: 100 }));
   assert.equal(pieceAt(t, 105, 100)?.piece.id, 'b');
   t = movePiece(t, 'a', { x: 104, y: 100 });
   assert.equal(pieceAt(t, 105, 100)?.piece.id, 'a');
