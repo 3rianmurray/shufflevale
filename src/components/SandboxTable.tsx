@@ -1763,6 +1763,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       },
       /** Waiting to see if a press on a stack is held (the whole stack comes) rather than dragged (its top card). */
       holdTimer: null as null | ReturnType<typeof setTimeout>,
+      /** This touch can't be a hold on the table any more: a second finger came down, or the first moved. */
+      holdSpoiled: false,
       /** The press is on a selected stack: a drag moves the whole group. */
       groupPress: false,
       /** Where the group's drag started on the table, and the stack it was grabbed by. */
@@ -2247,7 +2249,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       touch.holdTimer = setTimeout(() => {
         touch.holdTimer = null;
         const f = touch.fingers.get(touch.first);
-        if (touch.fingers.size !== 1 || !f || Math.hypot(f.now.x - f.start.x, f.now.y - f.start.y) > TAP_SLOP) return;
+        if (touch.holdSpoiled || touch.fingers.size !== 1 || !f || Math.hypot(f.now.x - f.start.x, f.now.y - f.start.y) > TAP_SLOP) return;
         if (touch.mode !== 'none' && touch.mode !== 'camera') return;
         touch.mode = 'button';
         touch.onEmpty = false;
@@ -2268,9 +2270,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         return;
       }
       for (const t of changed) touch.fingers.set(t.id, { start: { x: t.x, y: t.y }, now: { x: t.x, y: t.y } });
+      // A pinch is never a hold, even once one finger's lifted.
+      if (touch.fingers.size > 1) touch.holdSpoiled = true;
       const pts = [...touch.fingers.values()].map((f) => f.now);
       if (touch.mode === 'none') {
         const t = changed[0];
+        // A new touch: any hold left waiting from the last (a quick pan let go) is dropped.
+        clearHold();
+        touch.holdSpoiled = touch.fingers.size > 1;
         touch.first = t.id;
         touch.viaPiece = null;
         touch.firstAt = Date.now();
@@ -2423,7 +2430,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           touch.holdTimer = setTimeout(() => {
             touch.holdTimer = null;
             const f = touch.fingers.get(touch.first);
-            if (touch.fingers.size !== 1 || !f || Math.hypot(f.now.x - f.start.x, f.now.y - f.start.y) > TAP_SLOP) return;
+            if (touch.holdSpoiled || touch.fingers.size !== 1 || !f || Math.hypot(f.now.x - f.start.x, f.now.y - f.start.y) > TAP_SLOP) return;
             if (touch.mode !== 'none' && touch.mode !== 'camera') return;
             touch.mode = 'button';
             touch.onEmpty = false;
@@ -2553,6 +2560,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         const f = touch.fingers.get(t.id);
         if (f) f.now = { x: t.x, y: t.y };
       }
+      // Moved off where it came down (a pan, even one back again): not a hold.
+      const first = touch.fingers.get(touch.first);
+      if (first && Math.hypot(first.now.x - first.start.x, first.now.y - first.start.y) > TAP_SLOP) touch.holdSpoiled = true;
       if (touch.mode === 'press') {
         const f = touch.fingers.get(touch.first);
         if (f && Math.hypot(f.now.x - f.start.x, f.now.y - f.start.y) > TAP_SLOP) {
