@@ -1,7 +1,7 @@
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Animated, Easing, Modal, PanResponder, Pressable, StyleSheet, Switch, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Switch, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import * as haptics from '../lib/haptics';
@@ -47,11 +47,11 @@ interface Props {
   overlay?: ReactNode;
   /**
    * Instead of a copy of the card: the thing itself, where it lies (the camera glides in on it), lit up over the
-   * darkened table. The options sit at the bottom of the screen, and onOptionsTop says where they start, so it
-   * can be centered above them.
+   * darkened table. The options sit at the bottom of the screen (an iPhone on its side: at the right), and
+   * onOptionsAt says where they start, so it can be centered in the room above them (or left of them).
    */
   spotlight?: ReactNode;
-  onOptionsTop?: (y: number) => void;
+  onOptionsAt?: (at: Point) => void;
   /**
    * Compact, beside it (on iPad): where the thing is on screen. Its options float in a small panel next to it,
    * nothing darkened, and the panel can be dragged elsewhere (by its title, or the grip in its corner).
@@ -81,8 +81,11 @@ export function CardFocus(props: Props) {
   }, []);
   if (visible) kept.keep(props);
   const { card, title, tiles, rows, panel, overlay, spotlight, near, place } = visible ? props : (kept.get() ?? props);
-  const { onOptionsTop } = props;
+  const { onOptionsAt } = props;
   const { width: screenW } = useWindowDimensions();
+  // An iPhone on its side: too short for the card over its options, so they're side by side (the options scroll
+  // if they're still too tall).
+  const sideways = !(Platform.OS === 'ios' && Platform.isPad) && screenW > height;
   /** The compact panel's height, once laid out (it's placed beside the thing by it). */
   const [panelH, setPanelH] = useState<number | null>(null);
 
@@ -316,28 +319,46 @@ export function CardFocus(props: Props) {
         pointerEvents="box-none"
         style={[
           styles.middle,
+          sideways && styles.sideways,
           !!spotlight && styles.bottom,
-          { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16, paddingLeft: insets.left, paddingRight: insets.right },
+          {
+            paddingTop: insets.top + 12,
+            paddingBottom: insets.bottom + 16,
+            paddingLeft: insets.left,
+            paddingRight: sideways && spotlight ? insets.right + 16 : insets.right,
+          },
           {
             opacity: anim.shown,
             transform: [{ scale: anim.shown.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) }],
           },
         ]}>
         {spotlight ? null : (
-          <>
+          <View pointerEvents="box-none" style={styles.cardSide}>
             {title ? <Text style={styles.title}>{title}</Text> : null}
             <Animated.View {...cardTouches.panHandlers} style={{ transform: anim.pan.getTranslateTransform() }}>
               {card}
             </Animated.View>
-          </>
+          </View>
         )}
         <View
           pointerEvents="box-none"
-          style={styles.options}
-          onLayout={(e) => visible && onOptionsTop?.(e.nativeEvent.layout.y)}>
+          style={[
+            styles.options,
+            sideways && { alignSelf: 'center', width: Math.min(COMPACT_W, screenW * 0.5) },
+            { maxHeight: height - insets.top - insets.bottom - 28 },
+          ]}
+          onLayout={(e) => visible && onOptionsAt?.({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y })}>
         {spotlight && title ? <Text style={styles.title}>{title}</Text> : null}
         {/* In a solid panel, as the iPad's windows are, so nothing behind it gets in the way of its buttons. */}
-        <View style={styles.optionsPanel}>{options}</View>
+        <View style={[styles.optionsPanel, sideways && styles.panelSideways]}>
+          <ScrollView
+            bounces={false}
+            alwaysBounceVertical={false}
+            contentContainerStyle={styles.optionsContent}
+            scrollIndicatorInsets={{ top: 18, bottom: 18 }}>
+            {options}
+          </ScrollView>
+        </View>
         </View>
       </Animated.View>
       {overlay}
@@ -379,6 +400,10 @@ const styles = StyleSheet.create({
   middle: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', gap: 18 },
   // With the thing lit up where it lies: the options at the foot of the screen, under it.
   bottom: { justifyContent: 'flex-end' },
+  // An iPhone on its side: the card and its options side by side (or the options at the right, the thing lit up
+  // left of them).
+  sideways: { flexDirection: 'row', gap: 28 },
+  cardSide: { alignItems: 'center', gap: 18 },
   options: { alignItems: 'center', gap: 18, alignSelf: 'stretch' },
   // The options' panel, solid, framed: the compact one floating beside the thing, and the one under it otherwise.
   compact: {
@@ -397,10 +422,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
   },
   optionsPanel: {
-    alignItems: 'center',
-    gap: 14,
-    paddingTop: 16,
-    paddingBottom: 16,
+    flexShrink: 1,
     width: '94%',
     maxWidth: COMPACT_W,
     borderRadius: 18,
@@ -412,6 +434,8 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
   },
+  panelSideways: { width: '100%' },
+  optionsContent: { alignItems: 'center', gap: 14, paddingTop: 16, paddingBottom: 16 },
   compactHead: { alignSelf: 'stretch', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16 },
   compactTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
   compactGripSpot: { position: 'absolute', right: 0, bottom: 0, width: 30, height: 30 },

@@ -3292,8 +3292,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const bigCard = (c: SandboxCard, withList = false) => {
     const deck = decksById.get(c.deckId);
     if (!deck) return null;
-    // A little smaller with a list of options under it too, so it all fits.
-    const w = Math.min(screenW * (withList ? 0.42 : 0.55), area.h * (withList ? 0.26 : 0.36) * cardRatio(deck));
+    // A little smaller with a list of options under it too, so it all fits (on its side, the options are beside it).
+    const w = sideways
+      ? Math.min(screenW * 0.3, area.h * 0.6 * cardRatio(deck))
+      : Math.min(screenW * (withList ? 0.42 : 0.55), area.h * (withList ? 0.26 : 0.36) * cardRatio(deck));
     return <CardView deck={deck} card={cardOf(c)} faceUp={c.faceUp} width={w} sharp />;
   };
   // ---- The search: a stack looked through, over the table. ----
@@ -3403,8 +3405,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const menuHandCard = menu?.kind === 'hand' ? table?.hands[menu.hand].find((c) => c.iid === menu.iid) : undefined;
 
   // ---- A stack's or piece's options: the camera glides in on it where it lies, and the rest goes dark. ----
-  /** Where its options start on screen, once laid out: it's centered in the room above them. */
-  const [optionsTop, setOptionsTop] = useState<number | null>(null);
+  /** Where its options start on screen, once laid out: it's centered in the room above them (sideways, left of them). */
+  const [optionsAt, setOptionsAt] = useState<{ x: number; y: number } | null>(null);
   /** The camera before it glided in (to glide back to as the options close), and where it glided to. */
   const [glide] = useState(() => {
     const box: { before: Camera | null; to: Camera | null } = { before: null, to: null };
@@ -3463,7 +3465,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       if (before && to && Math.abs(now.tx - to.tx) < 2 && Math.abs(now.ty - to.ty) < 2 && Math.abs(now.a - to.a) < 0.01) glideCamera(before);
       return;
     }
-    if (optionsTop === null) return;
+    if (optionsAt === null) return;
     const cam = glide.get().before ?? readCamera();
     const turn = Math.atan2(cam.b, cam.a);
     // Its outline as seen on screen (turned with the table), fitted to the room above the options.
@@ -3471,9 +3473,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const bw = Math.abs(spot.w * Math.cos(seen)) + Math.abs(spot.h * Math.sin(seen));
     const bh = Math.abs(spot.w * Math.sin(seen)) + Math.abs(spot.h * Math.cos(seen));
     const roomTop = insets.top + 16;
-    const room = { w: screenW - 64, h: Math.max(80, optionsTop - roomTop - 16) };
+    const roomLeft = insets.left + 32;
+    const room = sideways
+      ? { w: Math.max(80, optionsAt.x - roomLeft - 16), h: screenH - roomTop - insets.bottom - 16 }
+      : { w: screenW - 64, h: Math.max(80, optionsAt.y - roomTop - 16) };
     const z = Math.min(SPOT_MAX_ZOOM, Math.max(MIN_ZOOM, SPOT_FILL * Math.min(room.w / Math.max(1, bw), room.h / Math.max(1, bh))));
-    const at = { x: screenW / 2, y: roomTop + room.h / 2 };
+    const at = sideways ? { x: roomLeft + room.w / 2, y: roomTop + room.h / 2 } : { x: screenW / 2, y: roomTop + room.h / 2 };
     const a = z * Math.cos(turn);
     const b = z * Math.sin(turn);
     const to = { a, b, tx: at.x - (a * spot.x - b * spot.y), ty: at.y - (b * spot.x + a * spot.y) };
@@ -3481,7 +3486,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     glideCamera(to);
     // As it opens (and if its options change size, or it changes).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spotKey, optionsTop]);
+  }, [spotKey, optionsAt?.x, optionsAt?.y]);
   /** It, lit up over the darkened table: drawn as it lies, through the same camera, so it's just where it is. */
   const spotStyle = useAnimatedStyle(() => ({
     transform: [
@@ -5161,7 +5166,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         visible={!!sheet && (menu?.kind === 'stack' || menu?.kind === 'hand' || menu?.kind === 'selection' || menuIsPiece)}
         card={sheet && 'header' in sheet ? sheet.header : null}
         spotlight={spotlight}
-        onOptionsTop={setOptionsTop}
+        onOptionsAt={setOptionsAt}
         // On iPad, a window beside it; a card in the hand's beside where it was tapped.
         near={spotNear ?? (IS_PAD && menu?.kind === 'hand' && menuSpot?.at ? { x: menuSpot.at.x, y: menuSpot.at.y, w: 0, h: 0 } : undefined)}
         // Several picked out (on iPad): a window above the finger, or (a follow-up) where the last one was.
