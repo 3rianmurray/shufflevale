@@ -1424,6 +1424,7 @@ function RoundToken({ piece, color, size, selected, k, square }: { piece: TableP
   const squareSide: Pt[] = outline.map((p) => [p[0] + 0.04, p[1] + 0.06]);
   const body = square ? null : cylinderPath(c, art.len(0.48), depth);
   const inset = size * 0.1;
+  const sticker = isSticker(piece);
   return (
     <View style={StyleSheet.absoluteFill}>
       <Canvas style={art.style}>
@@ -1457,9 +1458,11 @@ function RoundToken({ piece, color, size, selected, k, square }: { piece: TableP
             top: inset,
             width: size - inset * 2,
             height: size - inset * 2,
-            borderRadius: isSeeThrough(piece.image) ? 0 : square ? size * 0.1 : size,
+            // (A circle's radius no more than half its width: any more, and iOS leaves it square.)
+            borderRadius: sticker ? 0 : square ? size * 0.1 : (size - inset * 2) / 2,
+            overflow: 'hidden',
           }}
-          contentFit={isSeeThrough(piece.image) ? 'contain' : 'cover'}
+          contentFit={sticker ? 'contain' : 'cover'}
           cachePolicy="memory-disk"
         />
       ) : null}
@@ -1467,6 +1470,12 @@ function RoundToken({ piece, color, size, selected, k, square }: { piece: TableP
     </View>
   );
 }
+
+/**
+ * Whether a token's picture sits whole on it, as a sticker would: a cut-out (with see-through parts) given before
+ * tokens had shapes. One cropped to its shape (it has `tokenShape`) is cut to it, whatever it is.
+ */
+const isSticker = (piece: TablePiece) => !piece.tokenShape && isSeeThrough(piece.image);
 
 /** How many a token stands for, on its corner (when it's more than one). */
 function TokenCount({ n, k }: { n: number; k: number }) {
@@ -1502,7 +1511,7 @@ function ShapedToken({ piece, shape, color, size, selected, k }: { piece: TableP
   const face = at(0, 0);
   const inner = roundedPath(art, outline.map((p) => fit(p, 0.8)), rounding * 0.8);
   const side = shade(color, -0.45);
-  const seeThrough = isSeeThrough(piece.image);
+  const seeThrough = isSticker(piece);
   // The picture as it was cropped: its box on the shape's inside (as the cropper showed the shape on it).
   const [x0, y0] = art.at(fit([0, 0], 0.8));
   const [x1, y1] = art.at(fit([1, 1], 0.8));
