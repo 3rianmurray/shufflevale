@@ -4644,6 +4644,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               // (Its padding inside its content, so the content's measured height is all the panel needs.)
               contentContainerStyle={{ gap: 10, padding: 14 }}
               onContentSizeChange={(_, h) => setToolsContentH(Math.ceil(h))}
+              // With all its tools in view, it doesn't scroll (or bounce) at all; only when they don't fit.
+              alwaysBounceVertical={false}
               showsVerticalScrollIndicator={false}>
               <Text style={styles.toolsTitle}>Tools</Text>
               {(
