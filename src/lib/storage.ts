@@ -162,6 +162,8 @@ export interface Settings {
   toolsSpot?: { side: 'left' | 'right'; at: number };
   /** What the card camera was last told the cards are (see CardKind in lib/cardCapture): none for rectangles. */
   cameraKind?: 'cutOut';
+  /** d6s drawn flat, as they were, rather than as cubes in 3D that tumble when rolled (see Dice3DContext). */
+  flatDice?: boolean;
 }
 export const loadSettings = () => readJson<Settings>(SETTINGS_FILE, {});
 export const saveSettings = (settings: Settings) => writeJson(SETTINGS_FILE, settings);
