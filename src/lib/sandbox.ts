@@ -753,11 +753,11 @@ function inPiece(p: TablePiece, x: number, y: number) {
 }
 
 /**
- * The topmost zone or card spot under a table point, if any (they lie under everything else; see pieceAt). Card
- * spots first: they're small, and often lie in a zone.
+ * The topmost zone or card spot under a table point, if any (or, `unlockedOnly`, the topmost not locked: a locked
+ * one lets touches through to what's under it). Card spots first: they're small, and often lie in a zone.
  */
-export function zoneAt(t: SandboxTable, x: number, y: number): TablePiece | null {
-  const marked = (t.pieces ?? []).filter(onCloth);
+export function zoneAt(t: SandboxTable, x: number, y: number, unlockedOnly = false): TablePiece | null {
+  const marked = (t.pieces ?? []).filter((p) => onCloth(p) && !(unlockedOnly && p.locked));
   const order = [...marked.filter((p) => p.kind === 'zone'), ...marked.filter((p) => p.kind === 'spot')];
   for (let i = order.length - 1; i >= 0; i--) if (onPiece(order[i], x, y)) return order[i];
   return null;

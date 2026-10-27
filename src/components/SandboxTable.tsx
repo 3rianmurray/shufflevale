@@ -2441,13 +2441,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         const exactly = L.table ? pieceAt(L.table, w.x, w.y) : null;
         const onPiece =
           exactly ?? (L.table && !stackAt(L.table, w.x, w.y, L.size) ? pieceAt(L.table, w.x, w.y, FINGER_REACH / cameraZoom(readCamera())) : null);
-        // Custom art lies among the cards: a card over it is what's touched; so is a zone or card spot over it.
+        // Custom art lies among the cards: a card over it is what's touched; so is a zone or card spot over it (one
+        // that isn't locked: a locked one lets the touch through to the art).
         const overArt =
           onPiece?.piece.kind === 'art' && L.table
             ? (() => {
                 const hit = stackAt(L.table, w.x, w.y, L.size);
                 if (hit && L.table.stacks.indexOf(hit.stack) > artLevel(L.table, onPiece.piece)) return true;
-                const zone = zoneAt(L.table, w.x, w.y);
+                const zone = zoneAt(L.table, w.x, w.y, true);
                 return !!zone && liesOver(L.table, zone.id, onPiece.piece.id);
               })()
             : false;
