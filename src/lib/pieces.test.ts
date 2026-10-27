@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
 test('dice are drawn (and found) the one further down and right in front; other pieces keep their places', () => {
@@ -153,6 +153,42 @@ test('picked-out dice line up in a near-square grid round where they were', () =
   // Each set straight, however it lay.
   assert.ok(g.pieces!.every((p) => p.angle === 0));
 });
+/** Whether any two of these boxes (middles and sizes) overlap. */
+const anyOverlap = (boxes: { x: number; y: number; w: number; h: number }[]) =>
+  boxes.some((a, i) => boxes.slice(i + 1).some((b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 && Math.abs(a.y - b.y) < (a.h + b.h) / 2));
+
+test('anything picked out lines up in an even grid, sized so none overlaps, set straight; locked ones stay', () => {
+  const cardSize = () => ({ w: 100, h: 140 });
+  let t = { ...table(), stacks: [
+    { id: 's1', x: 400, y: 400, angle: 30, cards: [{ iid: 'a', deckId: 'd', cardId: 'a', faceUp: true }] },
+    { id: 's2', x: 420, y: 430, angle: 0, cards: [{ iid: 'b', deckId: 'd', cardId: 'b', faceUp: true }] },
+    { id: 'locked', x: 900, y: 900, angle: 10, locked: true, cards: [{ iid: 'c', deckId: 'd', cardId: 'c', faceUp: true }] },
+  ] };
+  t = addPiece(t, { ...newPiece('art', 'big', { x: 410, y: 410 }), w: 600, h: 300, angle: 45 });
+  t = addPiece(t, newPiece('die', 'die', { x: 430, y: 420 }));
+  t = addPiece(t, newPiece('token', 'tok', { x: 405, y: 415 }));
+  const g = gridItems(t, ['s1', 's2', 'locked'], ['big', 'die', 'tok'], cardSize);
+  const boxes = [
+    ...g.stacks.filter((s) => s.id !== 'locked').map((s) => ({ x: s.x, y: s.y, ...cardSize() })),
+    ...g.pieces!.map((p) => ({ x: p.x, y: p.y, ...pieceSizeOf(p) })),
+  ];
+  assert.equal(anyOverlap(boxes), false);
+  assert.ok(g.stacks.filter((s) => s.id !== 'locked').every((s) => s.angle === 0));
+  assert.equal(g.pieces!.find((p) => p.id === 'big')!.angle, 0);
+  assert.deepEqual(g.stacks.find((s) => s.id === 'locked'), t.stacks.find((s) => s.id === 'locked'));
+});
+
+test('a copy pasted several times lays out in a grid, no copy on another', () => {
+  const cardSize = () => ({ w: 100, h: 140 });
+  const clip = { stacks: [{ id: 's', x: 0, y: 0, angle: 0, cards: [{ iid: 'a', deckId: 'd', cardId: 'a', faceUp: true }] }], pieces: [newPiece('token', 'tok', { x: 90, y: 0 })] };
+  let n = 0;
+  const { table: t, stackIds, pieceIds } = pasteCopies(table(), clip, 4, { x: 1000, y: 1000 }, () => `n${n++}`, cardSize);
+  assert.equal(stackIds.length, 4);
+  assert.equal(pieceIds.length, 4);
+  assert.equal(anyOverlap(t.stacks.map((s) => ({ x: s.x, y: s.y, ...cardSize() }))), false);
+  assert.equal(anyOverlap(t.pieces!.map((p) => ({ x: p.x, y: p.y, ...pieceSizeOf(p) }))), false);
+});
+
 test('a timer starts, pauses keeping what it had left, and is set back once it runs out', () => {
   let t = addPiece(table(), newPiece('timer', 'tm', { x: 0, y: 0 }));
   t = toggleTimer(t, 'tm', 1000);

@@ -1513,6 +1513,92 @@ export function gridDice(t: SandboxTable, ids: string[]): SandboxTable {
   return separateDice({ ...t, pieces }, others);
 }
 
+/** The room between things laid out in a grid (see gridItems), and between pasted copies (see pasteCopies). */
+export const GRID_ITEMS_GAP = 16;
+
+/**
+ * Where boxes of these sizes go in an even grid, about a middle: rows of as many as make it near square, each
+ * column as wide as its widest, each row as tall as its tallest, with GRID_ITEMS_GAP between.
+ */
+export function gridSpots(sizes: { w: number; h: number }[], mid: { x: number; y: number }): { x: number; y: number }[] {
+  const cols = Math.ceil(Math.sqrt(sizes.length));
+  const rows = Math.ceil(sizes.length / cols);
+  const colW = Array.from({ length: cols }, (_, c) => Math.max(0, ...sizes.filter((_, i) => i % cols === c).map((s) => s.w)));
+  const rowH = Array.from({ length: rows }, (_, r) => Math.max(0, ...sizes.filter((_, i) => Math.floor(i / cols) === r).map((s) => s.h)));
+  const across = colW.reduce((a, b) => a + b, 0) + GRID_ITEMS_GAP * (cols - 1);
+  const down = rowH.reduce((a, b) => a + b, 0) + GRID_ITEMS_GAP * (rows - 1);
+  // Each column's and row's middle, from the grid's left and top.
+  const colMid = colW.map((w, c) => colW.slice(0, c).reduce((a, b) => a + b + GRID_ITEMS_GAP, 0) + w / 2);
+  const rowMid = rowH.map((h, r) => rowH.slice(0, r).reduce((a, b) => a + b + GRID_ITEMS_GAP, 0) + h / 2);
+  return sizes.map((_, i) => ({
+    x: Math.round(Math.min(TABLE_W, Math.max(0, mid.x - across / 2 + colMid[i % cols]))),
+    y: Math.round(Math.min(TABLE_H, Math.max(0, mid.y - down / 2 + rowMid[Math.floor(i / cols)]))),
+  }));
+}
+
+/**
+ * Whatever's picked out (stacks and pieces) laid out in an even grid, sized to fit each (see gridSpots) so none
+ * overlaps another, in the order they lay (top to bottom, left to right), round where they were on the whole; each
+ * set straight. Dice alone line up tight, as dice (see gridDice). Locked ones (and zones) stay where they are.
+ */
+export function gridItems(t: SandboxTable, stackIds: string[], pieceIds: string[], size: CardSize): SandboxTable {
+  const stacks = t.stacks.filter((s) => stackIds.includes(s.id) && !s.locked);
+  const pieces = (t.pieces ?? []).filter((p) => pieceIds.includes(p.id) && !p.locked && !onCloth(p));
+  if (!stacks.length && pieces.every((p) => p.kind === 'die')) return gridDice(t, pieces.map((p) => p.id));
+  const items = [
+    ...stacks.map((s) => ({ id: s.id, x: s.x, y: s.y, ...cardSizeOf(s.cards[s.cards.length - 1], size) })),
+    ...pieces.map((p) => ({ id: p.id, x: p.x, y: p.y, ...pieceSizeOf(p) })),
+  ];
+  if (items.length < 2) return t;
+  const mid = { x: items.reduce((s, i) => s + i.x, 0) / items.length, y: items.reduce((s, i) => s + i.y, 0) / items.length };
+  // Read in rows: those within half a typical height of each other count as one row.
+  const tall = [...items].map((i) => i.h).sort((a, b) => a - b)[Math.floor(items.length / 2)];
+  const order = [...items].sort((a, b) => (Math.abs(a.y - b.y) < tall / 2 ? a.x - b.x : a.y - b.y));
+  const spots = gridSpots(order, mid);
+  const placed = new Map(order.map((item, i) => [item.id, spots[i]]));
+  const next: SandboxTable = {
+    ...t,
+    stacks: t.stacks.map((s) => (placed.has(s.id) ? { ...s, ...placed.get(s.id)!, angle: 0 } : s)),
+    pieces: (t.pieces ?? []).map((p) => (placed.has(p.id) ? { ...p, ...placed.get(p.id)!, ...(turnsFreely(p) ? { angle: 0 } : {}) } : p)),
+  };
+  // Other dice in the way move aside.
+  return separateDice(next, (next.pieces ?? []).filter((p) => p.kind === 'die' && !placed.has(p.id)).map((p) => p.id));
+}
+
+/** How much room a copy takes up on the table (its things' boxes, from their middles). */
+export function clipExtent(clip: TableClip, size: CardSize): { w: number; h: number } {
+  const boxes = [
+    ...clip.stacks.map((s) => ({ x: s.x, y: s.y, ...cardSizeOf(s.cards[s.cards.length - 1], size) })),
+    ...clip.pieces.map((p) => ({ x: p.x, y: p.y, ...pieceSizeOf(p) })),
+  ];
+  if (!boxes.length) return { w: 0, h: 0 };
+  // (A turned card's box is its widest either way.)
+  const r = (b: { w: number; h: number }) => Math.max(b.w, b.h) / 2;
+  return {
+    w: Math.max(...boxes.map((b) => b.x + r(b))) - Math.min(...boxes.map((b) => b.x - r(b))),
+    h: Math.max(...boxes.map((b) => b.y + r(b))) - Math.min(...boxes.map((b) => b.y - r(b))),
+  };
+}
+
+/**
+ * A copy put on a table `count` times, laid out in an even grid about a point (each copy as it was, none on another:
+ * see gridSpots). Gives the table, and every new stack's and piece's id.
+ */
+export function pasteCopies(t: SandboxTable, clip: TableClip, count: number, at: { x: number; y: number }, ids: () => string, size: CardSize) {
+  const extent = clipExtent(clip, size);
+  const spots = gridSpots(Array.from({ length: count }, () => extent), at);
+  let table = t;
+  const stackIds: string[] = [];
+  const pieceIds: string[] = [];
+  for (const spot of spots) {
+    const pasted = pasteItems(table, clip, spot, ids);
+    table = pasted.table;
+    stackIds.push(...pasted.stackIds);
+    pieceIds.push(...pasted.pieceIds);
+  }
+  return { table, stackIds, pieceIds };
+}
+
 /** Whether cards can go onto a stack: not if any of its cards never stacks. */
 export const stackable = (s: SandboxStack) => !s.cards.some((c) => c.solo);
 

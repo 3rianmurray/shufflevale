@@ -45,6 +45,7 @@ import {
   PIECE_COLORS,
   movePieces,
   gridDice,
+  gridItems,
   separateDice,
   newPiece,
   pieceAt,
@@ -67,7 +68,7 @@ import {
   fitZone,
   clipCards,
   copyItems,
-  pasteItems,
+  pasteCopies,
   PIECE_SIZE,
   rotateItems,
   sortStack,
@@ -339,6 +340,12 @@ const TOOLS_DRAG_SLOP = 8;
 const FLIP_ICON = { ios: 'arrow.trianglehead.2.clockwise.rotate.90', android: 'flip', web: 'flip' } as const;
 /** Copy's button, the last in every menu that has it. */
 const COPY_ICON = { ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' } as const;
+
+/** The most copies Paste several puts down at once. */
+const PASTE_MAX = 50;
+
+/** The buttons in the column by what's picked out (see `column`). */
+type ColumnButton = 'flip' | 'shuffle' | 'gather' | 'roll' | 'grid' | 'more';
 
 /** What a menu is open on. */
 type Menu =
@@ -1403,10 +1410,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const artCount = (table?.pieces ?? []).filter((p) => p.kind === 'art').length + (table?.pieces ?? []).reduce((n, p) => n + bagItems(p).filter((i) => i.piece?.kind === 'art').length, 0);
   const artFull = () =>
     Alert.alert('That’s all the custom art a table holds', `A table can have up to ${ART_MAX} pieces of custom art, so it stays quick to move about. Take some off to add more.`);
-  /** The picked-out dice lined up in a tight grid (the button by the roll one). */
-  const gridPickedDice = () => {
-    if (!table || pickedDice.length < 2) return;
-    commit(gridDice(table, pickedDice));
+  /** Whatever's picked out laid out in an even grid, none on another (dice alone lined up tight: see gridItems). */
+  const gridPicked = () => {
+    if (!table || chosen.length + pickedPieces.length < 2) return;
+    commit(gridItems(table, chosen, pickedPieces, size));
     haptics.drop();
   };
   // ---- Pro: every component but dice and card spots is part of it. The Playground's are there to try: what's on
@@ -1579,38 +1586,47 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     setSelected([]);
     haptics.drop();
   };
-  // With cards picked out (and nothing carried), their buttons stand in a column up from the flip one: shuffle (when
-  // a picked-out stack has cards to shuffle), gather (two or more picked out), then ••• (everything else).
-  /** The button `n` places above the flip one. */
+  // With anything picked out (and nothing carried), its buttons stand in a column up from the corner, from the bottom:
+  // for cards, flip, shuffle (when a picked-out stack has cards to shuffle) and gather (two or more); for dice (or
+  // coins, or spinners) alone, roll; with two or more things, grid (laid out evenly); and on top, ••• (everything
+  // else, as a hold on them gives).
+  /** The button `n` places above the corner's (the flip one's). */
   const slot = (n: number) => ({ x: flipButton.x, y: flipButton.y - n * (FLIP_SIZE + 12), size: FLIP_SIZE });
   /** A picked-out stack has two or more cards: the shuffle button shows. */
   const canShuffle = chosen.some((id) => (table?.stacks.find((s) => s.id === id)?.cards.length ?? 0) > 1);
-  const shuffleButton = slot(1);
+  /** Two or more things picked out: the grid button lays them out (one alone has nothing to line up with). */
+  const gridLive = chosen.length + pickedPieces.length > 1;
+  const column: ColumnButton[] = [
+    ...(chosen.length ? (['flip'] as const) : []),
+    ...(canShuffle ? (['shuffle'] as const) : []),
+    ...(chosen.length > 1 ? (['gather'] as const) : []),
+    ...(rollKind ? (['roll'] as const) : []),
+    ...(gridLive ? (['grid'] as const) : []),
+    ...(chosen.length || pickedPieces.length ? (['more'] as const) : []),
+  ];
+  /** Where a button of the column stands (one not in it, as dice dragged have their roll one: just above it). */
+  const slotOf = (b: ColumnButton) => slot(column.includes(b) ? column.indexOf(b) : column.length);
+  const shuffleButton = slotOf('shuffle');
   /** The gather button, as it stands while the cards are just picked out (while they're dragged, see `stackButton`). */
-  const gatherButton = slot(canShuffle ? 2 : 1);
-  const moreButton = slot(1 + (canShuffle ? 1 : 0) + (chosen.length > 1 ? 1 : 0));
+  const gatherButton = slotOf('gather');
+  const moreButton = slotOf('more');
+  const buttonsLive = !held && !groupMoving && !toolsOpen;
   /** Which of the selection's buttons is at a point on screen, if any (while nothing's carried). */
   const selectionButtonAt = (x: number, y: number): 'flip' | 'shuffle' | 'gather' | 'more' | null => {
     const on = (b: { x: number; y: number; size: number }) => Math.hypot(x - (b.x + b.size / 2), y - (b.y + b.size / 2)) <= b.size / 2 + 8;
     // Not while the tools are out: they lie over the buttons, which wait, dimmed.
-    if (!chosen.length || held || groupMoving || toolsOpen) return null;
-    if (on(flipButton)) return 'flip';
+    if (!buttonsLive) return null;
+    if (chosen.length && on(flipButton)) return 'flip';
     if (canShuffle && on(shuffleButton)) return 'shuffle';
     if (chosen.length > 1 && on(gatherButton)) return 'gather';
-    if (on(moreButton)) return 'more';
+    if (column.includes('more') && on(moreButton)) return 'more';
     return null;
   };
-  // While dice are picked out: the roll button, where the selection's column of buttons would start (or above the
-  // cards' buttons, if cards are picked out too), and with two or more, one above it to line them up in a grid.
-  const rollSlot = chosen.length ? 2 + (canShuffle ? 1 : 0) + (chosen.length > 1 ? 1 : 0) : 0;
-  const rollButton = slot(rollSlot);
-  const diceGridButton = slot(rollSlot + 1);
-  const diceButtonsLive = !held && !groupMoving && !toolsOpen;
+  const rollButton = slotOf('roll');
+  const gridButton = slotOf('grid');
   const onButton = (b: { x: number; y: number }, x: number, y: number) => Math.hypot(x - (b.x + FLIP_SIZE / 2), y - (b.y + FLIP_SIZE / 2)) <= FLIP_SIZE / 2 + 8;
-  const onRollButton = (x: number, y: number) => !!rollKind && diceButtonsLive && onButton(rollButton, x, y);
-  /** Two or more dice picked out: the grid button lines them up (one alone has nothing to line up with). */
-  const gridLive = rollKind === 'die' && pickedPieces.length > 1;
-  const onDiceGridButton = (x: number, y: number) => gridLive && diceButtonsLive && onButton(diceGridButton, x, y);
+  const onRollButton = (x: number, y: number) => !!rollKind && buttonsLive && onButton(rollButton, x, y);
+  const onGridButton = (x: number, y: number) => gridLive && buttonsLive && onButton(gridButton, x, y);
   /** The roll button, while dice are dragged, under another finger (see dragRollKind). */
   const onDragRollButton = (x: number, y: number) => !!dragRollKind && !toolsOpen && onButton(rollButton, x, y);
   /** Stacks shuffled where they lie (one undo), the riffle played on each. */
@@ -1725,8 +1741,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       setPieceDrag: (d: PieceDrag | null) => void;
       setGroupShift: (d: { dx: number; dy: number } | null) => void;
       dropPieces: (d: PieceDrag) => void;
-      onDiceGridButton: (x: number, y: number) => boolean;
-      gridPickedDice: () => void;
+      onGridButton: (x: number, y: number) => boolean;
+      gridPicked: () => void;
       addPieceToTable: (kind: PieceKind, sides?: number, shape?: PieceShape, extra?: Partial<TablePiece>) => void;
       setZoneSize: (z: { id: string; w: number; h: number } | null) => void;
       openAddAt: (at: { x: number; y: number }) => void;
@@ -1740,7 +1756,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     };
     return { set: (next: typeof box) => Object.assign(box, next), get: () => box };
   });
-  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onDiceGridButton, gridPickedDice, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, onDragRollButton, rollDice, lockedOut, openPro, zoomTo: (t) => zoomToTarget(t) });
+  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onGridButton, gridPicked, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, onDragRollButton, rollDice, lockedOut, openPro, zoomTo: (t) => zoomToTarget(t) });
 
   // The gesture in progress (never drawn from, so kept outside React state).
   const [gestureState] = useState(() => {
@@ -2338,13 +2354,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           L.rollDice(L.pickedRollables);
           return;
         }
-        if (L.onDiceGridButton(t.x, t.y)) {
+        // The grid button, while two or more things are picked out: laid out evenly.
+        if (L.onGridButton(t.x, t.y)) {
           touch.mode = 'button';
-          L.gridPickedDice();
+          L.gridPicked();
           return;
         }
-        // The selection's buttons (flip, gather, take off the table), showing while cards are picked out.
-        if (L.selected.length) {
+        // The selection's buttons (flip, shuffle and gather for cards; ••• for anything picked out).
+        if (L.selected.length || L.pickedPieces.length) {
           const b = L.selectionButtonAt(t.x, t.y);
           if (b) {
             touch.mode = 'button';
@@ -3242,7 +3259,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    * What's been copied put in the middle of the view, laid out as it was, and picked out, ready to drag where it's
    * wanted. Not past the table's card limit, nor its custom art's.
    */
-  const pasteClip = (inMiddle = false) => {
+  /** What's copied put on the table (`copies` times, laid out in a grid, none on another), and picked out. */
+  const pasteClip = (inMiddle = false, copies = 1) => {
     if (!table || !view || !clip) return;
     if (!pro && playgroundHere) {
       // On the Playground, without Pro: anything copied from it (every component, and its own cards), but no
@@ -3254,9 +3272,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // Anywhere else, Pro's components need Pro (copied from the Playground, too).
       return openPro();
     }
-    if (!roomFor(table, clipCards(clip))) return;
-    if (artCount + clip.pieces.filter((p) => p.kind === 'art').length > ART_MAX) return artFull();
-    const { table: next, stackIds, pieceIds } = pasteItems(table, clip, inMiddle ? middleOfView() : addSpot(), newId);
+    if (!roomFor(table, clipCards(clip) * copies)) return;
+    if (artCount + clip.pieces.filter((p) => p.kind === 'art').length * copies > ART_MAX) return artFull();
+    const { table: next, stackIds, pieceIds } = pasteCopies(table, clip, copies, inMiddle ? middleOfView() : addSpot(), newId, size);
     commit(next);
     setSelected(stackIds);
     setPickedPieces(pieceIds);
@@ -4354,13 +4372,30 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         ).map(proTile),
         moreLocked: !pro,
         // Under them, always there: what's been copied, put down where the table was held (or in the middle of the
-        // view); grayed out while nothing has been. (Pro's rules are pasteClip's.)
-        wideTile: {
-          label: clip && clipSize(clip) > 1 ? `Paste ${clipSize(clip)} things` : 'Paste',
-          icon: icon('doc.on.clipboard', 'content_paste'),
-          disabled: !clip,
-          onPress: () => pasteClip(),
-        },
+        // view), once or as many times as asked (laid out in a grid); grayed out while nothing has been. (Pro's rules
+        // are pasteClip's.)
+        wideTile: [
+          {
+            label: clip && clipSize(clip) > 1 ? `Paste ${clipSize(clip)} things` : 'Paste',
+            icon: icon('doc.on.clipboard', 'content_paste'),
+            disabled: !clip,
+            onPress: () => pasteClip(),
+          },
+          {
+            label: 'Paste several',
+            icon: icon('square.on.square', 'library_add'),
+            disabled: !clip,
+            onPress: () =>
+              setTimeout(
+                () =>
+                  askNumber('How many copies', '2', (text) => {
+                    const n = parseInt(text.replace(/\D/g, ''), 10);
+                    if (n > 0) pasteClip(false, Math.min(PASTE_MAX, n));
+                  }),
+                350,
+              ),
+          },
+        ],
         actions: [],
       };
     }
@@ -5072,8 +5107,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             </View>
           ) : null}
 
-          {/* With cards picked out (not dragged): the selection's other options, taking it off the table among them. */}
-          {!held && !groupMoving && chosen.length ? (
+          {/* With anything picked out (not dragged): its other options (as a hold on it gives), on top of the column. */}
+          {!held && !groupMoving && column.includes('more') ? (
             <View
               pointerEvents="none"
               style={[styles.flipButton, styles.moreButtonLook, { left: moreButton.x, top: moreButton.y, width: FLIP_SIZE, height: FLIP_SIZE, borderRadius: FLIP_SIZE / 2 }, toolsOpen && styles.waiting]}>
@@ -5103,11 +5138,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               />
             </View>
           ) : null}
-          {/* With several dice picked out (and nothing else): one to line them up in a tight grid. */}
+          {/* With two or more things picked out: one to lay them out in an even grid. */}
           {!held && !groupMoving && gridLive ? (
             <View
               pointerEvents="none"
-              style={[styles.flipButton, { left: diceGridButton.x, top: diceGridButton.y, width: FLIP_SIZE, height: FLIP_SIZE, borderRadius: FLIP_SIZE / 2 }, toolsOpen && styles.waiting]}>
+              style={[styles.flipButton, { left: gridButton.x, top: gridButton.y, width: FLIP_SIZE, height: FLIP_SIZE, borderRadius: FLIP_SIZE / 2 }, toolsOpen && styles.waiting]}>
               <SymbolView name={{ ios: 'square.grid.2x2', android: 'grid_view', web: 'grid_view' }} size={24} weight="semibold" tintColor={colors.accentText} />
             </View>
           ) : null}

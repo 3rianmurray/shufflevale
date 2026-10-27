@@ -53,8 +53,8 @@ interface Props {
    */
   moreTiles?: SheetTile[];
   moreLocked?: boolean;
-  /** One more tile, under the grid and centered, as wide as two (e.g. Paste, under what can be added). */
-  wideTile?: SheetTile;
+  /** One more tile (or two, side by side), under the grid and centered, each as wide as two (e.g. Paste). */
+  wideTile?: SheetTile | SheetTile[];
   actions: SheetAction[];
   onClose: () => void;
   /**
@@ -137,7 +137,8 @@ export function ActionSheet(props: Props) {
   }, []);
   if (visible) shown.keep(props);
   const showing = visible ? props : (shown.get() ?? props);
-  const { title, header, banner, tiles, moreTiles, moreLocked, wideTile, actions, overlay, place, onPlace } = showing;
+  const { title, header, banner, tiles, moreTiles, moreLocked, actions, overlay, place, onPlace } = showing;
+  const wideTiles = showing.wideTile ? [showing.wideTile].flat() : [];
   // A window or a dropped panel closes with a tap elsewhere: no Cancel, only a close button of its own (Done).
   const closeLabel = showing.closeLabel ?? (place ? null : 'Cancel');
   // The modal stays up after `visible` goes false until the sheet has slid away.
@@ -147,7 +148,7 @@ export function ActionSheet(props: Props) {
   // The walkthrough, when its step is about one of this menu's choices: the tip shows here, by that choice.
   const tour = useTourStep();
   const guided =
-    visible && tour?.step.tile && [...(tiles ?? []), ...(moreTiles ?? []), ...(wideTile ? [wideTile] : []), ...actions].some((a) => a.label === tour.step.tile) ? tour : null;
+    visible && tour?.step.tile && [...(tiles ?? []), ...(moreTiles ?? []), ...wideTiles, ...actions].some((a) => a.label === tour.step.tile) ? tour : null;
   const guide = useMemo(() => {
     const box = { chosen: false, was: false };
     return { box };
@@ -259,7 +260,7 @@ export function ActionSheet(props: Props) {
       {header}
       {title && place?.kind !== 'window' ? <Text style={styles.title}>{title}</Text> : null}
       {banner}
-      {tileRowsShown.length || moreRowsShown.length || wideTile ? (
+      {tileRowsShown.length || moreRowsShown.length || wideTiles.length ? (
         <View style={styles.tiles}>
           {tileRowsShown.map((row, r) => (
             <View key={r} style={styles.tileRow}>
@@ -285,7 +286,7 @@ export function ActionSheet(props: Props) {
               {row.map((t) => tileButton(t, 1, !!moreLocked))}
             </View>
           ))}
-          {wideTile ? <View style={styles.tileRow}>{tileButton(wideTile, 2)}</View> : null}
+          {wideTiles.length ? <View style={styles.tileRow}>{wideTiles.map((t) => tileButton(t, 2))}</View> : null}
         </View>
       ) : null}
       {actions.map((a) => (
