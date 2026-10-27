@@ -4517,7 +4517,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const artOver = (stackId: string | null) =>
     (table?.pieces ?? [])
       .filter((p) => p.kind === 'art' && (stackId ? p.over === stackId : !p.over || !stackIds.has(p.over)))
-      .map(drawPiece);
+      // (No layer: it lies where it's drawn, among the cards.)
+      .map((p) => drawPiece(p));
   const theme = themeOf(table.background);
   const ink = (alpha: number) => `rgba(${theme.ink},${alpha})`;
   const arrivingStack = arriving ? table.stacks.find((s) => s.id === arriving.stackId) : undefined;
