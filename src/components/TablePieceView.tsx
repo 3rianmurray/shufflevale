@@ -1423,8 +1423,9 @@ function RoundToken({ piece, color, size, selected, k, square }: { piece: TableP
   ];
   const squareSide: Pt[] = outline.map((p) => [p[0] + 0.04, p[1] + 0.06]);
   const body = square ? null : cylinderPath(c, art.len(0.48), depth);
-  const inset = size * 0.1;
   const sticker = isSticker(piece);
+  // A picture covers the whole top, edge to edge (no rim of its color round it); a sticker sits a little inside it.
+  const inset = size * (sticker ? 0.1 : 0.02);
   return (
     <View style={StyleSheet.absoluteFill}>
       <Canvas style={art.style}>
@@ -1459,7 +1460,7 @@ function RoundToken({ piece, color, size, selected, k, square }: { piece: TableP
             width: size - inset * 2,
             height: size - inset * 2,
             // (A circle's radius no more than half its width: any more, and iOS leaves it square.)
-            borderRadius: sticker ? 0 : square ? size * 0.1 : (size - inset * 2) / 2,
+            borderRadius: sticker ? 0 : square ? size * 0.14 : (size - inset * 2) / 2,
             overflow: 'hidden',
           }}
           contentFit={sticker ? 'contain' : 'cover'}
@@ -1509,12 +1510,13 @@ function ShapedToken({ piece, shape, color, size, selected, k }: { piece: TableP
   const rounding = shape === 'star' ? 0.02 : 0.06;
   const at = (dx: number, dy: number) => roundedPath(art, top.map(([x, y]) => [x + dx, y + dy] as Pt), rounding);
   const face = at(0, 0);
-  const inner = roundedPath(art, outline.map((p) => fit(p, 0.8)), rounding * 0.8);
   const side = shade(color, -0.45);
   const seeThrough = isSticker(piece);
-  // The picture as it was cropped: its box on the shape's inside (as the cropper showed the shape on it).
-  const [x0, y0] = art.at(fit([0, 0], 0.8));
-  const [x1, y1] = art.at(fit([1, 1], 0.8));
+  // The picture as it was cropped, covering the whole top (the shape on it as the cropper showed it), no rim of
+  // its color round it; a sticker a little inside.
+  const s = seeThrough ? 0.8 : 1;
+  const [x0, y0] = art.at(fit([0, 0], s));
+  const [x1, y1] = art.at(fit([1, 1], s));
   return (
     <View style={StyleSheet.absoluteFill}>
       <Canvas style={art.style}>
@@ -1527,7 +1529,7 @@ function ShapedToken({ piece, shape, color, size, selected, k }: { piece: TableP
         })}
         <Path path={face} color={color} />
         {picture ? (
-          <Group clip={seeThrough ? undefined : inner}>
+          <Group clip={seeThrough ? undefined : face}>
             <SkImage image={picture} x={x0} y={y0} width={x1 - x0} height={y1 - y0} fit={seeThrough ? 'contain' : 'cover'} />
           </Group>
         ) : null}

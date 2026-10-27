@@ -5334,10 +5334,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           setTokenCrop(null);
           if (!crop || !cropped) return;
           (async () => {
-            const image = importImage(TOKEN_PICTURES, await tokenPicture(cropped));
+            const picture = await tokenPicture(cropped);
+            // Its color, as a die's with art on it: the commonest round the edge of the shape, so its sides match.
+            const color = await faceArtColor(picture, tokenOutline(tokenShape));
+            const image = importImage(TOKEN_PICTURES, picture);
             const now = latest.get();
             if (!now.table) return;
-            const look = { image, tokenShape, square: undefined };
+            const look = { image, tokenShape, square: undefined, color };
             if (crop.id) now.commit(setPiece(now.table, crop.id, look));
             else now.addPieceToTable('token', undefined, undefined, look);
           })().catch((e: unknown) => Alert.alert('Couldn’t use that picture', e instanceof Error ? e.message : String(e)));
