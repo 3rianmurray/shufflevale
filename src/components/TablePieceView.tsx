@@ -483,12 +483,22 @@ function Die({
    * start, in the very render that has it where it lands: so the first frame drawn shows it where it set off from.
    * (Set to the start afterward instead, the change reached the screen a frame late: it showed where it lands first.)
    */
-  const [motion, setMotion] = useState(() => ({ key: 0, travel: new Animated.Value(1), time: new Animated.Value(1), spun: makeMutable(1) }));
+  // Where it set off from (how far back) is the roll's own, kept with its motion: a new roll's distance put with the
+  // last roll's finished motion (whose value on this side can still read as just started: it ran natively) drew it
+  // that far back from where it still was, for a frame, before the new roll began.
+  const [motion, setMotion] = useState(() => ({ key: 0, dx: 0, dy: 0, travel: new Animated.Value(1), time: new Animated.Value(1), spun: makeMutable(1) }));
   // Only once it's where it lands: a roll can come a moment before the table that has it there does, and started
   // early it would tumble back from where it still was.
   const landed = !rollFrom?.to || (rollFrom.to.x === piece.x && rollFrom.to.y === piece.y);
   if (rollKey && landed && motion.key !== rollKey && !prefersReducedMotion()) {
-    setMotion({ key: rollKey, travel: new Animated.Value(0), time: new Animated.Value(0), spun: makeMutable(0) });
+    setMotion({
+      key: rollKey,
+      dx: rollFrom?.dx ?? 0,
+      dy: rollFrom?.dy ?? 0,
+      travel: new Animated.Value(0),
+      time: new Animated.Value(0),
+      spun: makeMutable(0),
+    });
   }
   const { travel, time, spun } = motion;
   /** The roll it last tumbled for (each is played once, even if it's nudged off where it landed afterward). */
@@ -541,8 +551,7 @@ function Die({
   const color = (faceArt && piece.faceColors?.[shown - 1]) || ownColor;
   // (Drawn on the canvas, clipped to its face, for every die but a d6, whose square face takes it as a picture.)
   const artImage = useImage(faceArt && sides !== 6 ? imageUri(faceArt) : null);
-  const dx = rollFrom?.dx ?? 0;
-  const dy = rollFrom?.dy ?? 0;
+  const { dx, dy } = motion;
   // It spins the way it's thrown.
   const turn = (dx >= 0 ? 1 : -1) * 360 * ROLL_TURNS;
   const transform = useMemo(
