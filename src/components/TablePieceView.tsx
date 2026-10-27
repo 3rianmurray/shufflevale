@@ -1,12 +1,14 @@
-import { Canvas, Circle, Group, Image as SkImage, Path, Shadow, Skia, useImage, vec } from '@shopify/react-native-skia';
-import type { SkImage as SkiaImage, SkPath } from '@shopify/react-native-skia';
+import { Canvas, Circle, Group, Image as SkImage, matchFont, Path, Shadow, Skia, Text as SkText, useImage, vec } from '@shopify/react-native-skia';
+import type { SkFont, SkImage as SkiaImage, SkPath } from '@shopify/react-native-skia';
 import { Easing as ReEasing, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { drawCubeSlots, restingTurn, SIDE_VALUES, tumbleFor, tumblingTurn } from '../lib/cube3d';
 import type { Mat, SideSlot, Tumble } from '../lib/cube3d';
+import { drawPoly, polyModel, restingPolyTurn } from '../lib/polyhedra';
+import type { FaceLabel, PolyModel, PolySlot } from '../lib/polyhedra';
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Platform, StyleSheet, Text, View } from 'react-native';
 
 import { Image } from 'expo-image';
 
@@ -464,8 +466,13 @@ function Die({
 }) {
   const OS = useContext(OversampleContext);
   const sides = piece.sides ?? 6;
-  /** A d6 as a cube in 3D (see lib/cube3d): it tumbles over its real faces as it's rolled. */
-  const solid = useContext(Dice3DContext) && sides === 6;
+  /**
+   * In 3D, tumbling over its real faces as it's rolled: a d6 as a cube (see lib/cube3d), the rest but the d100 (a
+   * ball as it is) as their own solids (see lib/polyhedra).
+   */
+  const in3D = useContext(Dice3DContext);
+  const solid = in3D && sides === 6;
+  const poly = in3D && SOLID_SIDES.includes(sides);
   /**
    * How far through its tumble it is (0 just thrown, 1 at rest, eased), for a d6 in 3D: run on the animation
    * thread, which works out and draws each frame without React (see SolidD6).
@@ -494,8 +501,8 @@ function Die({
     // Its rim hidden till it's settled (before it's drawn: this is a layout effect).
     setRolling(true);
     const settled = setTimeout(() => setRolling(false), ROLL_MS);
-    // A d6 in 3D tumbles over its real faces, settling as it lands.
-    if (solid) {
+    // A die in 3D tumbles over its real faces, settling as it lands.
+    if (solid || poly) {
       spun.set(0);
       spun.set(withTiming(1, { duration: ROLL_MS, easing: ReEasing.out(ReEasing.cubic) }));
       return () => {
@@ -525,7 +532,7 @@ function Die({
       setFace(null);
       setRolling(false);
     };
-  }, [rollKey, landed, sides, solid, travel, time, spun]);
+  }, [rollKey, landed, sides, solid, poly, travel, time, spun]);
   const shown = face ?? piece.value;
   /** The player's own art for the face it shows, if it has some; then the rest of it is in the art's own color. */
   // (None on a die that takes none: a d4 or d8, even one given some before.)
@@ -541,12 +548,12 @@ function Die({
     () => [
       { translateX: travel.interpolate({ inputRange: [0, 1], outputRange: [-dx, 0] }) },
       { translateY: travel.interpolate({ inputRange: [0, 1], outputRange: [-dy, 0] }) },
-      // (A d6 in 3D turns over in its own drawing instead, still lit from the same side.)
-      { rotate: solid ? '0deg' : travel.interpolate({ inputRange: [0, 1], outputRange: [`${-turn}deg`, '0deg'] }) },
+      // (A die in 3D turns over in its own drawing instead, still lit from the same side.)
+      { rotate: solid || poly ? '0deg' : travel.interpolate({ inputRange: [0, 1], outputRange: [`${-turn}deg`, '0deg'] }) },
       // Off the table and back, lower each bounce.
       { scale: time.interpolate({ inputRange: [0, 0.16, 0.34, 0.5, 0.64, 0.78, 1], outputRange: [1, 1.32, 1, 1.14, 1, 1.04, 1] }) },
     ],
-    [travel, time, dx, dy, turn, solid],
+    [travel, time, dx, dy, turn, solid, poly],
   );
   const ink = isLight(color) ? '#2c2c2a' : '#ffffff';
   // Its shape turned as it lies, each face lit as it now faces (the one looking up, as evenly as ever).
@@ -562,7 +569,11 @@ function Die({
   );
   const cube = useMemo(() => cubeAt(angle), [angle]);
   // A d6 in 3D: how it lies, and how this roll tumbles it (each frame of it worked out on the animation thread).
-  const rest = useMemo(() => restingTurn(piece.value, angle), [piece.value, angle]);
+  const model = poly ? solidOf(sides) : null;
+  const rest = useMemo(
+    () => (model ? restingPolyTurn(model, piece.value, angle) : restingTurn(piece.value, angle)),
+    [model, piece.value, angle],
+  );
   const spin = useMemo(() => tumbleFor(rollKey || 1), [rollKey]);
   // Each face's own art (a d6's, in 3D, where any face can be seen as it tumbles).
   const artOf = (value: number) => (solid && faceCount(piece) ? (piece.faces?.[value - 1] ?? null) : null);
@@ -611,6 +622,8 @@ function Die({
         }}>
         {solid ? (
           <SolidD6 rest={rest} spin={spin} spun={spun} color={color} ink={ink} arts={faceArts} px={px} size={size} OS={OS} rimmed={selected && !rolling} shadow={shadow} />
+        ) : model ? (
+          <SolidPoly model={model} rest={rest} spin={spin} spun={spun} color={color} ink={ink} px={px} OS={OS} rimmed={selected && !rolling} shadow={shadow} />
         ) : sides === 6 ? (
           <>
             {/*
@@ -687,7 +700,7 @@ function Die({
           cachePolicy="memory-disk"
         />
       ) : null}
-      {sides === 6 || faceArt ? null : (
+      {sides === 6 || faceArt || poly ? null : (
         <Text
           allowFontScaling={false}
           style={[
@@ -783,6 +796,124 @@ function SolidD6({
         <SolidSide key={value} view={view} front={front} i={i} value={value} color={color} ink={ink} art={arts[value - 1]} px={px} size={size} />
       ))}
       {rimmed ? <Path path={outline} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
+    </>
+  );
+}
+
+/** The dice drawn as their own solids in 3D (the d6 is a cube: see SolidD6; the d100 stays a ball). */
+const SOLID_SIDES = [4, 8, 10, 12, 20];
+/** Each die's solid, made once. */
+const solids = new Map<number, PolyModel>();
+function solidOf(sides: number): PolyModel {
+  if (!solids.has(sides)) solids.set(sides, polyModel(sides));
+  return solids.get(sides)!;
+}
+/** The numbers on a solid die's faces: bold, drawn 100 tall and scaled to each face (made once). */
+let numberFont: SkFont | null = null;
+function NUMBER_FONT(): SkFont {
+  if (!numberFont) numberFont = matchFont({ fontFamily: Platform.select({ ios: 'Helvetica Neue', default: 'sans-serif' }), fontSize: 100, fontWeight: 'bold' });
+  return numberFont;
+}
+
+/**
+ * A d4, d8, d10, d12 or d20 as its own solid in 3D (see lib/polyhedra), drawn on the animation thread as SolidD6
+ * is: its outline under its shadow, the faces that face the viewer, each lit as it faces and edged, and on each its
+ * number (a d4's at its corners), its own frame mapped onto it so it tilts and turns with it.
+ */
+function SolidPoly({
+  model,
+  rest,
+  spin,
+  spun,
+  color,
+  ink,
+  px,
+  OS,
+  rimmed,
+  shadow,
+}: {
+  model: PolyModel;
+  rest: Mat;
+  spin: Tumble;
+  spun: SharedValue<number>;
+  color: string;
+  ink: string;
+  px: number;
+  OS: number;
+  rimmed: boolean;
+  shadow: ReactElement;
+}) {
+  const view = useDerivedValue(() => drawPoly(model, tumblingTurn(rest, spin, spun.value)));
+  const outline = useDerivedValue(() => {
+    const p = Skia.Path.Make();
+    view.value.outline.forEach((c, k) => (k ? p.lineTo((c[0] + PAD) * px, (c[1] + PAD) * px) : p.moveTo((c[0] + PAD) * px, (c[1] + PAD) * px)));
+    p.close();
+    return p;
+  });
+  return (
+    <>
+      <Path path={outline} color={shade(color, -0.3)}>
+        {shadow}
+      </Path>
+      {model.faces.map((f, i) => (
+        <SolidPolyFace key={i} view={view} i={i} labels={f.labels} sides={model.sides} color={color} ink={ink} px={px} OS={OS} />
+      ))}
+      {rimmed ? <Path path={outline} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
+    </>
+  );
+}
+
+/** A face of a solid die: filled in its shade and edged, its numbers on it (nothing while it faces away). */
+function SolidPolyFace({
+  view,
+  i,
+  labels,
+  sides,
+  color,
+  ink,
+  px,
+  OS,
+}: {
+  view: SharedValue<{ slots: PolySlot[]; outline: Pt[] }>;
+  i: number;
+  labels: FaceLabel[];
+  sides: number;
+  color: string;
+  ink: string;
+  px: number;
+  OS: number;
+}) {
+  const path = useDerivedValue(() => {
+    const s = view.value.slots[i];
+    const p = Skia.Path.Make();
+    if (!s.seen) return p;
+    s.corners.forEach((c, k) => (k ? p.lineTo((c[0] + PAD) * px, (c[1] + PAD) * px) : p.moveTo((c[0] + PAD) * px, (c[1] + PAD) * px)));
+    p.close();
+    return p;
+  });
+  const fill = useDerivedValue(() => shade(color, view.value.slots[i].light));
+  const matrix = useDerivedValue(() => {
+    const s = view.value.slots[i];
+    return Skia.Matrix([s.across[0] * px, s.down[0] * px, (s.origin[0] + PAD) * px, s.across[1] * px, s.down[1] * px, (s.origin[1] + PAD) * px, 0, 0, 1]);
+  });
+  const seen = useDerivedValue(() => (view.value.slots[i].seen ? 1 : 0));
+  const font = NUMBER_FONT();
+  return (
+    <>
+      <Path path={path} color={fill} />
+      <Path path={path} color={shade(color, -0.45)} style="stroke" strokeWidth={0.6 * OS} opacity={0.35} />
+      <Group matrix={matrix} opacity={seen}>
+        {labels.map((l, k) => {
+          // A 6 and a 9 marked, on dice that have both, so they're told apart whichever way up.
+          const text = sides >= 9 && (l.value === 6 || l.value === 9) ? `${l.value}.` : String(l.value);
+          const width = font.measureText(text).width;
+          return (
+            <Group key={k} transform={[{ translateX: l.x }, { translateY: l.y }, { rotate: (l.rot * Math.PI) / 180 }, { scale: l.size / 100 }]}>
+              <SkText x={-width / 2} y={36} text={text} font={font} color={ink} />
+            </Group>
+          );
+        })}
+      </Group>
     </>
   );
 }

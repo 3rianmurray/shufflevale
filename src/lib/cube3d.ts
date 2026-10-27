@@ -14,11 +14,11 @@ export type Pt = [number, number];
 
 /** The cube's edge, as a share of the die's box, how far up-left a height is drawn, and where its middle's drawn. */
 const EDGE = 0.8;
-const SLANT = 0.175;
+export const SLANT = 0.175;
 const MIDDLE: Pt = [0.49, 0.49];
 /** Where the light comes from (up and to the left), and how a side's lit by how squarely it faces it. */
-const LIGHT: Vec = [-0.3, -0.7, 0.65];
-const LIT = { base: -0.193, by: 0.358 };
+export const LIGHT: Vec = [-0.3, -0.7, 0.65];
+export const LIT = { base: -0.193, by: 0.358 };
 
 /**
  * Each side: its number, which way it faces, and its own square's across (u) and down (v) directions (u × v is
@@ -33,23 +33,24 @@ const SIDES: { value: number; n: Vec; u: Vec; v: Vec }[] = [
   { value: 4, n: [0, -1, 0], u: [0, 0, -1], v: [1, 0, 0] },
 ];
 
-// (Each of these is a worklet too: a die's tumble is worked out frame by frame on the animation thread.)
-function dot(a: Vec, b: Vec) {
+// (Each of these is a worklet too: a die's tumble is worked out frame by frame on the animation thread. They're
+// shared with the other dice: see lib/polyhedra.)
+export function dot(a: Vec, b: Vec) {
   'worklet';
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
-function apply(m: Mat, p: Vec): Vec {
+export function apply(m: Mat, p: Vec): Vec {
   'worklet';
   return [dot(m[0], p), dot(m[1], p), dot(m[2], p)];
 }
-function times(a: Mat, b: Mat): Mat {
+export function times(a: Mat, b: Mat): Mat {
   'worklet';
   const cols: Vec[] = [0, 1, 2].map((j) => [b[0][j], b[1][j], b[2][j]] as Vec);
   return a.map((row) => cols.map((c) => dot(row, c)) as Vec) as Mat;
 }
 
 /** A turn of `rad` about an axis (through the middle). */
-function turnAbout(axis: Vec, rad: number): Mat {
+export function turnAbout(axis: Vec, rad: number): Mat {
   'worklet';
   const len = Math.hypot(...axis) || 1;
   const [x, y, z] = axis.map((a) => a / len);
@@ -82,13 +83,13 @@ export function tumbleFor(seed: number): Tumble {
 }
 
 /** Where a point in space is drawn, in the die's 0–1 box. */
-function drawn(p: Vec): Pt {
+export function drawn(p: Vec): Pt {
   'worklet';
   return [MIDDLE[0] + p[0] - SLANT * p[2], MIDDLE[1] + p[1] - SLANT * p[2]];
 }
 
 /** The smallest shape round some points that bulges nowhere inward. */
-function hullOf(pts: Pt[]): Pt[] {
+export function hullOf(pts: Pt[]): Pt[] {
   'worklet';
   const sorted = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
