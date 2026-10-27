@@ -3803,7 +3803,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               colorTile,
               rotateTile,
               scaleTile,
-              // A six-sided die's own art for its faces (Pro), with custom art's icon.
+              // Its own art for its faces (Pro), with custom art's icon: not for a d4 or d8 (see faceCount).
               ...(faceCount(piece) ? [faceTile] : []),
             ],
             [{ kind: 'toggle', label: 'Roll in place', value: !!piece.rollInPlace, onChange: (on) => commit(setPiece(table, id, { rollInPlace: on || undefined })) }, takeOffRow],

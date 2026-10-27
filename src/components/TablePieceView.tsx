@@ -8,6 +8,7 @@ import * as haptics from '../lib/haptics';
 import {
   bagItems,
   defaultPieceColor,
+  faceCount,
   LABEL_SIZE,
   labelAlignOf,
   pieceSizeOf,
@@ -408,7 +409,8 @@ function Die({
   }, [rollKey, sides, travel, time]);
   const shown = face ?? piece.value;
   /** The player's own art for the face it shows, if it has some; then the rest of it is in the art's own color. */
-  const faceArt = piece.faces?.[shown - 1] ?? null;
+  // (None on a die that takes none: a d4 or d8, even one given some before.)
+  const faceArt = faceCount(piece) ? (piece.faces?.[shown - 1] ?? null) : null;
   const color = (faceArt && piece.faceColors?.[shown - 1]) || ownColor;
   // (Drawn on the canvas, clipped to its face, for every die but a d6, whose square face takes it as a picture.)
   const artImage = useImage(faceArt && sides !== 6 ? imageUri(faceArt) : null);

@@ -4,11 +4,13 @@ import { test } from 'node:test';
 import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
-test('every die has a face for art on each side, and a coin two; other pieces none', () => {
+test('a die has a face for art on each side (not a d4 or d8), and a coin two; other pieces none', () => {
   const at = { x: 0, y: 0, value: 1 };
   assert.equal(faceCount({ kind: 'die', sides: 6 }), 6);
   assert.equal(faceCount({ kind: 'die' }), 6);
   assert.equal(faceCount({ kind: 'die', sides: 20 }), 20);
+  assert.equal(faceCount({ kind: 'die', sides: 4 }), 0);
+  assert.equal(faceCount({ kind: 'die', sides: 8 }), 0);
   assert.equal(faceCount({ kind: 'coin' }), 2);
   assert.equal(faceCount({ kind: 'counter' }), 0);
   // A face given art (and its color), and put back: none at all once every face is standard again.

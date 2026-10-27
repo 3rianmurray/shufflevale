@@ -523,6 +523,8 @@ const MAX_POINTS = 1_000_000;
 const PIECE_SHAPES = new Set<PieceShape>(['meeple', 'pawn', 'cube', 'disc']);
 const ZONE_LOOKS = new Set<ZoneLook>(['outline', 'filled', 'dashed']);
 const DIE_SIDES = [4, 6, 8, 10, 12, 20];
+/** Dice that take no face art of their own (as in faceCount). */
+const NO_FACE_ART = [4, 8];
 /** The most pieces a table is opened with, the most custom art (as ART_MAX), and a track's spaces (as TRACK_MAX). */
 const MAX_PIECES = 500;
 const ART_MAX = 40;
@@ -570,7 +572,7 @@ function pieceFrom(
   if (picture) p.image = picture;
   // A die's or coin's own face art: one picture (or standard, null) per face, as many as it has (see faceCount), and
   // each one's color.
-  const faceSlots = kind === 'coin' ? 2 : kind === 'die' ? (p.sides ?? 6) : 0;
+  const faceSlots = kind === 'coin' ? 2 : kind === 'die' && !NO_FACE_ART.includes(p.sides ?? 6) ? (p.sides ?? 6) : 0;
   const given: unknown[] = Array.isArray(v.faces) ? v.faces : [];
   const tints: unknown[] = Array.isArray(v.faceColors) ? v.faceColors : [];
   if (faceSlots && given.length) {

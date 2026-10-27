@@ -160,12 +160,16 @@ export interface TablePiece {
   faceColors?: (string | null)[];
 }
 
-/** How many faces a piece's own art can be given for: a die's, one for each side; a coin's two; none for anything else. */
+/**
+ * How many faces a piece's own art can be given for: a die's, one for each side (not a d4's or d8's: drawn point up,
+ * neither has a face turned up to show it); a coin's two; none for anything else.
+ */
 export function faceCount(p: Pick<TablePiece, 'kind' | 'sides'>): number {
   if (p.kind === 'coin') return 2;
-  if (p.kind === 'die') return p.sides ?? 6;
+  if (p.kind === 'die') return NO_FACE_ART.includes(p.sides ?? 6) ? 0 : (p.sides ?? 6);
   return 0;
 }
+const NO_FACE_ART = [4, 8];
 
 /**
  * A piece's faces (and their colors) with face `i` (from 0) given a picture and its color, or put back to standard
