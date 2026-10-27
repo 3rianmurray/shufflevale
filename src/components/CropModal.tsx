@@ -1,7 +1,7 @@
 import { Canvas, FillType, Path, Skia } from '@shopify/react-native-skia';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, PanResponder, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import type { NativeTouchEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -85,10 +85,17 @@ interface Props {
   outline?: [number, number][] | null;
   /** Its own title, instead of "Crop card". */
   title?: string;
+  /**
+   * Shapes to choose from for it (a token's), each a button under the picture drawn as its outline; the one
+   * chosen (`shape`) is the one given as `outline`.
+   */
+  shapes?: { key: string; name: string; outline: [number, number][] }[];
+  shape?: string;
+  onShape?: (key: string) => void;
 }
 
 /** Full-screen cropper that cuts every image to the card's aspect ratio. Drag to move, pinch to zoom. */
-export function CropModal({ uris, ratio, roundness, onRoundness, onDone, onCancel, outline, title }: Props) {
+export function CropModal({ uris, ratio, roundness, onRoundness, onDone, onCancel, outline, title, shapes, shape, onShape }: Props) {
   /** The corners as the slider's being moved, shown on the frame before they're saved. */
   const [cornerDraft, setCornerDraft] = useState<number | null>(null);
   const insets = useSafeAreaInsets();
@@ -255,6 +262,23 @@ export function CropModal({ uris, ratio, roundness, onRoundness, onDone, onCance
           </View>
         ) : null}
 
+        {/* The shapes it can be cut to, the one chosen ringed. */}
+        {shapes?.length ? (
+          <View style={styles.shapes}>
+            {shapes.map((s) => (
+              <Pressable
+                key={s.key}
+                onPress={() => onShape?.(s.key)}
+                accessibilityRole="button"
+                accessibilityLabel={s.name}
+                accessibilityState={{ selected: s.key === shape }}
+                style={({ pressed }) => [styles.shapeButton, s.key === shape && styles.shapeOn, pressed && { opacity: 0.6 }]}>
+                <ShapeIcon outline={s.outline} on={s.key === shape} />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         <View style={[styles.actions, { marginBottom: 10 }]}>
           <Button label="⟲  Rotate left" onPress={() => rotate(-90)} disabled={saving || !source} style={{ flex: 1 }} />
           <Button label="Rotate right  ⟳" onPress={() => rotate(90)} disabled={saving || !source} style={{ flex: 1 }} />
@@ -295,6 +319,20 @@ function ShapeOverlay({ area, frame, outline }: { area: Size; frame: Size; outli
   );
 }
 
+const SHAPE_ICON = 26;
+
+/** A shape to choose, drawn small as its outline (filled in gold, once it's chosen). */
+function ShapeIcon({ outline, on }: { outline: [number, number][]; on: boolean }) {
+  const path = Skia.Path.Make();
+  outline.forEach(([x, y], i) => (i ? path.lineTo(1 + x * (SHAPE_ICON - 2), 1 + y * (SHAPE_ICON - 2)) : path.moveTo(1 + x * (SHAPE_ICON - 2), 1 + y * (SHAPE_ICON - 2))));
+  path.close();
+  return (
+    <Canvas style={{ width: SHAPE_ICON, height: SHAPE_ICON, pointerEvents: 'none' }}>
+      <Path path={path} color={on ? colors.accent : colors.text} style={on ? 'fill' : 'stroke'} strokeWidth={2} strokeJoin="round" />
+    </Canvas>
+  );
+}
+
 /** Dims everything outside the card-shaped frame. */
 function FrameOverlay({ area, frame, roundness }: { area: Size; frame: Size; roundness?: number }) {
   const left = (area.w - frame.w) / 2;
@@ -330,5 +368,8 @@ const styles = StyleSheet.create({
   frame: { position: 'absolute', borderWidth: 2, borderColor: colors.accent },
   actions: { flexDirection: 'row', gap: 10, paddingHorizontal: 16 },
   corners: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, marginBottom: 10 },
+  shapes: { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingHorizontal: 16, marginBottom: 12 },
+  shapeButton: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)' },
+  shapeOn: { borderWidth: 2, borderColor: colors.accent },
   cornersLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 18 },
 });

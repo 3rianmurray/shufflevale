@@ -5,6 +5,7 @@
 // the packing and unpacking is here; reading and writing the files is in deckExport.ts (and zip.ts).
 import type { DeckGroup } from './groups';
 import type { BagItem, PieceKind, PieceShape, SandboxCard, SandboxStack, SandboxTable, TablePiece, ZoneLook } from './sandbox';
+import type { TokenShape } from './tokenShapes';
 import type { CardShape, Deck, PlayMode } from './types';
 
 /** Marks a file as ours, and which version of the format it's in (1: JSON, 2: a zip). */
@@ -522,6 +523,7 @@ const MAX_SCORES = 2000;
 const MAX_POINTS = 1_000_000;
 const PIECE_SHAPES = new Set<PieceShape>(['meeple', 'pawn', 'cube', 'disc']);
 const ZONE_LOOKS = new Set<ZoneLook>(['outline', 'filled', 'dashed']);
+const TOKEN_SHAPES = new Set<TokenShape>(['circle', 'square', 'hexagon', 'triangle', 'diamond', 'star']);
 const DIE_SIDES = [4, 6, 8, 10, 12, 20, 100];
 /** The most pieces a table is opened with, the most custom art (as ART_MAX), and a track's spaces (as TRACK_MAX). */
 const MAX_PIECES = 500;
@@ -563,6 +565,7 @@ function pieceFrom(
   if (typeof v.label === 'string') p.label = v.label.slice(0, MAX_LABEL);
   if (typeof v.shape === 'string' && PIECE_SHAPES.has(v.shape as PieceShape)) p.shape = v.shape as PieceShape;
   if (typeof v.look === 'string' && ZONE_LOOKS.has(v.look as ZoneLook)) p.look = v.look as ZoneLook;
+  if (kind === 'token' && typeof v.tokenShape === 'string' && TOKEN_SHAPES.has(v.tokenShape as TokenShape)) p.tokenShape = v.tokenShape as TokenShape;
   const over = idFrom(v.over);
   if (over) p.over = over;
   if (finite(v.angle)) p.angle = angleFrom(v.angle);

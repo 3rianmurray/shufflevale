@@ -3,6 +3,7 @@
 // hold cards off the table; and a camera looks down on it all, moved, zoomed and turned with the fingers.
 // Pure logic and maths here (no React, no phone), so it can be tested.
 
+import type { TokenShape } from './tokenShapes';
 import type { Deck } from './types';
 
 // ---- The table ----
@@ -101,9 +102,13 @@ export interface TablePiece {
   over?: string;
   /** Custom art's turn on the table, in degrees clockwise (as a stack's). */
   angle?: number;
-  /** A token's (or custom art's) picture (a saved picture's path), and whether a token's square (round, otherwise). */
+  /**
+   * A token's (or custom art's) picture (a saved picture's path), and a token's shape (see tokenShapeOf: one from
+   * before there were shapes is square if `square`, round otherwise).
+   */
   image?: string;
   square?: boolean;
+  tokenShape?: TokenShape;
   /** A running timer: when it runs out (ms since 1970). A paused one: how many seconds it had left. */
   endsAt?: number;
   left?: number;
@@ -1093,7 +1098,7 @@ export const bagItems = (p: TablePiece): BagItem[] => p.items ?? (p.cards ?? [])
 export function itemLook(i: BagItem): string {
   if (i.card) return `card:${i.card.deckId}:${i.card.cardId}`;
   const p = i.piece!;
-  return JSON.stringify([p.kind, p.sides, p.color, p.shape, p.image, p.square, p.label, p.scale ?? 1, p.spaces, p.first, p.look, p.w, p.h, p.faces ?? null]);
+  return JSON.stringify([p.kind, p.sides, p.color, p.shape, p.image, p.square, p.tokenShape, p.label, p.scale ?? 1, p.spaces, p.first, p.look, p.w, p.h, p.faces ?? null]);
 }
 
 /** Whether things are one or more of the very same thing (what a supply can be made of). */

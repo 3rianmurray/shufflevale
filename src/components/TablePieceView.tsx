@@ -36,6 +36,8 @@ import {
 } from '../lib/sandbox';
 import { imageUri, isSeeThrough } from '../lib/storage';
 import type { TablePiece } from '../lib/sandbox';
+import { tokenOutline, tokenShapeOf } from '../lib/tokenShapes';
+import type { TokenShape } from '../lib/tokenShapes';
 import { colors } from '../theme';
 import { prefersReducedMotion } from './CardView';
 
@@ -1402,7 +1404,13 @@ function PlayingPiece({ piece, color, w, h, selected }: { piece: TablePiece; col
  * A token: a raised disc (or rounded square) with the player's own picture on top, or plain in its color. One
  * standing for several shows how many.
  */
-function Token({ piece, color, size, selected, k }: { piece: TablePiece; color: string; size: number; selected: boolean; k: number }) {
+function Token(props: { piece: TablePiece; color: string; size: number; selected: boolean; k: number }) {
+  const shape = tokenShapeOf(props.piece);
+  return shape === 'circle' || shape === 'square' ? <RoundToken {...props} square={shape === 'square'} /> : <ShapedToken {...props} shape={shape} />;
+}
+
+/** A round token (or a rounded square one). */
+function RoundToken({ piece, color, size, selected, k, square }: { piece: TablePiece; color: string; size: number; selected: boolean; k: number; square: boolean }) {
   const OS = useContext(OversampleContext);
   const art = artFrame(size, size, OS);
   const c = art.at([0.5, 0.5]);
@@ -1414,12 +1422,12 @@ function Token({ piece, color, size, selected, k }: { piece: TablePiece; color: 
     [0.02, 0.98],
   ];
   const squareSide: Pt[] = outline.map((p) => [p[0] + 0.04, p[1] + 0.06]);
-  const body = piece.square ? null : cylinderPath(c, art.len(0.48), depth);
+  const body = square ? null : cylinderPath(c, art.len(0.48), depth);
   const inset = size * 0.1;
   return (
     <View style={StyleSheet.absoluteFill}>
       <Canvas style={art.style}>
-        {piece.square ? (
+        {square ? (
           <>
             <Path path={roundedPath(art, squareSide, 0.14)} color={shade(color, -0.45)}>
               {pieceShadow(OS)}
@@ -1449,19 +1457,74 @@ function Token({ piece, color, size, selected, k }: { piece: TablePiece; color: 
             top: inset,
             width: size - inset * 2,
             height: size - inset * 2,
-            borderRadius: isSeeThrough(piece.image) ? 0 : piece.square ? size * 0.1 : size,
+            borderRadius: isSeeThrough(piece.image) ? 0 : square ? size * 0.1 : size,
           }}
           contentFit={isSeeThrough(piece.image) ? 'contain' : 'cover'}
           cachePolicy="memory-disk"
         />
       ) : null}
-      {piece.value > 1 ? (
-        <View style={[styles.tokenCount, { right: -6 * k, top: -6 * k, minWidth: 24 * k, height: 24 * k, borderRadius: 12 * k, paddingHorizontal: 5 * k }]}>
-          <Text allowFontScaling={false} style={[styles.tokenCountText, { fontSize: 14 * k }]}>
-            {piece.value}
-          </Text>
-        </View>
-      ) : null}
+      <TokenCount n={piece.value} k={k} />
+    </View>
+  );
+}
+
+/** How many a token stands for, on its corner (when it's more than one). */
+function TokenCount({ n, k }: { n: number; k: number }) {
+  if (n <= 1) return null;
+  return (
+    <View style={[styles.tokenCount, { right: -6 * k, top: -6 * k, minWidth: 24 * k, height: 24 * k, borderRadius: 12 * k, paddingHorizontal: 5 * k }]}>
+      <Text allowFontScaling={false} style={[styles.tokenCountText, { fontSize: 14 * k }]}>
+        {n}
+      </Text>
+    </View>
+  );
+}
+
+/** How far down and right a shaped token's top is from its foot, as a share of its width (as a round one's). */
+const TOKEN_DEPTH: Pt = [0.04, 0.06];
+/** How many copies of its outline make up a shaped token's side (enough that it reads as solid). */
+const TOKEN_SIDE_STEPS = 6;
+
+/**
+ * A token cut to a shape of its own (a hexagon, a star...): a slab of its color seen from a little above, its sides
+ * running down and right, with the player's picture on top, clipped to the shape (a cut-out sits whole on it).
+ */
+function ShapedToken({ piece, shape, color, size, selected, k }: { piece: TablePiece; shape: TokenShape; color: string; size: number; selected: boolean; k: number }) {
+  const OS = useContext(OversampleContext);
+  const picture = useImage(piece.image ? imageUri(piece.image) : null);
+  const art = artFrame(size, size, OS);
+  // Its top inside the box, room left for its sides down and right of it; its picture a little inside that.
+  const fit = (p: Pt, s = 1, mid: Pt = [0.47, 0.46]): Pt => [mid[0] + (p[0] - 0.5) * 0.92 * s, mid[1] + (p[1] - 0.5) * 0.92 * s];
+  const outline = tokenOutline(shape);
+  const top = outline.map((p) => fit(p));
+  const rounding = shape === 'star' ? 0.02 : 0.06;
+  const at = (dx: number, dy: number) => roundedPath(art, top.map(([x, y]) => [x + dx, y + dy] as Pt), rounding);
+  const face = at(0, 0);
+  const inner = roundedPath(art, outline.map((p) => fit(p, 0.8)), rounding * 0.8);
+  const side = shade(color, -0.45);
+  const seeThrough = isSeeThrough(piece.image);
+  // The picture as it was cropped: its box on the shape's inside (as the cropper showed the shape on it).
+  const [x0, y0] = art.at(fit([0, 0], 0.8));
+  const [x1, y1] = art.at(fit([1, 1], 0.8));
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <Canvas style={art.style}>
+        <Path path={at(TOKEN_DEPTH[0], TOKEN_DEPTH[1])} color={side}>
+          {pieceShadow(OS)}
+        </Path>
+        {Array.from({ length: TOKEN_SIDE_STEPS }, (_, i) => {
+          const t = 1 - i / TOKEN_SIDE_STEPS;
+          return <Path key={i} path={at(TOKEN_DEPTH[0] * t, TOKEN_DEPTH[1] * t)} color={side} />;
+        })}
+        <Path path={face} color={color} />
+        {picture ? (
+          <Group clip={seeThrough ? undefined : inner}>
+            <SkImage image={picture} x={x0} y={y0} width={x1 - x0} height={y1 - y0} fit={seeThrough ? 'contain' : 'cover'} />
+          </Group>
+        ) : null}
+        {selected ? <Path path={face} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
+      </Canvas>
+      <TokenCount n={piece.value} k={k} />
     </View>
   );
 }

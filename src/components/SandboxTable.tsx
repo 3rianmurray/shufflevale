@@ -161,6 +161,8 @@ import type { BagItem, Camera, CardSize, PieceKind, PiecePart, PieceShape, Sandb
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { artPicture, faceArtColor, facePicture, loadUpright, tokenPicture } from '../lib/images';
+import { TOKEN_SHAPES, tokenOutline, tokenShapeOf } from '../lib/tokenShapes';
+import type { TokenShape } from '../lib/tokenShapes';
 import { deckLook, isPlayground, isProPiece, usePro } from '../lib/pro';
 import { updateSandbox, useSandbox } from '../lib/sandboxStore';
 import { clipSize, setClip, useClip } from '../lib/tableClipboard';
@@ -349,6 +351,8 @@ type Menu =
   | { kind: 'piece'; id: string }
   | { kind: 'components' }
   | { kind: 'addDie' }
+  /** A token's shape. */
+  | { kind: 'tokenShape'; id: string }
   /** For one counter or die, or (with no id) every one picked out. */
   | { kind: 'dieKind'; id?: string }
   /** For one counter or die, or (with no id) every one picked out; marker for a track's marker. */
@@ -568,6 +572,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const [addingCards, setAddingCards] = useState(false);
   /** A picture chosen for a die's or coin's face, being cropped square (see FaceSlots). */
   const [faceCrop, setFaceCrop] = useState<{ uri: string; id: string; face: number } | null>(null);
+  /** A picture chosen for a token (a new one, or the one with `id`), being cropped to its shape (see TOKEN_SHAPES). */
+  const [tokenCrop, setTokenCrop] = useState<{ uri: string; id?: string } | null>(null);
+  /** The shape a token's being cropped to (the last chosen, for the next new one). */
+  const [cropTokenShape, setCropTokenShape] = useState<TokenShape>('circle');
   /** The grid shown for a moment (its size just chosen), even with its lines off. */
   const [gridPeek, setGridPeek] = useState(0);
   /** The peeked grid's lines fading away. */
@@ -1297,8 +1305,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         Alert.alert('Camera not allowed', 'Shufflevale can use the camera once it’s allowed in Settings → Shufflevale.');
         return;
       }
-      // A token's framed square as it's taken; art is the whole photo.
-      const shot = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: forToken, aspect: [1, 1], quality: 1 });
+      // The whole photo (a token's is cropped to its shape afterward).
+      const shot = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });
       uri = shot.canceled ? undefined : shot.assets[0]?.uri;
     } else {
       // Not edited here, so a cut-out (a subject saved from Photos) keeps its see-through background; and taken as
@@ -1316,11 +1324,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       if (!now.table) return;
       // A face's: cropped first to the face's own shape (see faceShape), just as wanted.
       if (target.kind === 'face') return setFaceCrop({ uri, id: target.id, face: target.face });
+      // A token's: cropped to a shape, chosen as it's cropped (a token's own to start with, or the last chosen).
       if (forToken) {
-        const image = importImage(TOKEN_PICTURES, await tokenPicture(uri));
-        if (target.id) now.commit(setPiece(now.table, target.id, { image }));
-        else now.addPieceToTable('token', undefined, undefined, { image });
-        return;
+        const token = target.id ? now.table.pieces?.find((p) => p.id === target.id) : undefined;
+        if (token) setCropTokenShape(tokenShapeOf(token));
+        return setTokenCrop({ uri, id: target.id });
       }
       const art = await artPicture(uri);
       const fresh = latest.get();
@@ -3957,11 +3965,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               ),
               // The system's menu, once this has gone (see choosePicture).
               tile('Picture', 'photo', 'image', () => setTimeout(() => choosePicture({ kind: 'token', id }), 450)),
+              tile('Shape', 'square.on.circle', 'category', next({ kind: 'tokenShape', id })),
               colorTile,
               scaleTile,
             ],
             [
-              { kind: 'toggle', label: 'Square', value: !!piece.square, onChange: (on) => commit(setPiece(table, id, { square: on || undefined })) },
               ...(piece.image ? [{ kind: 'action' as const, label: 'Take the picture off', onPress: () => commit(setPiece(table, id, { image: undefined })) }] : []),
               takeOffRow,
             ],
@@ -4175,7 +4183,21 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           );
       }
       return null;
-    }    if (menu.kind === 'pieceShape') {
+    }
+    if (menu.kind === 'tokenShape') {
+      const token = table.pieces?.find((p) => p.id === menu.id && p.kind === 'token');
+      if (!token) return null;
+      const now = tokenShapeOf(token);
+      return {
+        title: 'Shape',
+        tiles: [],
+        actions: TOKEN_SHAPES.map(({ shape, name }) => ({
+          label: `${name}${shape === now ? '  ✓' : ''}`,
+          onPress: () => commit(setPiece(table, token.id, { tokenShape: shape, square: undefined })),
+        })),
+      };
+    }
+    if (menu.kind === 'pieceShape') {
       // One playing piece, or every one picked out.
       const targets = (table.pieces ?? []).filter((p) => p.kind === 'meeple' && (menu.id ? p.id === menu.id : pickedPieces.includes(p.id)));
       if (!targets.length) return null;
@@ -4428,6 +4450,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             })}
           </View>
         ),
+        // A token of the player's own: a picture, cropped to a shape (chosen as it's cropped).
+        wideTile: {
+          label: 'Custom token',
+          icon: { ios: 'photo.on.rectangle', android: 'add_photo_alternate', web: 'add_photo_alternate' } as SheetTile['icon'],
+          opensModal: true,
+          onPress: () => choosePicture({ kind: 'token' }),
+        },
         actions: [],
       };
     }
@@ -5290,9 +5319,34 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           if (crop) setTimeout(() => setMenu({ kind: 'faces', id: crop.id }), 300);
         }}
       />
+      {/* A token's picture, cropped to the shape chosen under it (the token takes that shape). */}
+      <CropModal
+        uris={tokenCrop ? [tokenCrop.uri] : []}
+        ratio={1}
+        outline={tokenOutline(cropTokenShape)}
+        title="Crop the token’s art"
+        shapes={TOKEN_SHAPES.map(({ shape, name }) => ({ key: shape, name, outline: tokenOutline(shape) }))}
+        shape={cropTokenShape}
+        onShape={(key) => setCropTokenShape(key as TokenShape)}
+        onDone={([cropped]) => {
+          const crop = tokenCrop;
+          const tokenShape = cropTokenShape;
+          setTokenCrop(null);
+          if (!crop || !cropped) return;
+          (async () => {
+            const image = importImage(TOKEN_PICTURES, await tokenPicture(cropped));
+            const now = latest.get();
+            if (!now.table) return;
+            const look = { image, tokenShape, square: undefined };
+            if (crop.id) now.commit(setPiece(now.table, crop.id, look));
+            else now.addPieceToTable('token', undefined, undefined, look);
+          })().catch((e: unknown) => Alert.alert('Couldn’t use that picture', e instanceof Error ? e.message : String(e)));
+        }}
+        onCancel={() => setTokenCrop(null)}
+      />
       {/* The table's menu, and choosing a deck to add. */}
       <ActionSheet
-        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
+        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'tokenShape' ||menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
         title={sheet?.title}
         banner={sheet && 'banner' in sheet ? sheet.banner : undefined}
         wideTile={sheet && 'wideTile' in sheet ? sheet.wideTile : undefined}

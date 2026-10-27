@@ -159,7 +159,7 @@ test('a table’s components, custom art and card sizes come with it', () => {
       { id: 'p2', kind: 'art' as const, x: 300, y: 300, value: 0, image: 'decks/tokens/board.png', w: 400, h: 300, over: 's1', scale: 2 },
       {
         id: 'p3', kind: 'bag' as const, x: 0, y: 0, value: 0,
-        items: [{ card: { iid: 'b', deckId: 'd1', cardId: 'c2', faceUp: false } }, { piece: { id: 'p4', kind: 'token' as const, x: 0, y: 0, value: 2, image: 'decks/tokens/t.jpg' } }],
+        items: [{ card: { iid: 'b', deckId: 'd1', cardId: 'c2', faceUp: false } }, { piece: { id: 'p4', kind: 'token' as const, x: 0, y: 0, value: 2, image: 'decks/tokens/t.jpg', tokenShape: 'hexagon' as const } }],
       },
       { id: 'p5', kind: 'zone' as const, x: 0, y: 0, value: 0, w: 500, h: 400, look: 'dashed' as const, label: 'Discard' },
     ],
@@ -187,6 +187,7 @@ test('a table’s components, custom art and card sizes come with it', () => {
   assert.equal(bag.items![0].card!.cardId, 'Y');
   assert.equal(bag.items![1].piece!.kind, 'token');
   assert.ok(bag.items![1].piece!.image);
+  assert.equal(bag.items![1].piece!.tokenShape, 'hexagon');
   assert.deepEqual([zone.look, zone.label, zone.w], ['dashed', 'Discard', 500]);
   // Fresh ids for every piece.
   assert.ok(t.pieces!.every((p) => p.id.startsWith('n')));
