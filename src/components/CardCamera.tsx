@@ -149,6 +149,12 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
         }
         // (By its number: others may have been retaken or removed meanwhile.)
         setList(queue.get().list.map((s) => (s.id === id ? { id, card: result } : s)));
+        // No card found in it: its corners to drag into place, straight away (unless another's open already). A
+        // single card's done once they're placed (or as it is, if that's canceled).
+        if (result.scan && !result.scan.found) {
+          setAdjusting((open) => open ?? id);
+          return;
+        }
         if (single) finish([result]);
       });
       queue.set({ last: job });
@@ -188,14 +194,19 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
   /** A shot straightened again, from its corners as they've been dragged into place. */
   const adjusted = (id: number, uri: string, corners: Quad) => {
     setAdjusting(null);
-    setList(
-      queue.get().list.map((s) =>
-        s.id === id && s.card !== 'working' && s.card.scan
-          ? { id, card: { uri, original: uri, how: 'straightened', scan: { ...s.card.scan, corners, found: true } } }
-          : s,
-      ),
+    const list = queue.get().list.map((s): Shot =>
+      s.id === id && s.card !== 'working' && s.card.scan
+        ? { id, card: { uri, original: uri, how: 'straightened', scan: { ...s.card.scan, corners, found: true } } }
+        : s,
     );
+    setList(list);
     haptics.drop();
+    if (single) finish(list.flatMap((s) => (s.card === 'working' ? [] : [s.card])));
+  };
+  /** The corners left as they were: a single card's done as it is. */
+  const notAdjusted = () => {
+    setAdjusting(null);
+    if (single) finish(queue.get().list.flatMap((s) => (s.card === 'working' ? [] : [s.card])));
   };
 
   // The corner shows the shot taken last (a retake counts), or the final one.
@@ -386,7 +397,7 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
           cardRatio={adjustingScan?.ratio ?? 1}
           start={adjustingScan}
           onDone={(uri, corners) => adjusting !== null && adjusted(adjusting, uri, corners)}
-          onCancel={() => setAdjusting(null)}
+          onCancel={notAdjusted}
         />
       </View>
     </Modal>
