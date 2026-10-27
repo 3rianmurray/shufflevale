@@ -124,8 +124,8 @@ function hullOf(pts: Pt[]): Pt[] {
 }
 
 /**
- * Whether d6s are drawn as cubes in 3D, tumbling over their real faces when rolled (see lib/cube3d), or flat, as
- * they were. The table says (it's switched in its tools); anywhere else (menus' previews), flat.
+ * Whether dice are drawn in 3D, tumbling over their real faces when rolled (see lib/cube3d, lib/polyhedra), or flat:
+ * on a table, 3D; anywhere else (menus' previews), flat.
  */
 export const Dice3DContext = createContext(false);
 

@@ -566,8 +566,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   };
   /** Choosing cards from a deck to bring onto the table. */
   const [addingCards, setAddingCards] = useState(false);
-  /** d6s drawn flat, as they were, rather than in 3D (this phone's choice, switched in the tools). */
-  const [flatDice, setFlatDice] = useState(() => !!loadSettings().flatDice);
   /** A picture chosen for a die's or coin's face, being cropped square (see FaceSlots). */
   const [faceCrop, setFaceCrop] = useState<{ uri: string; id: string; face: number } | null>(null);
   /** The grid shown for a moment (its size just chosen), even with its lines off. */
@@ -4530,8 +4528,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const cropShape = cropPiece ? faceShape(cropPiece) : { ratio: 1, outline: null };
 
   return (
-    // d6s in 3D, unless they're switched to flat in the tools (see Dice3DContext).
-    <Dice3DContext.Provider value={!flatDice}>
+    // Dice on a table in 3D (see Dice3DContext).
+    <Dice3DContext.Provider value>
     <View
       style={[styles.root, { backgroundColor: theme.outside }]}
       // Every finger, wherever on the screen (menus' windows too: they're inside this): where menus open, on iPad.
@@ -4854,22 +4852,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                   />
                 </View>
               ))}
-              {/* d6s as cubes in 3D, or flat as they were: this phone's choice, for every table. */}
-              <View style={styles.toolRow}>
-                <SymbolView name={{ ios: 'cube', android: 'view_in_ar', web: 'view_in_ar' }} size={18} tintColor={colors.text} />
-                <Text style={styles.toolText}>3D dice</Text>
-                <Switch
-                  value={!flatDice}
-                  onValueChange={(on) => {
-                    setFlatDice(!on);
-                    saveSettings({ ...loadSettings(), flatDice: on ? undefined : true });
-                    haptics.tick();
-                  }}
-                  trackColor={{ true: colors.accent, false: undefined }}
-                  accessibilityLabel="3D dice"
-                  accessibilityHint="Six-sided dice as cubes that tumble over their faces when rolled."
-                />
-              </View>
               {/* The grid's size: its spacing, for snapping and its lines (shown for a moment as it's chosen). */}
               <Text style={styles.toolLabel}>Grid size</Text>
               <View style={styles.toolSegment}>
