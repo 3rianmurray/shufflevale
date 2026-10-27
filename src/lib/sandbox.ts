@@ -152,24 +152,30 @@ export interface TablePiece {
   /** A die that rolls where it lies (spinning and bouncing), rather than tumbling across the table. */
   rollInPlace?: boolean;
   /**
-   * The player's own art for a six-sided die's faces (1 to 6) or a coin's (heads, then tails): a saved picture's
-   * path for each, or null for the standard face. None when every face is standard (see faceCount).
+   * The player's own art for a die's faces (1 up) or a coin's (heads, then tails): a saved picture's path for each,
+   * or null for the standard face. None when every face is standard (see faceCount).
    */
   faces?: (string | null)[];
+  /** Each face's art's own color (its average), which the rest of a die takes while that face is up; null for none. */
+  faceColors?: (string | null)[];
 }
 
-/** How many faces a piece's own art can be given for: a six-sided die's six, a coin's two; none for anything else. */
+/** How many faces a piece's own art can be given for: a die's, one for each side; a coin's two; none for anything else. */
 export function faceCount(p: Pick<TablePiece, 'kind' | 'sides'>): number {
   if (p.kind === 'coin') return 2;
-  if (p.kind === 'die' && (p.sides ?? 6) === 6) return 6;
+  if (p.kind === 'die') return p.sides ?? 6;
   return 0;
 }
 
-/** A piece's faces with face `i` (from 0) given a picture, or put back to standard (null): none once all are standard. */
-export function withFace(p: TablePiece, i: number, picture: string | null): TablePiece['faces'] {
+/**
+ * A piece's faces (and their colors) with face `i` (from 0) given a picture and its color, or put back to standard
+ * (null): none once every face is standard.
+ */
+export function withFace(p: TablePiece, i: number, picture: string | null, color: string | null = null): Pick<TablePiece, 'faces' | 'faceColors'> {
   const n = faceCount(p);
   const faces = Array.from({ length: n }, (_, k) => (k === i ? picture : (p.faces?.[k] ?? null)));
-  return faces.some(Boolean) ? faces : undefined;
+  const faceColors = Array.from({ length: n }, (_, k) => (k === i ? (picture ? color : null) : (p.faceColors?.[k] ?? null)));
+  return faces.some(Boolean) ? { faces, faceColors: faceColors.some(Boolean) ? faceColors : undefined } : { faces: undefined, faceColors: undefined };
 }
 
 /** The colors a counter or die can be, by name. */

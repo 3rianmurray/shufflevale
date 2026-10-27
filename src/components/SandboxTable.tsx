@@ -159,7 +159,7 @@ import {
 import type { BagItem, Camera, CardSize, PieceKind, PiecePart, PieceShape, SandboxCard, SandboxStack, SandboxTable, Source, TablePiece } from '../lib/sandbox';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { artPicture, loadUpright, tokenPicture } from '../lib/images';
+import { artPicture, averageColor, facePicture, loadUpright, tokenPicture } from '../lib/images';
 import { deckLook, isPlayground, isProPiece, usePro } from '../lib/pro';
 import { updateSandbox, useSandbox } from '../lib/sandboxStore';
 import { clipSize, setClip, useClip } from '../lib/tableClipboard';
@@ -179,7 +179,7 @@ import { TrashModal } from './TrashModal';
 import { DealPanel } from './DealPanel';
 import { Riffle } from './Riffle';
 import { StackSearchPanel } from './StackSearchPanel';
-import { TablePieceView } from './TablePieceView';
+import { TablePieceView, faceShape } from './TablePieceView';
 import { NumberSlider } from './NumberSlider';
 import { ScaleControl } from './ScaleControl';
 import { RotationControl } from './RotationControl';
@@ -1224,18 +1224,21 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       ...(standard ? [{ text: 'Use the standard face', onPress: standard }] : []),
     ]);
   };
-  /** A die's or coin's face (from 0) given its own art, or put back to the standard face (null); then its faces again. */
-  const setFaceArt = (id: string, face: number, picture: string | null) => {
+  /**
+   * A die's or coin's face (from 0) given its own art (and the art's color, which the rest of a die takes while
+   * it's up), or put back to the standard face (null); then its faces again.
+   */
+  const setFaceArt = (id: string, face: number, picture: string | null, color: string | null = null) => {
     const now = latest.get();
     const piece = now.table?.pieces?.find((p) => p.id === id);
     if (!now.table || !piece) return;
-    now.commit(setPiece(now.table, id, { faces: withFace(piece, face, picture) }));
+    now.commit(setPiece(now.table, id, withFace(piece, face, picture, color)));
     haptics.tick();
     setTimeout(() => latest.get().setMenu({ kind: 'faces', id }), 250);
   };
   const pictureFrom = async (source: PictureSource, target: PictureTarget) => {
-    // (A face is square, as a token's picture is.)
-    const forToken = target.kind === 'token' || target.kind === 'face';
+    // (A face's picture is cropped to the face's shape afterward, whichever it comes from.)
+    const forToken = target.kind === 'token';
     let uri: string | undefined;
     if (source === 'files') {
       const doc = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
@@ -1263,11 +1266,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // The table as it is now (the picker took a while).
       const now = latest.get();
       if (!now.table) return;
-      if (target.kind === 'face') {
-        // From Photos or Files: cropped square first, just as wanted (the camera's framed as it's taken).
-        if (source !== 'camera') return setFaceCrop({ uri, id: target.id, face: target.face });
-        return setFaceArt(target.id, target.face, importImage(TOKEN_PICTURES, await tokenPicture(uri)));
-      }
+      // A face's: cropped first to the face's own shape (see faceShape), just as wanted.
+      if (target.kind === 'face') return setFaceCrop({ uri, id: target.id, face: target.face });
       if (forToken) {
         const image = importImage(TOKEN_PICTURES, await tokenPicture(uri));
         if (target.id) now.commit(setPiece(now.table, target.id, { image }));
@@ -4077,7 +4077,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // Another kind of die: each keeps its number, if it has that face.
         actions: DIE_SIDES.map((n) => ({
           label: `d${n}${kinds.size === 1 && kinds.has(n) ? '  ✓' : ''}`,
-          onPress: () => commit(dice.reduce((t, d) => setPiece(t, d.id, { sides: n, value: Math.min(d.value, n) }), table)),
+          // (Its own face art was for the faces it had: another kind starts with the standard ones.)
+          onPress: () =>
+            commit(dice.reduce((t, d) => setPiece(t, d.id, { sides: n, value: Math.min(d.value, n), ...((d.sides ?? 6) !== n && { faces: undefined, faceColors: undefined }) }), table)),
         })),
       };
     }
@@ -4413,6 +4415,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const heldSize = heldTop ? cardSizeOf(heldTop, size) : null;
   const zoomDeck = zoomed ? getDeck(zoomed.deckId) : undefined;
   const zoomCard = zoomed ? cardOf(zoomed) : undefined;
+  /** The shape a face's art is being cropped to (the die's face's, or the coin's round side). */
+  const cropPiece = faceCrop ? table.pieces?.find((p) => p.id === faceCrop.id) : undefined;
+  const cropShape = cropPiece ? faceShape(cropPiece) : { ratio: 1, outline: null };
 
   return (
     <View
@@ -5087,17 +5092,24 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         onClose={() => setTrashOpen(false)}
       />
       <AddCardsModal visible={addingCards} decks={decks} onAdd={addCardsToTable} onClose={() => setAddingCards(false)} />
-      {/* A face's art, cropped square; then the faces again (put away, they're shown again as they were). */}
+      {/*
+        A face's art, cropped to the face's shape (its outline over the picture); kept with its color; then the faces
+        again (put away, they're shown again as they were).
+      */}
       <CropModal
         uris={faceCrop ? [faceCrop.uri] : []}
-        ratio={1}
+        ratio={cropShape.ratio}
+        outline={cropShape.outline}
+        title={cropPiece?.kind === 'coin' ? 'Crop the coin’s art' : 'Crop the face’s art'}
         onDone={([cropped]) => {
           const crop = faceCrop;
           setFaceCrop(null);
           if (!crop || !cropped) return;
-          tokenPicture(cropped)
-            .then((square) => setFaceArt(crop.id, crop.face, importImage(TOKEN_PICTURES, square)))
-            .catch((e: unknown) => Alert.alert('Couldn’t use that picture', e instanceof Error ? e.message : String(e)));
+          (async () => {
+            const picture = await facePicture(cropped, cropShape.ratio);
+            const color = await averageColor(picture);
+            setFaceArt(crop.id, crop.face, importImage(TOKEN_PICTURES, picture), color);
+          })().catch((e: unknown) => Alert.alert('Couldn’t use that picture', e instanceof Error ? e.message : String(e)));
         }}
         onCancel={() => {
           const crop = faceCrop;

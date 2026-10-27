@@ -1,3 +1,4 @@
+import { Canvas, FillType, Path, Skia } from '@shopify/react-native-skia';
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, PanResponder, StyleSheet, View } from 'react-native';
@@ -77,10 +78,17 @@ interface Props {
    */
   onDone: (cropped: string[], originals: string[]) => void;
   onCancel: () => void;
+  /**
+   * A shape other than a card's for what shows (a die's face, a coin's side): its outline, 0–1 across and down the
+   * frame, with everything outside it dimmed. What's kept is still the frame's whole box.
+   */
+  outline?: [number, number][] | null;
+  /** Its own title, instead of "Crop card". */
+  title?: string;
 }
 
 /** Full-screen cropper that cuts every image to the card's aspect ratio. Drag to move, pinch to zoom. */
-export function CropModal({ uris, ratio, roundness, onRoundness, onDone, onCancel }: Props) {
+export function CropModal({ uris, ratio, roundness, onRoundness, onDone, onCancel, outline, title }: Props) {
   /** The corners as the slider's being moved, shown on the frame before they're saved. */
   const [cornerDraft, setCornerDraft] = useState<number | null>(null);
   const insets = useSafeAreaInsets();
@@ -212,7 +220,7 @@ export function CropModal({ uris, ratio, roundness, onRoundness, onDone, onCance
   return (
     <Modal visible={visible} animationType="slide" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={cancel}>
       <View style={[styles.screen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 12 }]}>
-        <Text style={styles.title}>{uris.length > 1 ? `Crop card ${index + 1} of ${uris.length}` : 'Crop card'}</Text>
+        <Text style={styles.title}>{title ?? (uris.length > 1 ? `Crop card ${index + 1} of ${uris.length}` : 'Crop card')}</Text>
 
         <View
           style={styles.area}
@@ -230,7 +238,7 @@ export function CropModal({ uris, ratio, roundness, onRoundness, onDone, onCance
                   top: area.h / 2 - (source.h * scale) / 2 + t.y,
                 }}
               />
-              <FrameOverlay area={area} frame={frame} roundness={cornerDraft ?? roundness} />
+              {outline ? <ShapeOverlay area={area} frame={frame} outline={outline} /> : <FrameOverlay area={area} frame={frame} roundness={cornerDraft ?? roundness} />}
             </>
           ) : (
             <ActivityIndicator color={colors.accent} size="large" style={StyleSheet.absoluteFill} />
@@ -264,6 +272,26 @@ export function CropModal({ uris, ratio, roundness, onRoundness, onDone, onCance
         </View>
       </View>
     </Modal>
+  );
+}
+
+/** Dims everything outside a shape (`outline`, 0–1 across and down the frame), and rims it. */
+function ShapeOverlay({ area, frame, outline }: { area: Size; frame: Size; outline: [number, number][] }) {
+  const left = (area.w - frame.w) / 2;
+  const top = (area.h - frame.h) / 2;
+  const shape = Skia.Path.Make();
+  outline.forEach(([x, y], i) => (i ? shape.lineTo(left + x * frame.w, top + y * frame.h) : shape.moveTo(left + x * frame.w, top + y * frame.h)));
+  shape.close();
+  // The whole area, with the shape cut out of it.
+  const around = Skia.Path.Make();
+  around.addRect(Skia.XYWHRect(0, 0, area.w, area.h));
+  around.addPath(shape);
+  around.setFillType(FillType.EvenOdd);
+  return (
+    <Canvas style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+      <Path path={around} color="rgba(0,0,0,0.6)" />
+      <Path path={shape} color={colors.accent} style="stroke" strokeWidth={2} />
+    </Canvas>
   );
 }
 

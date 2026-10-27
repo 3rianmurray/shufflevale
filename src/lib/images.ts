@@ -152,6 +152,33 @@ export async function tokenPicture(uri: string): Promise<string> {
   const out = await ref.saveAsync({ format: SaveFormat.JPEG, compress: 0.85 });
   return out.uri;
 }
+/**
+ * A picture made into a die's face (or a coin's side): the largest piece of `ratio`'s shape (width over height: the
+ * face's) from its middle, shrunk to TOKEN_SIDE across, kept see-through if it is.
+ */
+export async function facePicture(uri: string, ratio: number): Promise<string> {
+  const see = await hasTransparency(uri);
+  const cut = await cropToShape(uri, ratio);
+  const ref = await ImageManipulator.manipulate(cut).resize({ width: TOKEN_SIDE }).renderAsync();
+  return (await ref.saveAsync(see ? { format: SaveFormat.PNG } : { format: SaveFormat.JPEG, compress: 0.85 })).uri;
+}
+
+/** A picture's average color (as #rrggbb), from a tiny copy of it: what a die with it on a face is colored. */
+export async function averageColor(uri: string): Promise<string> {
+  const ref = await ImageManipulator.manipulate(uri).resize({ width: 16 }).renderAsync();
+  const small = await ref.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
+  const file = new File(small.uri);
+  try {
+    const { data } = decodeJpeg(await file.bytes(), { useTArray: true, formatAsRGBA: true });
+    const sum = [0, 0, 0];
+    const n = data.length / 4;
+    for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) sum[c] += data[i + c];
+    return `#${sum.map((s) => Math.round(s / Math.max(1, n)).toString(16).padStart(2, '0')).join('')}`;
+  } finally {
+    if (file.exists) file.delete();
+  }
+}
+
 /** How big custom art is kept, on its longest side: sharp zoomed in close, as a card's art is (see ART_MAX for the limit). */
 const ART_SIDE = 1024;
 

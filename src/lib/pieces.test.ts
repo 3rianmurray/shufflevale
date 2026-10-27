@@ -4,19 +4,20 @@ import { test } from 'node:test';
 import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
-test('a six-sided die has six faces for art and a coin two; other dice and pieces none', () => {
+test('every die has a face for art on each side, and a coin two; other pieces none', () => {
   const at = { x: 0, y: 0, value: 1 };
   assert.equal(faceCount({ kind: 'die', sides: 6 }), 6);
   assert.equal(faceCount({ kind: 'die' }), 6);
-  assert.equal(faceCount({ kind: 'die', sides: 20 }), 0);
+  assert.equal(faceCount({ kind: 'die', sides: 20 }), 20);
   assert.equal(faceCount({ kind: 'coin' }), 2);
   assert.equal(faceCount({ kind: 'counter' }), 0);
-  // A face given art, and put back: none at all once every face is standard again.
+  // A face given art (and its color), and put back: none at all once every face is standard again.
   const die: TablePiece = { id: 'd', kind: 'die', sides: 6, ...at };
-  const one = withFace(die, 2, 'decks/tokens/three.png');
-  assert.deepEqual(one, [null, null, 'decks/tokens/three.png', null, null, null]);
-  assert.equal(withFace({ ...die, faces: one }, 2, null), undefined);
-  assert.deepEqual(withFace({ id: 'c', kind: 'coin', ...at }, 1, 'decks/tokens/tails.png'), [null, 'decks/tokens/tails.png']);
+  const one = withFace(die, 2, 'decks/tokens/three.png', '#336699');
+  assert.deepEqual(one.faces, [null, null, 'decks/tokens/three.png', null, null, null]);
+  assert.deepEqual(one.faceColors, [null, null, '#336699', null, null, null]);
+  assert.deepEqual(withFace({ ...die, ...one }, 2, null), { faces: undefined, faceColors: undefined });
+  assert.deepEqual(withFace({ id: 'c', kind: 'coin', ...at }, 1, 'decks/tokens/tails.png').faces, [null, 'decks/tokens/tails.png']);
 });
 
 const table = () => newSandbox('t', 'Test', 0);

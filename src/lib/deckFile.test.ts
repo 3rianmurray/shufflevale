@@ -197,7 +197,11 @@ test('a die’s and a coin’s own face art come with the table', () => {
   const table = {
     id: 't1', name: 'T', createdAt: 0, updatedAt: 0, stacks: [], hands: [[], [], [], []], handNames: ['Hand 1', 'Hand 2', 'Hand 3', 'Hand 4'],
     pieces: [
-      { id: 'p1', kind: 'die' as const, x: 0, y: 0, value: 1, sides: 6, faces: ['decks/tokens/one.png', null, null, null, null, 'decks/tokens/six.png'] },
+      {
+        id: 'p1', kind: 'die' as const, x: 0, y: 0, value: 1, sides: 6,
+        faces: ['decks/tokens/one.png', null, null, null, null, 'decks/tokens/six.png'],
+        faceColors: ['#123456', null, null, null, null, 'not a color'],
+      },
       { id: 'p2', kind: 'coin' as const, x: 0, y: 0, value: 1, faces: [null, 'decks/tokens/tails.png'] },
     ],
   };
@@ -211,6 +215,8 @@ test('a die’s and a coin’s own face art come with the table', () => {
   // Each face's picture saved again, the standard ones left standard, in their places.
   assert.deepEqual(die.faces!.map((f) => f !== null), [true, false, false, false, false, true]);
   assert.ok(die.faces![0]!.startsWith('decks/tokens/new-'));
+  // Each face's color comes too (only real colors).
+  assert.deepEqual(die.faceColors, ['#123456', null, null, null, null, null]);
   assert.deepEqual(coin.faces!.map((f) => f !== null), [false, true]);
 });
 

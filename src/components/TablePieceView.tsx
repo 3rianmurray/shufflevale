@@ -1,4 +1,4 @@
-import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
+import { Canvas, Circle, Group, Image as SkImage, Path, Shadow, Skia, useImage } from '@shopify/react-native-skia';
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
@@ -125,11 +125,15 @@ function lightOf(face: Pt[]): number {
   return (-(cx * 0.6 + cy * 0.8) / d) * 0.32 - 0.12;
 }
 
-/** A die's outline, its faces (each with how lit it is), and where its number goes and how big (in a 0–1 box). */
+/**
+ * A die's outline, its faces (each with how lit it is), where its number goes and how big (in a 0–1 box), and the
+ * face that shows the player's own art (the one facing up, or for those with a point up, the nearest).
+ */
 interface DieShape {
   outline: Pt[];
   faces: { pts: Pt[]; light: number }[];
   number: { at: Pt; size: number };
+  front: Pt[];
 }
 
 const faces = (list: Pt[][], front?: Pt[]) => [
@@ -147,7 +151,7 @@ function dieShape(sides: number): DieShape {
       [0.02, 0.9],
     ];
     const o: Pt = [0.5, 0.6];
-    return { outline: [a, b, c], faces: faces([[o, a, b], [o, b, c], [o, c, a]]), number: { at: [0.5, 0.6], size: 0.26 } };
+    return { outline: [a, b, c], faces: faces([[o, a, b], [o, b, c], [o, c, a]]), number: { at: [0.5, 0.6], size: 0.26 }, front: [o, b, c] };
   }
   if (sides === 8) {
     // An octahedron, point up: four faces round the near point, a little up and left of the middle.
@@ -158,7 +162,7 @@ function dieShape(sides: number): DieShape {
       [0.06, 0.5],
     ];
     const o: Pt = [0.46, 0.46];
-    return { outline: [t, r, b, l], faces: faces([[t, r, o], [r, b, o], [b, l, o], [l, t, o]]), number: { at: o, size: 0.3 } };
+    return { outline: [t, r, b, l], faces: faces([[t, r, o], [r, b, o], [b, l, o], [l, t, o]]), number: { at: o, size: 0.3 }, front: [r, b, o] };
   }
   if (sides === 10) {
     // A pentagonal trapezohedron: a kite with its front face (the kite-shaped one) facing up.
@@ -185,6 +189,7 @@ function dieShape(sides: number): DieShape {
         [t, fr, fb, fl],
       ),
       number: { at: [0.5, 0.44], size: 0.28 },
+      front: [t, fr, fb, fl],
     };
   }
   if (sides === 12) {
@@ -192,7 +197,7 @@ function dieShape(sides: number): DieShape {
     const inner = ring(5, 0.25, [0.5, 0.52]);
     const outer = ring(10, 0.5);
     const round = inner.map((p, i) => [p, outer[2 * i], outer[2 * i + 1], outer[(2 * i + 2) % 10], inner[(i + 1) % 5]]);
-    return { outline: outer, faces: faces(round, inner), number: { at: [0.5, 0.52], size: 0.28 } };
+    return { outline: outer, faces: faces(round, inner), number: { at: [0.5, 0.52], size: 0.28 }, front: inner };
   }
   if (sides === 20) {
     // An icosahedron: a triangle facing up in a six-sided outline, the faces round it filling the rest.
@@ -210,9 +215,31 @@ function dieShape(sides: number): DieShape {
       [hex[4], hex[5], t2],
       [hex[5], hex[0], t0],
     ];
-    return { outline: hex, faces: faces(round, tri), number: { at: [0.5, 0.53], size: 0.22 } };
+    return { outline: hex, faces: faces(round, tri), number: { at: [0.5, 0.53], size: 0.22 }, front: tri };
   }
-  return { outline: [], faces: [], number: { at: [0.5, 0.5], size: 0.3 } };
+  return { outline: [], faces: [], number: { at: [0.5, 0.5], size: 0.3 }, front: [] };
+}
+
+/** A shape's bounding box (in the 0–1 box). */
+function boundsOf(pts: Pt[]) {
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+/**
+ * The shape a die's face (or a coin's side) shows the player's art in, for cropping it: its width over its height,
+ * and its outline fitted to that box (0–1 across and down), or none for a square with rounded corners (a d6's).
+ */
+export function faceShape(p: Pick<TablePiece, 'kind' | 'sides'>): { ratio: number; outline: Pt[] | null } {
+  if (p.kind === 'coin') return { ratio: 1, outline: ring(48, 0.5) };
+  const sides = p.sides ?? 6;
+  if (sides === 6) return { ratio: 1, outline: null };
+  const { front } = dieShape(sides);
+  const box = boundsOf(front);
+  return { ratio: box.w / box.h, outline: front.map(([x, y]) => [(x - box.x) / box.w, (y - box.y) / box.h] as Pt) };
 }
 
 /**
@@ -335,7 +362,7 @@ function Counter({ piece, color, selected, k }: { piece: TablePiece; color: stri
  */
 function Die({
   piece,
-  color,
+  color: ownColor,
   rollKey,
   rollFrom,
   size,
@@ -380,8 +407,11 @@ function Die({
     return () => clearTimeout(timer);
   }, [rollKey, sides, travel, time]);
   const shown = face ?? piece.value;
-  /** The player's own art for the face it shows (a six-sided die's), if it has some. */
-  const faceArt = sides === 6 ? (piece.faces?.[shown - 1] ?? null) : null;
+  /** The player's own art for the face it shows, if it has some; then the rest of it is in the art's own color. */
+  const faceArt = piece.faces?.[shown - 1] ?? null;
+  const color = (faceArt && piece.faceColors?.[shown - 1]) || ownColor;
+  // (Drawn on the canvas, clipped to its face, for every die but a d6, whose square face takes it as a picture.)
+  const artImage = useImage(faceArt && sides !== 6 ? imageUri(faceArt) : null);
   const dx = rollFrom?.dx ?? 0;
   const dy = rollFrom?.dy ?? 0;
   // It spins the way it's thrown.
@@ -465,6 +495,19 @@ function Die({
             {shape.faces.map((f, i) => (
               <Path key={i} path={path(f.pts)} color={shade(color, f.light)} />
             ))}
+            {/* The player's own art on its front face, cut to the face's shape (it covers the face's box). */}
+            {artImage && shape.front.length ? (
+              <Group clip={path(shape.front)}>
+                <SkImage
+                  image={artImage}
+                  x={at([boundsOf(shape.front).x, 0])[0]}
+                  y={at([0, boundsOf(shape.front).y])[1]}
+                  width={boundsOf(shape.front).w * px}
+                  height={boundsOf(shape.front).h * px}
+                  fit="cover"
+                />
+              </Group>
+            ) : null}
             {shape.faces.map((f, i) => (
               <Path key={`e${i}`} path={path(f.pts)} color={edge} style="stroke" strokeWidth={0.6 * OS} opacity={0.35} />
             ))}
@@ -472,7 +515,7 @@ function Die({
           </>
         )}
       </Canvas>
-      {faceArt ? (
+      {faceArt && sides === 6 ? (
         // The player's own art for the face it shows, filling its top face, its corners rounded as the face's are.
         <Image
           source={{ uri: imageUri(faceArt) }}
@@ -488,7 +531,7 @@ function Die({
           cachePolicy="memory-disk"
         />
       ) : null}
-      {sides === 6 ? null : (
+      {sides === 6 || faceArt ? null : (
         <Text
           allowFontScaling={false}
           style={[
