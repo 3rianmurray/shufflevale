@@ -169,6 +169,7 @@ import { cardRadius, cardRatio, cardSizeMm, copiesOf, deckSize, PRESET_SIZES_MM 
 import type { Deck } from '../lib/types';
 import { colors } from '../theme';
 import { ActionSheet } from './ActionSheet';
+import { CropModal } from './CropModal';
 import { FaceSlots } from './FaceSlots';
 import type { SheetAction, SheetTile } from './ActionSheet';
 import { CardFocus } from './CardFocus';
@@ -538,6 +539,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   };
   /** Choosing cards from a deck to bring onto the table. */
   const [addingCards, setAddingCards] = useState(false);
+  /** A picture chosen for a die's or coin's face, being cropped square (see FaceSlots). */
+  const [faceCrop, setFaceCrop] = useState<{ uri: string; id: string; face: number } | null>(null);
   /** The grid shown for a moment (its size just chosen), even with its lines off. */
   const [gridPeek, setGridPeek] = useState(0);
   /** The peeked grid's lines fading away. */
@@ -1260,7 +1263,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // The table as it is now (the picker took a while).
       const now = latest.get();
       if (!now.table) return;
-      if (target.kind === 'face') return setFaceArt(target.id, target.face, importImage(TOKEN_PICTURES, await tokenPicture(uri)));
+      if (target.kind === 'face') {
+        // From Photos or Files: cropped square first, just as wanted (the camera's framed as it's taken).
+        if (source !== 'camera') return setFaceCrop({ uri, id: target.id, face: target.face });
+        return setFaceArt(target.id, target.face, importImage(TOKEN_PICTURES, await tokenPicture(uri)));
+      }
       if (forToken) {
         const image = importImage(TOKEN_PICTURES, await tokenPicture(uri));
         if (target.id) now.commit(setPiece(now.table, target.id, { image }));
@@ -5080,6 +5087,24 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         onClose={() => setTrashOpen(false)}
       />
       <AddCardsModal visible={addingCards} decks={decks} onAdd={addCardsToTable} onClose={() => setAddingCards(false)} />
+      {/* A face's art, cropped square; then the faces again (put away, they're shown again as they were). */}
+      <CropModal
+        uris={faceCrop ? [faceCrop.uri] : []}
+        ratio={1}
+        onDone={([cropped]) => {
+          const crop = faceCrop;
+          setFaceCrop(null);
+          if (!crop || !cropped) return;
+          tokenPicture(cropped)
+            .then((square) => setFaceArt(crop.id, crop.face, importImage(TOKEN_PICTURES, square)))
+            .catch((e: unknown) => Alert.alert('Couldn’t use that picture', e instanceof Error ? e.message : String(e)));
+        }}
+        onCancel={() => {
+          const crop = faceCrop;
+          setFaceCrop(null);
+          if (crop) setTimeout(() => setMenu({ kind: 'faces', id: crop.id }), 300);
+        }}
+      />
       {/* The table's menu, and choosing a deck to add. */}
       <ActionSheet
         visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
