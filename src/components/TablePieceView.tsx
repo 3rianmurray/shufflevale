@@ -3,7 +3,6 @@ import type { SkFont, SkImage as SkiaImage, SkPath } from '@shopify/react-native
 import Reanimated, { Easing as ReEasing, interpolate, makeMutable, useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { drawCubeSlots, restingTurn, SIDE_VALUES, tumbleFor, tumblingTurn } from '../lib/cube3d';
-import { ROLL_DEBUG, rollLog, rollView } from '../lib/rollDebug';
 import type { Mat, SideSlot, Tumble } from '../lib/cube3d';
 import { drawPoly, polyModel, restingPolyTurn } from '../lib/polyhedra';
 import type { FaceLabel, PolyModel, PolySlot } from '../lib/polyhedra';
@@ -553,11 +552,6 @@ function Die({
   // (Drawn on the canvas, clipped to its face, for every die but a d6, whose square face takes it as a picture.)
   const artImage = useImage(faceArt && sides !== 6 ? imageUri(faceArt) : null);
   const { dx, dy } = motion;
-  // (Tester builds: each time it's drawn, logged, while its roll is watched: see lib/rollDebug.)
-  rollLog(
-    piece.id,
-    `drawn: lies ${Math.round(piece.x)},${Math.round(piece.y)} roll ${rollKey} motion ${motion.key} ${landed ? 'landed' : 'not landed'} back ${Math.round(dx)},${Math.round(dy)}`,
-  );
   // It spins the way it's thrown (a die in 3D turns over in its own drawing instead, still lit from the same side).
   const turn = solid || poly ? 0 : (dx >= 0 ? 1 : -1) * 360 * ROLL_TURNS;
   const rollStyle = useAnimatedStyle(() => {
@@ -627,7 +621,7 @@ function Die({
   const shadow = <Shadow dx={2 * OS} dy={4 * OS} blur={4 * OS} color="rgba(0,0,0,0.45)" shadowOnly />;
   const edge = shade(color, -0.45);
   return (
-    <Reanimated.View style={[StyleSheet.absoluteFill, rollStyle]} ref={ROLL_DEBUG ? (v: View | null) => rollView(piece.id, v) : undefined}>
+    <Reanimated.View style={[StyleSheet.absoluteFill, rollStyle]}>
       <Canvas
         style={{
           position: 'absolute',

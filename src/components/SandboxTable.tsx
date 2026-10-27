@@ -171,8 +171,6 @@ import type { Deck } from '../lib/types';
 import { colors } from '../theme';
 import { ActionSheet } from './ActionSheet';
 import { CropModal } from './CropModal';
-import { RollDebugOverlay } from './RollDebugOverlay';
-import { watchRoll } from '../lib/rollDebug';
 import { FaceSlots } from './FaceSlots';
 import type { SheetAction, SheetTile } from './ActionSheet';
 import { CardFocus } from './CardFocus';
@@ -1062,8 +1060,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const p = next.pieces?.find((q) => q.id === id);
       return { x: p?.x ?? 0, y: p?.y ?? 0 };
     };
-    // (Tester builds: the first die's roll logged, frame by frame: see lib/rollDebug.)
-    watchRoll(Object.keys(from)[0]);
     // The rolls first, then the table with the dice where they land: the table can reach the screen a frame before
     // what's set after it, and with the dice already there but their rolls not yet known, each showed for a frame
     // where it lands. Known first, each starts its tumble back the moment it's there (see Die).
@@ -5286,8 +5282,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           setMenu(null);
         }}
       />
-      {/* (Tester builds only: the last roll's log.) */}
-      <RollDebugOverlay />
     </View>
     </Dice3DContext.Provider>
   );
