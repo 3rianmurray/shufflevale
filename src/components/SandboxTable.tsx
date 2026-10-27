@@ -171,6 +171,8 @@ import type { Deck } from '../lib/types';
 import { colors } from '../theme';
 import { ActionSheet } from './ActionSheet';
 import { CropModal } from './CropModal';
+import { RollDebugOverlay } from './RollDebugOverlay';
+import { watchRoll } from '../lib/rollDebug';
 import { FaceSlots } from './FaceSlots';
 import type { SheetAction, SheetTile } from './ActionSheet';
 import { CardFocus } from './CardFocus';
@@ -1060,6 +1062,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const p = next.pieces?.find((q) => q.id === id);
       return { x: p?.x ?? 0, y: p?.y ?? 0 };
     };
+    // (Tester builds: the first die's roll logged, frame by frame: see lib/rollDebug.)
+    watchRoll(Object.keys(from)[0]);
     // The rolls first, then the table with the dice where they land: the table can reach the screen a frame before
     // what's set after it, and with the dice already there but their rolls not yet known, each showed for a frame
     // where it lands. Known first, each starts its tumble back the moment it's there (see Die).
@@ -4481,7 +4485,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         ? { x: p.x + groupShift.dx, y: p.y + groupShift.dy }
         : undefined;
   /** A piece as it's drawn on the table (always the same view, never drawn afresh as it moves). */
-  const drawPiece = (p: TablePiece) => {
+  const drawPiece = (p: TablePiece, layer?: number) => {
     const dragged = !!pieceDrag?.ids.includes(p.id);
     const turn = dragged && pieceDrag?.lead === p.id ? pieceDrag.turn : undefined;
     // A score pad being made taller or shorter, or scrolled: as it is for now.
@@ -4495,9 +4499,20 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         rollKey={rolls[p.id]?.key}
         rollFrom={rolls[p.id]}
         selected={pickedPieces.includes(p.id)}
+        layer={layer}
       />
     );
   };
+  /**
+   * How the pieces lie over one another (see inDrawOrder; any mid-roll over them all), as each one's layer: their
+   * views stay in one order and only their layers change. (Views put in a new order were moved on screen, and a
+   * moved one could show for a frame with an old roll's offset, out of place.)
+   */
+  const pieceLayers = (() => {
+    const all = table?.pieces ?? [];
+    const order = [...inDrawOrder(all).filter((p) => !airborne.includes(p.id)), ...all.filter((p) => airborne.includes(p.id))];
+    return new Map(order.map((p, i) => [p.id, i + 1]));
+  })();
   /** The custom art lying just over a stack (or, for null, under every card), where it lies. */
   const stackIds = new Set(table?.stacks.map((s) => s.id));
   const artOver = (stackId: string | null) =>
@@ -4580,10 +4595,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               </Fragment>
             ))}
             {/* Counters and dice, above every card (and custom art, while it's being moved). */}
-            {/* (Overlapping dice, the one further down and right in front: see inDrawOrder; any mid-roll over them all.) */}
-            {[...inDrawOrder(table.pieces ?? []).filter((p) => !airborne.includes(p.id)), ...(table.pieces ?? []).filter((p) => airborne.includes(p.id))].map((p) =>
-              onCloth(p) || p.kind === 'art' ? null : drawPiece(p),
-            )}
+            {/*
+              In their own layer (so their layers order them only among themselves), in one fixed order, each at its
+              layer (see pieceLayers).
+            */}
+            <View style={styles.pieceLayer} pointerEvents="none">
+              {(table.pieces ?? []).map((p) => (onCloth(p) || p.kind === 'art' ? null : drawPiece(p, pieceLayers.get(p.id))))}
+            </View>
             {/* A piece just taken out of a bag, under the finger (it's on the table once it's put down). */}
             {pieceDrag?.out ? (
               <TablePieceView
@@ -5268,6 +5286,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           setMenu(null);
         }}
       />
+      {/* (Tester builds only: the last roll's log.) */}
+      <RollDebugOverlay />
     </View>
     </Dice3DContext.Provider>
   );
@@ -5710,6 +5730,8 @@ const styles = StyleSheet.create({
   // The whole table's size (a sizeless layer at the table's corner can be skipped as off screen, cards and all),
   // turning about that corner, as its transform expects.
   groupLayer: { position: 'absolute', left: 0, top: 0, width: TABLE_W, height: TABLE_H, transformOrigin: [0, 0, 0] },
+  // The pieces over the cards, the whole table's size (a sizeless one can be skipped as off screen).
+  pieceLayer: { position: 'absolute', left: 0, top: 0, width: TABLE_W, height: TABLE_H },
   flipButton: {
     position: 'absolute',
     alignItems: 'center',

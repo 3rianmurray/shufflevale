@@ -3,6 +3,7 @@ import type { SkFont, SkImage as SkiaImage, SkPath } from '@shopify/react-native
 import { Easing as ReEasing, makeMutable, useDerivedValue, withTiming } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { drawCubeSlots, restingTurn, SIDE_VALUES, tumbleFor, tumblingTurn } from '../lib/cube3d';
+import { ROLL_DEBUG, rollLog, rollView } from '../lib/rollDebug';
 import type { Mat, SideSlot, Tumble } from '../lib/cube3d';
 import { drawPoly, polyModel, restingPolyTurn } from '../lib/polyhedra';
 import type { FaceLabel, PolyModel, PolySlot } from '../lib/polyhedra';
@@ -336,8 +337,11 @@ export const TablePieceView = memo(function TablePieceView({
   lifted = false,
   selected = false,
   turn,
+  layer,
 }: {
   piece: TablePiece;
+  /** Where it lies among the pieces drawn with it (higher over lower), its view kept in its place among theirs. */
+  layer?: number;
   at?: { x: number; y: number };
   /** A turn to draw it at for now (while it's being twisted), instead of its own. */
   turn?: number;
@@ -367,6 +371,7 @@ export const TablePieceView = memo(function TablePieceView({
         styles.piece,
         // (A die turns its shape itself, still lit and seen from the top left: see Die.)
         { left: x - w / 2, top: y - h / 2, width: w, height: h, transform: [{ rotate: `${piece.kind === 'die' ? 0 : (turn ?? piece.angle ?? 0)}deg` }, { scale: ((piece.scale ?? 1) / laidOut) * (lifted ? LIFT : 1) }] },
+        layer !== undefined && { zIndex: layer },
       ]}>
       {piece.kind === 'counter' ? (
         <Counter piece={piece} color={color} selected={selected} k={laidOut} />
@@ -557,6 +562,11 @@ function Die({
   // (Drawn on the canvas, clipped to its face, for every die but a d6, whose square face takes it as a picture.)
   const artImage = useImage(faceArt && sides !== 6 ? imageUri(faceArt) : null);
   const { dx, dy } = motion;
+  // (Tester builds: each time it's drawn, logged, while its roll is watched: see lib/rollDebug.)
+  rollLog(
+    piece.id,
+    `drawn: lies ${Math.round(piece.x)},${Math.round(piece.y)} roll ${rollKey} motion ${motion.key} ${landed ? 'landed' : 'not landed'} back ${Math.round(dx)},${Math.round(dy)}`,
+  );
   // It spins the way it's thrown.
   const turn = (dx >= 0 ? 1 : -1) * 360 * ROLL_TURNS;
   const transform = useMemo(
@@ -625,7 +635,7 @@ function Die({
   const shadow = <Shadow dx={2 * OS} dy={4 * OS} blur={4 * OS} color="rgba(0,0,0,0.45)" shadowOnly />;
   const edge = shade(color, -0.45);
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, { transform }]}>
+    <Animated.View style={[StyleSheet.absoluteFill, { transform }]} ref={ROLL_DEBUG ? (v: View | null) => rollView(piece.id, v) : undefined}>
       <Canvas
         style={{
           position: 'absolute',
