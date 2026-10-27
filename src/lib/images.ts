@@ -2,6 +2,7 @@ import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { decode as decodeJpeg } from 'jpeg-js';
 
+import { edgeColor } from './faceColor';
 import { pngHasTransparency } from './pngAlpha';
 
 /** Saved cards are scaled down to this height, which is plenty for any phone screen. */
@@ -163,17 +164,17 @@ export async function facePicture(uri: string, ratio: number): Promise<string> {
   return (await ref.saveAsync(see ? { format: SaveFormat.PNG } : { format: SaveFormat.JPEG, compress: 0.85 })).uri;
 }
 
-/** A picture's average color (as #rrggbb), from a tiny copy of it: what a die with it on a face is colored. */
-export async function averageColor(uri: string): Promise<string> {
-  const ref = await ImageManipulator.manipulate(uri).resize({ width: 16 }).renderAsync();
+/**
+ * The color a die with this picture on a face takes (as #rrggbb): the commonest round the edge of the face's shape
+ * (see edgeColor), from a small copy of it.
+ */
+export async function faceArtColor(uri: string, outline: readonly (readonly [number, number])[] | null): Promise<string> {
+  const ref = await ImageManipulator.manipulate(uri).resize({ width: 48 }).renderAsync();
   const small = await ref.saveAsync({ format: SaveFormat.JPEG, compress: 0.9 });
   const file = new File(small.uri);
   try {
-    const { data } = decodeJpeg(await file.bytes(), { useTArray: true, formatAsRGBA: true });
-    const sum = [0, 0, 0];
-    const n = data.length / 4;
-    for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) sum[c] += data[i + c];
-    return `#${sum.map((s) => Math.round(s / Math.max(1, n)).toString(16).padStart(2, '0')).join('')}`;
+    const { data, width, height } = decodeJpeg(await file.bytes(), { useTArray: true, formatAsRGBA: true });
+    return edgeColor(data, width, height, outline ? [...outline] : null);
   } finally {
     if (file.exists) file.delete();
   }

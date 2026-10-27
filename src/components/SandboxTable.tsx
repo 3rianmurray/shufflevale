@@ -159,7 +159,7 @@ import {
 import type { BagItem, Camera, CardSize, PieceKind, PiecePart, PieceShape, SandboxCard, SandboxStack, SandboxTable, Source, TablePiece } from '../lib/sandbox';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { artPicture, averageColor, facePicture, loadUpright, tokenPicture } from '../lib/images';
+import { artPicture, faceArtColor, facePicture, loadUpright, tokenPicture } from '../lib/images';
 import { deckLook, isPlayground, isProPiece, usePro } from '../lib/pro';
 import { updateSandbox, useSandbox } from '../lib/sandboxStore';
 import { clipSize, setClip, useClip } from '../lib/tableClipboard';
@@ -5107,7 +5107,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           if (!crop || !cropped) return;
           (async () => {
             const picture = await facePicture(cropped, cropShape.ratio);
-            const color = await averageColor(picture);
+            // The die's color while it's up: the commonest round the face's edge, where the die's sides meet it.
+            const color = await faceArtColor(picture, cropShape.outline);
             setFaceArt(crop.id, crop.face, importImage(TOKEN_PICTURES, picture), color);
           })().catch((e: unknown) => Alert.alert('Couldn’t use that picture', e instanceof Error ? e.message : String(e)));
         }}
