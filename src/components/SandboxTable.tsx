@@ -1779,7 +1779,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
        *  tap held down soon after starts a lasso. */
       onEmpty: false,
       firstDownAt: 0,
-      emptyTap: null as null | { x: number; y: number; at: number },
+      /** The last quick tap on empty table (or `locked`, on a locked deck), for a lasso's double tap. */
+      emptyTap: null as null | { x: number; y: number; at: number; locked?: boolean },
       /** When the lasso's finger came down: let go at once, unmoved, it was a double tap (a zoom). */
       lassoAt: 0,
       /** The last tap on a zone or something locked: a second soon after on the same zooms onto it. */
@@ -2257,6 +2258,36 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         latest.get().setMenu({ kind: 'piece', id: held });
       }, HOLD_PIECE_MS);
     };
+    /**
+     * The second tap of a double tap on the table (or on something locked: a board, a locked deck), held down: a
+     * lasso, drawn round what's to be picked out. Whether it's started one.
+     */
+    const lassoFromTap = (t: Touch, w: { x: number; y: number }) => {
+      const L = latest.get();
+      const now = Date.now();
+      const e = touch.emptyTap;
+      touch.emptyTap = null;
+      if (!e || now - e.at >= LASSO_TAP_MS || Math.hypot(t.x - e.x, t.y - e.y) >= LASSO_TAP_REACH) return false;
+      // The tap before it was the first of the double tap, not one to clear the selection (or to pick out the locked
+      // deck tapped): the lasso adds to it.
+      if (touch.clearTimer) clearTimeout(touch.clearTimer);
+      touch.clearTimer = null;
+      if (touch.tapTimer) clearTimeout(touch.tapTimer);
+      touch.tapTimer = null;
+      touch.lastTap = null;
+      clearHold();
+      touch.mode = 'lasso';
+      touch.lassoAt = now;
+      touch.lasso = [w];
+      touch.lassoScreen = [{ x: t.x, y: t.y }];
+      const locked = new Set(L.table?.stacks.filter((s) => s.locked).map((s) => s.id));
+      touch.lassoBase = L.selected.filter((id) => !locked.has(id));
+      touch.lassoPieceBase = L.pickedPieces;
+      L.setLassoPath(touch.lassoScreen);
+      haptics.lift();
+      tipLearned('tables-lasso');
+      return true;
+    };
     const down = (changed: Touch[], fresh = false) => {
       // The first finger of a new touch: anything left of the last one is let go first. (Its end doesn't always come:
       // a menu opened over the table while a finger was still down, say. Left, it took this finger for a second one.)
@@ -2320,6 +2351,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             return;
           }
         }
+        // A locked deck tapped a moment ago, and again, held: a lasso (as on empty table), whatever's here.
+        if (touch.emptyTap?.locked && lassoFromTap(t, w)) return;
         // A counter or die (they lie above every card): a tap counts or rolls, a drag moves it, a hold opens its options.
         // A small piece is easy to get a finger on: caught within a fingertip's reach of it, if nothing else (not a
         // piece, nor a card) is right under the finger.
@@ -2411,23 +2444,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         }
         // Empty table. The second tap of a double tap, held down: a lasso, drawn round the cards to pick out.
         const now = Date.now();
-        const e = touch.emptyTap;
-        touch.emptyTap = null;
-        if (e && now - e.at < LASSO_TAP_MS && Math.hypot(t.x - e.x, t.y - e.y) < LASSO_TAP_REACH) {
-          // The tap before it was the first of the double tap, not one to clear the selection: the lasso adds to it.
-          if (touch.clearTimer) clearTimeout(touch.clearTimer);
-          touch.clearTimer = null;
-          touch.mode = 'lasso';
-          touch.lassoAt = now;
-          touch.lasso = [w];
-          touch.lassoScreen = [{ x: t.x, y: t.y }];
-          touch.lassoBase = L.selected;
-          touch.lassoPieceBase = L.pickedPieces;
-          L.setLassoPath(touch.lassoScreen);
-          haptics.lift();
-          tipLearned('tables-lasso');
-          return;
-        }
+        if (lassoFromTap(t, w)) return;
         touch.onEmpty = true;
         touch.firstDownAt = now;
         // Held still on empty table: what can be added, to go right there.
@@ -2761,11 +2778,21 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         const f = touch.fingers.get(touch.first);
         const doubleTap = !!f && Math.hypot(f.now.x - f.start.x, f.now.y - f.start.y) < TAP_SLOP && Date.now() - touch.lassoAt < TAP_MS;
         if (doubleTap && f && L.table) {
-          // Let go at once, unmoved: a double tap, not a lasso. The camera zooms in there, or onto the
-          // zone there (a locked zone's table works as if it weren't there, so it's found here).
+          // Let go at once, unmoved: a double tap, not a lasso. The camera zooms in there, or onto the locked deck,
+          // art or zone there (they work as the table under them, so they're found here).
           const w = toTable(readCamera(), f.start.x, f.start.y);
+          const deck = stackAt(L.table, w.x, w.y, L.size)?.stack;
+          const art = pieceAt(L.table, w.x, w.y)?.piece;
           const zone = zoneAt(L.table, w.x, w.y);
-          L.zoomTo(zone ? { item: { x: zone.x, y: zone.y, ...pieceSizeOf(zone), angle: 0 } } : { at: w });
+          L.zoomTo(
+            deck?.locked
+              ? { item: { x: deck.x, y: deck.y, ...cardSizeOf(deck.cards[deck.cards.length - 1], L.size), angle: deck.angle } }
+              : art?.kind === 'art' && art.locked
+                ? { item: { x: art.x, y: art.y, ...pieceSizeOf(art), angle: turnsFreely(art) ? (art.angle ?? 0) : 0 } }
+                : zone
+                  ? { item: { x: zone.x, y: zone.y, ...pieceSizeOf(zone), angle: 0 } }
+                  : { at: w },
+          );
         } else if (L.selected.length) {
           // What it went round stays picked out.
           haptics.drop();
@@ -2809,6 +2836,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           } else {
             if (touch.tapTimer) clearTimeout(touch.tapTimer);
             touch.lastTap = { key, at: now };
+            // A locked deck (a board, say): it may be the first tap of a lasso's double tap, as on empty table.
+            const f = touch.fingers.get(touch.first);
+            if (src.kind !== 'hand' && f && L.table?.stacks.some((s) => s.id === src.stackId && s.locked)) {
+              touch.emptyTap = { x: f.start.x, y: f.start.y, at: now, locked: true };
+            }
             touch.tapTimer = setTimeout(() => {
               touch.tapTimer = null;
               touch.lastTap = null;
