@@ -46,6 +46,11 @@ import {
   movePieces,
   gridDice,
   gridItems,
+  groupBoxes,
+  groupItems,
+  groupMembers,
+  ungroupItems,
+  withGroups,
   separateDice,
   newPiece,
   pieceAt,
@@ -341,6 +346,9 @@ const FLIP_ICON = { ios: 'arrow.trianglehead.2.clockwise.rotate.90', android: 'f
 /** Copy's button, the last in every menu that has it. */
 const COPY_ICON = { ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' } as const;
 
+/** The room between a picked-out group's box and what's in it (table units). */
+const GROUP_BOX_ROOM = 8;
+
 /** The most copies Paste several puts down at once. */
 const PASTE_MAX = 50;
 
@@ -455,7 +463,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const [handIndex, setHandIndex] = useState(0);
   const [folded, setFolded] = useState(false);
   /** Stacks picked out with the lasso: outlined in gold, and dragged together. */
-  const [selected, setSelected] = useState<string[]>([]);
+  // (As picked out: `selected`, with the rest of any group they're in.)
+  const [selectedIds, setSelected] = useState<string[]>([]);
   /** The lasso being drawn, as screen points (for drawing it). */
   const [lassoPath, setLassoPath] = useState<{ x: number; y: number }[] | null>(null);
   /** The selected stacks being dragged together: moved on the animation thread, like the camera, until let go. */
@@ -1044,7 +1053,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const [airborne, setAirborne] = useStoreState<string[]>([]);
   /** Counters and dice picked out with the lasso; the dice among them roll together (tap any, or the roll button). */
   const [pickedPieceIds, setPickedPieces] = useState<string[]>([]);
-  const pickedPieces = pickedPieceIds.filter((id) => table?.pieces?.some((p) => p.id === id));
+  // What's picked out, cards and pieces: anything in a group brings the rest of the group with it (see withGroups).
+  const grouped = table
+    ? withGroups(table, selectedIds, pickedPieceIds.filter((id) => table.pieces?.some((p) => p.id === id)))
+    : { stackIds: selectedIds, pieceIds: [] };
+  const selected = grouped.stackIds;
+  const pickedPieces = grouped.pieceIds;
   const pickedDice = pickedPieces.filter((id) => table?.pieces?.some((p) => p.id === id && p.kind === 'die'));
   /** The picked-out dice, coins and spinners: the roll button rolls, flips and spins them all (a tap on one, those of its kind). */
   const pickedRollables = pickedPieces.filter((id) => table?.pieces?.some((p) => p.id === id && rollable(p)));
@@ -1791,6 +1805,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       holdSpoiled: false,
       /** The press is on a selected stack: a drag moves the whole group. */
       groupPress: false,
+      /** The press picked out a group just now (it wasn't): a tap on it leaves it picked out, rather than opening its options. */
+      groupFresh: false,
       /** Where the group's drag started on the table, and the stack it was grabbed by. */
       groupFrom: { x: 0, y: 0 },
       groupLead: '',
@@ -2190,9 +2206,19 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         L.openPro();
         return;
       }
+      // One in a group (see groupItems), not yet picked out: its group's picked out, and goes with it as one (a tap
+      // just picks it out).
+      const members = L.pickedPieces.includes(pressed) ? null : groupMembers(L.table!, pressed);
+      touch.groupFresh = !!members;
+      if (members) {
+        L.setSelected(members.stackIds);
+        L.setPickedPieces(members.pieceIds);
+      }
+      const selectedNow = members ? members.stackIds : L.selected;
+      const pickedNow = members ? members.pieceIds : L.pickedPieces;
       // Picked out along with cards: dragged, it all goes (as if from one of the cards); held, the group's options.
-      if (L.pickedPieces.includes(pressed) && L.selected.length) {
-        touch.pressed = { kind: 'top', stackId: L.selected[L.selected.length - 1] };
+      if (pickedNow.includes(pressed) && selectedNow.length) {
+        touch.pressed = { kind: 'top', stackId: selectedNow[selectedNow.length - 1] };
         touch.groupPress = true;
         touch.mode = 'press';
         touch.viaPiece = { id: pressed, part, at: w };
@@ -2208,10 +2234,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         return;
       }
       // Pressing one of the picked-out dice keeps them picked out (a tap rolls them all); anything else lets them go.
-      if (L.selected.length && !L.pickedPieces.includes(pressed)) L.setSelected([]);
-      else if (L.pickedPieces.length && !L.pickedPieces.includes(pressed)) L.setPickedPieces([]);
+      if (L.selected.length && !pickedNow.includes(pressed)) L.setSelected([]);
+      else if (L.pickedPieces.length && !pickedNow.includes(pressed)) L.setPickedPieces([]);
       // One of several picked out: a drag takes them all.
-      const group = L.pickedPieces.includes(pressed) && L.pickedPieces.length > 1 ? L.pickedPieces : [pressed];
+      const group = pickedNow.includes(pressed) && pickedNow.length > 1 ? pickedNow : [pressed];
       touch.piece = { id: pressed, part, group, from: w, moved: false };
       touch.mode = 'piece';
       touch.onEmpty = false;
@@ -2417,9 +2443,17 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         const hit = L.table && !named ? stackAt(L.table, w.x, w.y, L.size) : null;
         touch.onEmpty = false;
         if (hit) {
-          // A selected stack: dragging it moves the whole group. Any other card lets the selection go.
+          // A selected stack: dragging it moves the whole group. Any other card lets the selection go; one in a group
+          // (see groupItems) picks out its group instead, which it moves with as one.
           touch.groupPress = L.selected.includes(hit.stack.id);
-          if (!touch.groupPress && L.selected.length) L.setSelected([]);
+          touch.groupFresh = false;
+          const members = touch.groupPress ? null : groupMembers(L.table!, hit.stack.id);
+          if (members) {
+            L.setSelected(members.stackIds);
+            L.setPickedPieces(members.pieceIds);
+            touch.groupPress = true;
+            touch.groupFresh = true;
+          } else if (!touch.groupPress && L.selected.length) L.setSelected([]);
           // A quick drag takes its top card; held a moment first, the whole stack comes (unless it's locked).
           touch.pressed = { kind: 'top', stackId: hit.stack.id };
           touch.mode = 'press';
@@ -2838,7 +2872,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         clearHold();
         const { id, part, at } = touch.viaPiece;
         touch.viaPiece = null;
-        L.tapPiece(id, part, at);
+        // (One whose group this press just picked out: that's all the tap does.)
+        if (touch.groupFresh) haptics.tick();
+        else L.tapPiece(id, part, at);
+        touch.groupFresh = false;
         touch.mode = 'none';
       } else if ((touch.mode === 'press' || touch.mode === 'handPress') && lifted.includes(touch.first)) {
         // A tap on a card on the table picks it out (its buttons show); a tap on one already picked out opens its
@@ -2846,8 +2883,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // it's the first of two: a second tap on the same card in that moment flips it instead.
         clearHold();
         const src = touch.pressed;
-        const wasSelected = touch.groupPress && touch.mode === 'press';
-        if (src && src.kind !== 'bag') {
+        // (A group just picked out by this press stays picked out.)
+        const wasSelected = touch.groupPress && !touch.groupFresh && touch.mode === 'press';
+        if (touch.groupFresh) {
+          touch.groupFresh = false;
+          haptics.tick();
+        } else if (src && src.kind !== 'bag') {
           const key = src.kind === 'hand' ? `h:${src.iid}` : `s:${src.stackId}`;
           const now = Date.now();
           if (touch.lastTap && touch.lastTap.key === key && now - touch.lastTap.at < DOUBLE_TAP_MS) {
@@ -2922,7 +2963,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             L.zoomTo({ item: { x: p.x, y: p.y, ...pieceSizeOf(p), angle: turnsFreely(p) ? (p.angle ?? 0) : 0 } });
           } else {
             touch.lastPieceTap = p && zoomable ? { id: p.id, at: now } : null;
-            L.tapPiece(pressed.id, pressed.part, pressed.from);
+            // (One whose group this press just picked out: that's all the tap does.)
+            if (touch.groupFresh) haptics.tick();
+            else L.tapPiece(pressed.id, pressed.part, pressed.from);
+            touch.groupFresh = false;
           }
         }
         touch.mode = 'none';
@@ -3827,6 +3871,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       };
       const icon = (ios: string, android: string) => ({ ios, android, web: android }) as SheetTile['icon'];
       const rollables = pieces.filter(rollable);
+      const pieceIds = pieces.map((p) => p.id);
+      // The groups among it (each wholly picked out: see withGroups), and what they hold.
+      const boxes = groupBoxes(table, chosen, pieceIds, size);
+      const boxed = new Set(boxes.flatMap((g) => [...g.stackIds, ...g.pieceIds]));
       // Laid out as every other menu is (see CardFocus): what's done most as round buttons, the rest in a list.
       const tiles: SheetTile[] = [
         // Dice, coins and spinners: rolled, flipped and spun together.
@@ -3854,6 +3902,34 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                 label: 'Roll in place',
                 value: dice.every((d) => d.rollInPlace),
                 onChange: (on: boolean) => commit(dice.reduce((t, d) => setPiece(t, d.id, { rollInPlace: on || undefined }), table)),
+              },
+            ]
+          : []),
+        // Made one group (picked out and moved as one, in one box), unless it's one already; or let go of its groups.
+        // (Everything stays picked out either way.)
+        ...(total > 1 && !(boxes.length === 1 && boxed.size === total)
+          ? [
+              {
+                kind: 'action' as const,
+                label: 'Group',
+                onPress: () => {
+                  commit(groupItems(table, chosen, pieceIds, newId()));
+                  haptics.tick();
+                },
+              },
+            ]
+          : []),
+        ...(boxes.length
+          ? [
+              {
+                kind: 'action' as const,
+                label: boxes.length === 1 ? 'Ungroup' : 'Ungroup all',
+                onPress: () => {
+                  commit(ungroupItems(table, chosen, pieceIds));
+                  setSelected(chosen);
+                  setPickedPieces(pieceIds);
+                  haptics.tick();
+                },
               },
             ]
           : []),
@@ -4584,6 +4660,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   }
 
   const chosenIds = new Set(chosen);
+  /**
+   * Each group picked out: one box round all of it (see groupBoxes), drawn instead of each thing's own outline. Not
+   * while it's being dragged (each thing's drawn where it's got to, then).
+   */
+  const pickedGroups = groupMoving || pieceDrag ? [] : groupBoxes(table, chosen, pickedPieces, size);
+  const boxed = new Set(pickedGroups.flatMap((g) => [...g.stackIds, ...g.pieceIds]));
   /** A piece's menu is laid out as a card's (see CardFocus), not as a sheet. */
   const menuIsPiece = menu?.kind === 'piece';
   /** How a piece is moved for now: dragged (with the finger), with picked-out cards being dragged, or not at all. */
@@ -4608,7 +4690,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         turn={turn}
         rollKey={rolls[p.id]?.key}
         rollFrom={rolls[p.id]}
-        selected={pickedPieces.includes(p.id)}
+        selected={pickedPieces.includes(p.id) && !boxed.has(p.id)}
         layer={layer}
       />
     );
@@ -4698,7 +4780,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                         : ''
                   }
                   target={target === s.id}
-                  selected={chosenIds.has(s.id)}
+                  selected={chosenIds.has(s.id) && !boxed.has(s.id)}
                   showCount={!table.hideCounts}
                 />
               )}
@@ -4713,6 +4795,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             <View style={styles.pieceLayer} pointerEvents="none">
               {(table.pieces ?? []).map((p) => (onCloth(p) || p.kind === 'art' ? null : drawPiece(p, pieceLayers.get(p.id))))}
             </View>
+            {/* Each group picked out: one box round all of it, over everything in it. */}
+            {pickedGroups.map(({ group, box }) => (
+              <View
+                key={group}
+                pointerEvents="none"
+                style={[styles.groupBox, { left: box.x - GROUP_BOX_ROOM, top: box.y - GROUP_BOX_ROOM, width: box.w + GROUP_BOX_ROOM * 2, height: box.h + GROUP_BOX_ROOM * 2 }]}
+              />
+            ))}
             {/* A piece just taken out of a bag, under the finger (it's on the table once it's put down). */}
             {pieceDrag?.out ? (
               <TablePieceView
@@ -5776,6 +5866,8 @@ const styles = StyleSheet.create({
   // The same shadow, as a box shadow (see StackView).
   boxShadow: { boxShadow: '1px 3px 8px rgba(0, 0, 0, 0.45)' },
   target: { position: 'absolute', left: -5, top: -5, right: -5, bottom: -5, borderWidth: 3, borderColor: colors.accent },
+  // A group picked out: one box round all of it, as a single thing's outline is drawn (but dashed: it's several).
+  groupBox: { position: 'absolute', borderWidth: 3, borderColor: colors.accent, borderStyle: 'dashed', borderRadius: 12 },
   badge: {
     position: 'absolute',
     top: -8,

@@ -568,6 +568,8 @@ function pieceFrom(
   if (kind === 'token' && typeof v.tokenShape === 'string' && TOKEN_SHAPES.has(v.tokenShape as TokenShape)) p.tokenShape = v.tokenShape as TokenShape;
   const over = idFrom(v.over);
   if (over) p.over = over;
+  const group = idFrom(v.group);
+  if (group) p.group = group;
   if (finite(v.angle)) p.angle = angleFrom(v.angle);
   const picture = typeof v.image === 'string' ? pictureKey(v.image) : undefined;
   if (picture) p.image = picture;
@@ -658,7 +660,8 @@ function tableFrom(v: unknown, known: Map<string, Set<string>>, pictureKey: (key
     const inStack = cards(s.cards);
     if (!inStack.length) return [];
     // Its id from the file, which custom art lying over it points at (a new one's given as it's added).
-    return [{ id: idFrom(s.id) ?? '', x: s.x, y: s.y, angle: finite(s.angle) ? s.angle : 0, cards: inStack, ...(s.locked === true ? { locked: true } : {}) }];
+    const group = idFrom(s.group);
+    return [{ id: idFrom(s.id) ?? '', x: s.x, y: s.y, angle: finite(s.angle) ? s.angle : 0, cards: inStack, ...(s.locked === true ? { locked: true } : {}), ...(group ? { group } : {}) }];
   });
   let art = 0;
   const pieces = (Array.isArray(v.pieces) ? v.pieces.slice(0, MAX_PIECES) : [])

@@ -34,6 +34,8 @@ export interface SandboxStack {
   cards: SandboxCard[];
   /** It stays where it is: it can't be moved as a whole (cards still go on and come off it, and it still flips). */
   locked?: boolean;
+  /** The group it's in (see groupItems): picked out, and moved, as one with the rest of it. */
+  group?: string;
 }
 
 /**
@@ -134,6 +136,8 @@ export interface TablePiece {
    * A zone (or text) that stays put: dragged, the table moves instead. A locked zone's table works as if it weren't\n   * there; a hold still gives either's options, and text can still be tapped to change it.
    */
   locked?: boolean;
+  /** The group it's in (see groupItems): picked out, and moved, as one with the rest of it. */
+  group?: string;
   /** What's in a bag, bottom first (the top is drawn first), as a stack's cards are. */
   items?: BagItem[];
   /** A bag that's an endless supply of one thing: each drawn is a fresh one of it. */
@@ -1265,12 +1269,16 @@ export function pasteItems(t: SandboxTable, clip: TableClip, at: { x: number; y:
     y: Math.round(Math.min(TABLE_H, Math.max(0, y - mid.y + at.y))),
   });
   const fresh = (c: SandboxCard): SandboxCard => ({ ...c, iid: ids() });
-  const stacks = clip.stacks.map((s) => ({ ...s, ...place(s.x, s.y), id: ids(), cards: s.cards.map(fresh) }));
+  // A group copied is a new group of its own (each group's things, together in it).
+  const groups = new Map<string, string>();
+  const group = (g: string | undefined) => (g ? { group: groups.get(g) ?? (groups.set(g, ids()), groups.get(g)!) } : {});
+  const stacks = clip.stacks.map((s) => ({ ...s, ...place(s.x, s.y), id: ids(), cards: s.cards.map(fresh), ...group(s.group) }));
   const freshItem = (i: BagItem): BagItem => (i.card ? { card: fresh(i.card) } : { piece: { ...i.piece!, id: ids() } });
   const pieces = clip.pieces.map((p) => ({
     ...p,
     ...place(p.x, p.y),
     id: ids(),
+    ...group(p.group),
     // A bag's things are new ones too; a timer starts again, stopped.
     ...(p.items ? { items: p.items.map(freshItem) } : {}),
     ...(p.supply ? { supply: freshItem(p.supply) } : {}),
@@ -1539,30 +1547,60 @@ export function gridSpots(sizes: { w: number; h: number }[], mid: { x: number; y
 /**
  * Whatever's picked out (stacks and pieces) laid out in an even grid, sized to fit each (see gridSpots) so none
  * overlaps another, in the order they lay (top to bottom, left to right), round where they were on the whole; each
- * set straight. Dice alone line up tight, as dice (see gridDice). Locked ones (and zones) stay where they are.
+ * set straight. A group's laid out as one thing, as it is (see groupItems). Dice alone line up tight, as dice (see
+ * gridDice). Locked ones (and zones) stay where they are.
  */
 export function gridItems(t: SandboxTable, stackIds: string[], pieceIds: string[], size: CardSize): SandboxTable {
   const stacks = t.stacks.filter((s) => stackIds.includes(s.id) && !s.locked);
   const pieces = (t.pieces ?? []).filter((p) => pieceIds.includes(p.id) && !p.locked && !onCloth(p));
-  if (!stacks.length && pieces.every((p) => p.kind === 'die')) return gridDice(t, pieces.map((p) => p.id));
-  const items = [
-    ...stacks.map((s) => ({ id: s.id, x: s.x, y: s.y, ...cardSizeOf(s.cards[s.cards.length - 1], size) })),
-    ...pieces.map((p) => ({ id: p.id, x: p.x, y: p.y, ...pieceSizeOf(p) })),
-  ];
+  const live = liveGroups(t);
+  const groupOf = (g: string | undefined) => (g && live.has(g) ? g : undefined);
+  if (!stacks.length && pieces.every((p) => p.kind === 'die' && !groupOf(p.group))) return gridDice(t, pieces.map((p) => p.id));
+  // Each thing's own (set straight), or each group's (all of it, as it lies).
+  const units = new Map<string, { box: Box; stackIds: string[]; pieceIds: string[]; straighten: boolean }>();
+  const add = (key: string, box: Box, stack: string | null, piece: string | null, straighten: boolean) => {
+    const u = units.get(key);
+    if (u) {
+      u.box = unionOfBoxes([u.box, box]);
+      if (stack) u.stackIds.push(stack);
+      if (piece) u.pieceIds.push(piece);
+    } else units.set(key, { box, stackIds: stack ? [stack] : [], pieceIds: piece ? [piece] : [], straighten });
+  };
+  for (const s of stacks) {
+    const g = groupOf(s.group);
+    const { w, h } = cardSizeOf(s.cards[s.cards.length - 1], size);
+    add(g ?? s.id, g ? stackBox(s, size) : { x: s.x - w / 2, y: s.y - h / 2, w, h }, s.id, null, !g);
+  }
+  for (const p of pieces) {
+    const g = groupOf(p.group);
+    const { w, h } = pieceSizeOf(p);
+    add(g ?? p.id, g ? pieceBox(p) : { x: p.x - w / 2, y: p.y - h / 2, w, h }, null, p.id, !g);
+  }
+  const items = [...units.values()].map((u) => ({ ...u, x: u.box.x + u.box.w / 2, y: u.box.y + u.box.h / 2, w: u.box.w, h: u.box.h }));
   if (items.length < 2) return t;
   const mid = { x: items.reduce((s, i) => s + i.x, 0) / items.length, y: items.reduce((s, i) => s + i.y, 0) / items.length };
   // Read in rows: those within half a typical height of each other count as one row.
   const tall = [...items].map((i) => i.h).sort((a, b) => a - b)[Math.floor(items.length / 2)];
   const order = [...items].sort((a, b) => (Math.abs(a.y - b.y) < tall / 2 ? a.x - b.x : a.y - b.y));
   const spots = gridSpots(order, mid);
-  const placed = new Map(order.map((item, i) => [item.id, spots[i]]));
+  // Each thing moved as far as its unit's middle (a thing alone: onto it, set straight).
+  const moves = new Map<string, { dx: number; dy: number; straighten: boolean }>();
+  order.forEach((u, i) => {
+    const move = { dx: spots[i].x - u.x, dy: spots[i].y - u.y, straighten: u.straighten };
+    for (const id of [...u.stackIds, ...u.pieceIds]) moves.set(id, move);
+  });
+  const moved = <T extends { id: string; x: number; y: number }>(item: T, turns: boolean): T => {
+    const m = moves.get(item.id);
+    if (!m) return item;
+    return { ...item, x: Math.round(item.x + m.dx), y: Math.round(item.y + m.dy), ...(m.straighten && turns ? { angle: 0 } : {}) };
+  };
   const next: SandboxTable = {
     ...t,
-    stacks: t.stacks.map((s) => (placed.has(s.id) ? { ...s, ...placed.get(s.id)!, angle: 0 } : s)),
-    pieces: (t.pieces ?? []).map((p) => (placed.has(p.id) ? { ...p, ...placed.get(p.id)!, ...(turnsFreely(p) ? { angle: 0 } : {}) } : p)),
+    stacks: t.stacks.map((s) => moved(s, true)),
+    pieces: (t.pieces ?? []).map((p) => moved(p, turnsFreely(p))),
   };
   // Other dice in the way move aside.
-  return separateDice(next, (next.pieces ?? []).filter((p) => p.kind === 'die' && !placed.has(p.id)).map((p) => p.id));
+  return separateDice(next, (next.pieces ?? []).filter((p) => p.kind === 'die' && !moves.has(p.id)).map((p) => p.id));
 }
 
 /** How much room a copy takes up on the table (its things' boxes, from their middles). */
@@ -1597,6 +1635,104 @@ export function pasteCopies(t: SandboxTable, clip: TableClip, count: number, at:
     pieceIds.push(...pasted.pieceIds);
   }
   return { table, stackIds, pieceIds };
+}
+
+// ---- Groups: things picked out, and moved, as one ----
+
+/** Stacks and pieces made one group (a new one, `id`), out of any they were in. Locked ones and zones stay out. */
+export function groupItems(t: SandboxTable, stackIds: string[], pieceIds: string[], id: string): SandboxTable {
+  const stacks = t.stacks.filter((s) => stackIds.includes(s.id) && !s.locked).map((s) => s.id);
+  const pieces = (t.pieces ?? []).filter((p) => pieceIds.includes(p.id) && !p.locked && !onCloth(p)).map((p) => p.id);
+  if (stacks.length + pieces.length < 2) return t;
+  return {
+    ...t,
+    stacks: t.stacks.map((s) => (stacks.includes(s.id) ? { ...s, group: id } : s)),
+    pieces: (t.pieces ?? []).map((p) => (pieces.includes(p.id) ? { ...p, group: id } : p)),
+  };
+}
+
+/** Stacks and pieces out of whatever group they were in (each its own again). */
+export function ungroupItems(t: SandboxTable, stackIds: string[], pieceIds: string[]): SandboxTable {
+  return {
+    ...t,
+    stacks: t.stacks.map((s) => (stackIds.includes(s.id) && s.group ? { ...s, group: undefined } : s)),
+    ...(t.pieces ? { pieces: t.pieces.map((p) => (pieceIds.includes(p.id) && p.group ? { ...p, group: undefined } : p)) } : {}),
+  };
+}
+
+/** The groups that have two or more things on the table (one left alone is no group). */
+function liveGroups(t: SandboxTable): Set<string> {
+  const count = new Map<string, number>();
+  for (const g of [...t.stacks.map((s) => s.group), ...(t.pieces ?? []).map((p) => p.group)]) if (g) count.set(g, (count.get(g) ?? 0) + 1);
+  return new Set([...count].filter(([, n]) => n > 1).map(([g]) => g));
+}
+
+/** Picked out: these, and everything in the same groups as any of them (in the order given, the rest after). */
+export function withGroups(t: SandboxTable, stackIds: string[], pieceIds: string[]): { stackIds: string[]; pieceIds: string[] } {
+  const live = liveGroups(t);
+  if (!live.size) return { stackIds, pieceIds };
+  const groups = new Set([
+    ...t.stacks.filter((s) => s.group && live.has(s.group) && stackIds.includes(s.id)).map((s) => s.group!),
+    ...(t.pieces ?? []).filter((p) => p.group && live.has(p.group) && pieceIds.includes(p.id)).map((p) => p.group!),
+  ]);
+  if (!groups.size) return { stackIds, pieceIds };
+  return {
+    stackIds: [...stackIds, ...t.stacks.filter((s) => s.group && groups.has(s.group) && !stackIds.includes(s.id)).map((s) => s.id)],
+    pieceIds: [...pieceIds, ...(t.pieces ?? []).filter((p) => p.group && groups.has(p.group) && !pieceIds.includes(p.id)).map((p) => p.id)],
+  };
+}
+
+/** The group a stack or piece is in, as its stacks' and pieces' ids, if it's in one (of two or more). */
+export function groupMembers(t: SandboxTable, id: string): { stackIds: string[]; pieceIds: string[] } | null {
+  const group = t.stacks.find((s) => s.id === id)?.group ?? t.pieces?.find((p) => p.id === id)?.group;
+  if (!group || !liveGroups(t).has(group)) return null;
+  return { stackIds: t.stacks.filter((s) => s.group === group).map((s) => s.id), pieceIds: (t.pieces ?? []).filter((p) => p.group === group).map((p) => p.id) };
+}
+
+/** A box on the table (its left, top, width and height), level with the table. */
+export interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The box round a stack or piece as it lies (turned, it's the box round its turned corners). */
+function boxOf(item: { x: number; y: number; angle?: number }, w: number, h: number): Box {
+  const r = ((item.angle ?? 0) * Math.PI) / 180;
+  const halfW = (Math.abs(w * Math.cos(r)) + Math.abs(h * Math.sin(r))) / 2;
+  const halfH = (Math.abs(w * Math.sin(r)) + Math.abs(h * Math.cos(r))) / 2;
+  return { x: item.x - halfW, y: item.y - halfH, w: halfW * 2, h: halfH * 2 };
+}
+const unionOfBoxes = (boxes: Box[]): Box => {
+  const left = Math.min(...boxes.map((b) => b.x));
+  const top = Math.min(...boxes.map((b) => b.y));
+  return { x: left, y: top, w: Math.max(...boxes.map((b) => b.x + b.w)) - left, h: Math.max(...boxes.map((b) => b.y + b.h)) - top };
+};
+const stackBox = (s: SandboxStack, size: CardSize) => {
+  const { w, h } = cardSizeOf(s.cards[s.cards.length - 1], size);
+  return boxOf(s, w, h);
+};
+const pieceBox = (p: TablePiece) => {
+  const { w, h } = pieceSizeOf(p);
+  return boxOf(turnsFreely(p) ? p : { x: p.x, y: p.y }, w, h);
+};
+
+/**
+ * The boxes round each group wholly among these (one box for all of a group, drawn instead of each thing's own
+ * outline), and the stacks and pieces they hold.
+ */
+export function groupBoxes(t: SandboxTable, stackIds: string[], pieceIds: string[], size: CardSize) {
+  const live = liveGroups(t);
+  const out: { group: string; box: Box; stackIds: string[]; pieceIds: string[] }[] = [];
+  for (const group of live) {
+    const stacks = t.stacks.filter((s) => s.group === group);
+    const pieces = (t.pieces ?? []).filter((p) => p.group === group);
+    if (!stacks.every((s) => stackIds.includes(s.id)) || !pieces.every((p) => pieceIds.includes(p.id))) continue;
+    const box = unionOfBoxes([...stacks.map((s) => stackBox(s, size)), ...pieces.map(pieceBox)]);
+    out.push({ group, box, stackIds: stacks.map((s) => s.id), pieceIds: pieces.map((p) => p.id) });
+  }
+  return out;
 }
 
 /** Whether cards can go onto a stack: not if any of its cards never stacks. */

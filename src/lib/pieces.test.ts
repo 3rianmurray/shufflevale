@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerArt, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies, groupItems, ungroupItems, withGroups, groupMembers, groupBoxes } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
 test('dice are drawn (and found) the one further down and right in front; other pieces keep their places', () => {
@@ -187,6 +187,40 @@ test('a copy pasted several times lays out in a grid, no copy on another', () =>
   assert.equal(pieceIds.length, 4);
   assert.equal(anyOverlap(t.stacks.map((s) => ({ x: s.x, y: s.y, ...cardSize() }))), false);
   assert.equal(anyOverlap(t.pieces!.map((p) => ({ x: p.x, y: p.y, ...pieceSizeOf(p) }))), false);
+});
+
+test('things grouped are picked out together, boxed as one, laid out as one, pasted as a new group, and let go', () => {
+  const cardSize = () => ({ w: 100, h: 140 });
+  const card = (iid: string) => ({ iid, deckId: 'd', cardId: iid, faceUp: true });
+  let t: ReturnType<typeof table> = { ...table(), stacks: [
+    { id: 's1', x: 400, y: 400, angle: 0, cards: [card('a')] },
+    { id: 's2', x: 520, y: 400, angle: 0, cards: [card('b')] },
+    { id: 'far', x: 1500, y: 400, angle: 0, cards: [card('c')] },
+  ] };
+  t = addPiece(t, newPiece('token', 'tok', { x: 460, y: 520 }));
+  t = addPiece(t, newPiece('token', 'lone', { x: 1500, y: 700 }));
+  t = groupItems(t, ['s1', 's2'], ['tok'], 'g');
+  // One of it picked out picks out all of it, and nothing else.
+  assert.deepEqual(withGroups(t, ['s2'], []), { stackIds: ['s2', 's1'], pieceIds: ['tok'] });
+  assert.deepEqual(withGroups(t, ['far'], ['lone']), { stackIds: ['far'], pieceIds: ['lone'] });
+  assert.deepEqual(groupMembers(t, 'tok'), { stackIds: ['s1', 's2'], pieceIds: ['tok'] });
+  // One box round all of it, only once all of it's picked out.
+  const [box] = groupBoxes(t, ['s1', 's2'], ['tok'], cardSize);
+  assert.deepEqual(box.box, { x: 350, y: 330, w: 220, h: 520 + PIECE_SIZE.token.h / 2 - 330 });
+  assert.equal(groupBoxes(t, ['s1'], ['tok'], cardSize).length, 0);
+  // Laid out in a grid, it moves as one, keeping its own layout.
+  const g = gridItems(t, ['s1', 's2', 'far'], ['tok', 'lone'], cardSize);
+  const at = (id: string) => g.stacks.find((s) => s.id === id) ?? g.pieces!.find((p) => p.id === id)!;
+  assert.deepEqual([at('s2').x - at('s1').x, at('tok').y - at('s1').y], [120, 120]);
+  // Pasted, it's a group of its own.
+  let n = 0;
+  const pasted = pasteCopies(t, { stacks: t.stacks.filter((s) => s.group), pieces: t.pieces!.filter((p) => p.group) }, 1, { x: 2000, y: 2000 }, () => `n${n++}`, cardSize);
+  const copyGroup = pasted.table.stacks.find((s) => s.id === pasted.stackIds[0])!.group;
+  assert.ok(copyGroup && copyGroup !== 'g');
+  assert.ok(pasted.table.pieces!.find((p) => p.id === pasted.pieceIds[0])!.group === copyGroup);
+  // Let go, each is its own again.
+  const apart = ungroupItems(t, ['s1', 's2'], ['tok']);
+  assert.deepEqual(withGroups(apart, ['s2'], []), { stackIds: ['s2'], pieceIds: [] });
 });
 
 test('a timer starts, pauses keeping what it had left, and is set back once it runs out', () => {
