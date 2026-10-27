@@ -6,6 +6,7 @@ import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, S
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { cardFromPhoto } from '../lib/cardCapture';
+import type { Quad } from '../lib/cardScan';
 import type { CapturedCard, CardKind } from '../lib/cardCapture';
 import * as haptics from '../lib/haptics';
 import type { Pairing } from '../lib/importBatch';
@@ -13,6 +14,7 @@ import { loadSettings, saveSettings } from '../lib/storage';
 import { zoomSettingFor } from '../lib/subjectLift';
 import { colors } from '../theme';
 import { Button } from './Button';
+import { CardScanModal } from './CardScanModal';
 import type { ImportPicture } from './ImportReview';
 import { Text } from './Text';
 import { ALL_ORIENTATIONS } from '../lib/orientations';
@@ -78,6 +80,8 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
   const [retaking, setRetaking] = useState<number | null>(null);
   /** The shot taken last (shown in the corner). */
   const [latestId, setLatestId] = useState<number | null>(null);
+  /** The shot whose corners are being dragged into place (see CardScanModal). */
+  const [adjusting, setAdjusting] = useState<number | null>(null);
   // One shot worked on at a time (each takes a moment, and pictures are big), in the order they were taken; and
   // the shots themselves, read once the last is ready. Kept outside React state, as the jobs outlive renders.
   const [queue] = useState(() => {
@@ -106,6 +110,7 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
     setPicked(null);
     setRetaking(null);
     setLatestId(null);
+    setAdjusting(null);
     setFlashOn(false);
     setTwoX(false);
     setTwoXSetting(null);
@@ -180,9 +185,25 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
     onCancel();
   };
 
+  /** A shot straightened again, from its corners as they've been dragged into place. */
+  const adjusted = (id: number, uri: string, corners: Quad) => {
+    setAdjusting(null);
+    setList(
+      queue.get().list.map((s) =>
+        s.id === id && s.card !== 'working' && s.card.scan
+          ? { id, card: { uri, original: uri, how: 'straightened', scan: { ...s.card.scan, corners, found: true } } }
+          : s,
+      ),
+    );
+    haptics.drop();
+  };
+
   // The corner shows the shot taken last (a retake counts), or the final one.
   const last = shots.find((s) => s.id === latestId) ?? shots[shots.length - 1];
   const pickedShot = shots.find((s) => s.id === picked);
+  const pickedScan = pickedShot && pickedShot.card !== 'working' ? pickedShot.card.scan : undefined;
+  const adjustingShot = shots.find((s) => s.id === adjusting);
+  const adjustingScan = adjustingShot && adjustingShot.card !== 'working' ? adjustingShot.card.scan : undefined;
   /** A shot's name in the tray: its card's number (and front or back, with Backs too). */
   const shotName = (i: number) => (backs ? `${Math.floor(i / 2) + 1}${i % 2 === 0 ? 'F' : 'B'}` : `${i + 1}`);
 
@@ -314,13 +335,15 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
                 {pickedShot ? (
                   <View style={styles.trayButtons}>
                     <Button label="Retake" variant="primary" onPress={() => retake(pickedShot.id)} disabled={pickedShot.card === 'working'} style={{ flex: 1 }} />
+                    {/* A rectangular card's corners, dragged into place if they were found wrong. */}
+                    {pickedScan ? <Button label="Corners" onPress={() => setAdjusting(pickedShot.id)} style={{ flex: 1 }} /> : null}
                     {/* With Backs too, only the last can go (the others would shift every pair after them). */}
                     {!backs || shots[shots.length - 1]?.id === pickedShot.id ? (
                       <Button label="Delete" variant="danger" onPress={() => remove(pickedShot.id)} disabled={pickedShot.card === 'working'} style={{ flex: 1 }} />
                     ) : null}
                   </View>
                 ) : (
-                  <Text style={styles.trayHint}>Tap a shot to retake or delete it.</Text>
+                  <Text style={styles.trayHint}>Tap a shot to fix its corners, retake or delete it.</Text>
                 )}
               </View>
             ) : null}
@@ -357,6 +380,14 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
             </View>
           </>
         ) : null}
+        {/* A shot's corners, shown on its photo to drag into place; the card's straightened again from them. */}
+        <CardScanModal
+          uri={adjustingScan ? adjustingScan.uri : null}
+          cardRatio={adjustingScan?.ratio ?? 1}
+          start={adjustingScan}
+          onDone={(uri, corners) => adjusting !== null && adjusted(adjusting, uri, corners)}
+          onCancel={() => setAdjusting(null)}
+        />
       </View>
     </Modal>
   );

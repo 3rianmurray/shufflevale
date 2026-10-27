@@ -1,9 +1,10 @@
 // A photo from the card camera made into a card's picture, as the player says the cards are: a rectangular card
 // is found and straightened (as Apple's scanner does, but with its colors as they are), and a card of another
 // shape is cut out of its background (scaled into the card's frame, never trimmed).
-import { quadSize, uprightCorners } from './cardScan';
+import { insetQuad, quadSize, uprightCorners } from './cardScan';
 import { fitInFrame } from './cardFit';
 import { straighten } from './cardWarp';
+import type { ScanStart } from './cardWarp';
 import { cropToShape, keepOriginal, loadUpright } from './images';
 import { cutOut, findCardIn } from './subjectLift';
 
@@ -16,6 +17,11 @@ export interface CapturedCard {
   original: string;
   /** Straightened (a rectangular card), cut out (another shape), or just trimmed (nothing could be found). */
   how: 'straightened' | 'cutOut' | 'trimmed';
+  /**
+   * A rectangular card's photo (upright) and the corners it was straightened from (or, none found, a rectangle to
+   * start from), to drag into place and straighten again; and the card's shape it came out.
+   */
+  scan?: ScanStart & { ratio: number };
 }
 
 /**
@@ -31,8 +37,15 @@ export async function cardFromPhoto(uri: string, ratioFor: (measured: number) =>
       const { w, h } = quadSize(found.corners);
       const ratio = ratioFor(w / h);
       const straight = await straighten(upright.uri, uprightCorners(found.corners, ratio), ratio);
-      return { uri: straight, original: straight, how: 'straightened' };
+      return { uri: straight, original: straight, how: 'straightened', scan: { ...upright, corners: found.corners, found: true, ratio } };
     }
+    const ratio = ratioFor(upright.width / upright.height);
+    return {
+      uri: await cropToShape(upright.uri, ratio),
+      original: await keepOriginal(upright.uri),
+      how: 'trimmed',
+      scan: { ...upright, corners: insetQuad(upright.width, upright.height), found: false, ratio },
+    };
   } else {
     const lifted = await cutOut(upright.uri);
     if (lifted) {

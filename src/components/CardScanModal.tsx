@@ -28,10 +28,15 @@ interface Props {
   uri: string | null;
   /** The deck's card shape (width over height): the card comes out exactly this shape. */
   cardRatio: number;
-  /** The straightened card, card shaped. */
-  onDone: (card: string) => void;
-  /** Crop it the usual way instead (from the photo as taken). */
-  onCropByHand: (uri: string) => void;
+  /**
+   * Where to start from, instead of looking for the card here: the photo (upright, as `uri`) and its corners as
+   * already found (e.g. by the card camera).
+   */
+  start?: ScanStart;
+  /** The straightened card, card shaped; and the corners it was cut from (as placed: before any turn). */
+  onDone: (card: string, corners: Quad) => void;
+  /** Crop it the usual way instead (from the photo as taken): offered when given. */
+  onCropByHand?: (uri: string) => void;
   onCancel: () => void;
   /** Once it has slid away (iOS can only show another full-screen view, like the cropper, after that). */
   onClosed?: () => void;
@@ -42,7 +47,7 @@ interface Props {
  * handles to drag into place if they're off), and the photo is stretched so they become the corners of a flat
  * card of the deck's shape, taking out any tilt or perspective.
  */
-export function CardScanModal({ uri, cardRatio, onDone, onCropByHand, onCancel, onClosed }: Props) {
+export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onCancel, onClosed }: Props) {
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
   const [scan, setScan] = useState<(ScanStart & { source: string }) | null>(null);
@@ -59,7 +64,7 @@ export function CardScanModal({ uri, cardRatio, onDone, onCropByHand, onCancel, 
   useEffect(() => {
     if (!uri) return;
     let canceled = false;
-    startScan(uri)
+    (start ? Promise.resolve(start) : startScan(uri))
       .then((s) => {
         if (canceled) return;
         setScan({ ...s, source: uri });
@@ -71,6 +76,8 @@ export function CardScanModal({ uri, cardRatio, onDone, onCropByHand, onCancel, 
     return () => {
       canceled = true;
     };
+    // (Its start is read as it opens, for that photo.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uri, cardRatio]);
 
   // The photo fitted into the space it has; `fit` takes its pixels to the screen's.
@@ -156,7 +163,7 @@ export function CardScanModal({ uri, cardRatio, onDone, onCropByHand, onCancel, 
     if (!shown || !card) return;
     setSaving(true);
     try {
-      onDone(await straighten(shown.uri, card, cardRatio));
+      onDone(await straighten(shown.uri, card, cardRatio), corners!);
     } catch (e) {
       Alert.alert('Could not straighten the card', String(e));
     } finally {
@@ -246,7 +253,7 @@ export function CardScanModal({ uri, cardRatio, onDone, onCropByHand, onCancel, 
 
         <View style={[styles.actions, { paddingBottom: insets.bottom + 12, maxWidth: screenW }]}>
           <Button label="Cancel" onPress={onCancel} disabled={saving} style={{ flex: 1 }} />
-          <Button label="Crop by hand" onPress={() => uri && onCropByHand(uri)} disabled={saving} style={{ flex: 1.3 }} />
+          {onCropByHand ? <Button label="Crop by hand" onPress={() => uri && onCropByHand(uri)} disabled={saving} style={{ flex: 1.3 }} /> : null}
           <Button label={saving ? 'Saving…' : 'Use card'} variant="primary" onPress={use} disabled={saving || !corners} style={{ flex: 1.2 }} />
         </View>
       </View>
