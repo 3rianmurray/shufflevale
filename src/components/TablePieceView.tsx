@@ -1,6 +1,6 @@
 import { Canvas, Circle, Group, Image as SkImage, Path, Shadow, Skia, useImage, vec } from '@shopify/react-native-skia';
 import type { SkPath } from '@shopify/react-native-skia';
-import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
 import { Image } from 'expo-image';
@@ -444,7 +444,8 @@ function Die({
   // How far through the roll: eased (sliding and spinning to a stop), and steady (for the bounces).
   const [travel] = useState(() => new Animated.Value(1));
   const [time] = useState(() => new Animated.Value(1));
-  useEffect(() => {
+  // Before it's drawn: it's already where it lands, so started any later it would show there for a frame first.
+  useLayoutEffect(() => {
     if (!rollKey || prefersReducedMotion()) return;
     travel.setValue(0);
     time.setValue(0);
@@ -706,7 +707,8 @@ function outsideOf(path: SkPath) {
 /** Starts a tumble (or flip, or spin) each time `rollKey` changes, over ROLL_MS: 0 to 1, eased out. */
 function useRollMotion(rollKey: number) {
   const [motion] = useState(() => new Animated.Value(1));
-  useEffect(() => {
+  // (Before it's drawn, so it never shows a frame as it'll end up first.)
+  useLayoutEffect(() => {
     if (!rollKey || prefersReducedMotion()) return;
     motion.setValue(0);
     Animated.timing(motion, { toValue: 1, duration: ROLL_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
