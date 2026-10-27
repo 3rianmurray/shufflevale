@@ -153,6 +153,8 @@ import {
   resizeScore,
   SCORE_ROW,
   SCORE_MAX_PLAYERS,
+  faceCount,
+  withFace,
 } from '../lib/sandbox';
 import type { BagItem, Camera, CardSize, PieceKind, PiecePart, PieceShape, SandboxCard, SandboxStack, SandboxTable, Source, TablePiece } from '../lib/sandbox';
 import * as DocumentPicker from 'expo-document-picker';
@@ -167,6 +169,7 @@ import { cardRadius, cardRatio, cardSizeMm, copiesOf, deckSize, PRESET_SIZES_MM 
 import type { Deck } from '../lib/types';
 import { colors } from '../theme';
 import { ActionSheet } from './ActionSheet';
+import { FaceSlots } from './FaceSlots';
 import type { SheetAction, SheetTile } from './ActionSheet';
 import { CardFocus } from './CardFocus';
 import type { FocusRow } from './CardFocus';
@@ -357,6 +360,8 @@ type Menu =
   | { kind: 'rotate'; stacks: string[]; pieces: string[] }
   /** Setting the face a die shows (changing as the slider moves). */
   | { kind: 'dieValue'; id: string }
+  /** A six-sided die's (or a coin's) own art for its faces: each chosen, or put back to standard. */
+  | { kind: 'faces'; id: string }
   /** How many players a score pad has. */
   | { kind: 'scorePlayers'; id: string }
   /** All the points written down on a score pad, newest first, to change or cross off. */
@@ -378,8 +383,11 @@ interface PieceDrag {
 
 /** Where a token's (or custom art's) picture comes from. */
 type PictureSource = 'photos' | 'files' | 'camera';
-/** What a picture's for: a token, or custom art (a new one, or with an id, that one's picture changed). */
-type PictureTarget = { kind: 'token' | 'art'; id?: string };
+/**
+ * What a picture's for: a token, or custom art (a new one, or with an id, that one's picture changed); or a face of
+ * a die's or coin's (from 0).
+ */
+type PictureTarget = { kind: 'token' | 'art'; id?: string } | { kind: 'face'; id: string; face: number };
 
 /** A card being carried by a finger. */
 interface Held {
@@ -1190,13 +1198,19 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    * so the picker that follows always opens (one of our sheets still sliding away could stop it).
    */
   const choosePicture = (target: PictureTarget) => {
-    // New custom art (or a token) is part of Pro.
-    if (!target.id && !pro) return openPro();
+    // New custom art (or a token), and a die's or coin's own faces, are part of Pro.
+    if ((target.kind === 'face' || !target.id) && !pro) return openPro();
     const sources: PictureSource[] = ['photos', 'files', 'camera'];
-    const title = target.id ? 'Change the picture' : target.kind === 'art' ? 'Custom art' : 'Token picture';
+    // A face with art of its own can be put back to the standard one, too.
+    const faced = target.kind === 'face' ? table?.pieces?.find((p) => p.id === target.id) : undefined;
+    const standard = target.kind === 'face' && faced?.faces?.[target.face] ? () => setFaceArt(target.id, target.face, null) : null;
+    const faceName = target.kind !== 'face' ? '' : faced?.kind === 'coin' ? (target.face ? 'Tails' : 'Heads') : `Face ${target.face + 1}`;
+    const title = faceName || (target.id ? 'Change the picture' : target.kind === 'art' ? 'Custom art' : 'Token picture');
     if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions({ title, options: ['Photos', 'Files', 'Take a photo', 'Cancel'], cancelButtonIndex: 3 }, (i) => {
+      const options = ['Photos', 'Files', 'Take a photo', ...(standard ? ['Use the standard face'] : []), 'Cancel'];
+      ActionSheetIOS.showActionSheetWithOptions({ title, options, cancelButtonIndex: options.length - 1 }, (i) => {
         if (i < 3) void pictureFor(sources[i], target);
+        else if (standard && i === 3) standard();
       });
       return;
     }
@@ -1204,10 +1218,21 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       { text: 'Photos', onPress: () => void pictureFor('photos', target) },
       { text: 'Files', onPress: () => void pictureFor('files', target) },
       { text: 'Take a photo', onPress: () => void pictureFor('camera', target) },
+      ...(standard ? [{ text: 'Use the standard face', onPress: standard }] : []),
     ]);
   };
+  /** A die's or coin's face (from 0) given its own art, or put back to the standard face (null); then its faces again. */
+  const setFaceArt = (id: string, face: number, picture: string | null) => {
+    const now = latest.get();
+    const piece = now.table?.pieces?.find((p) => p.id === id);
+    if (!now.table || !piece) return;
+    now.commit(setPiece(now.table, id, { faces: withFace(piece, face, picture) }));
+    haptics.tick();
+    setTimeout(() => latest.get().setMenu({ kind: 'faces', id }), 250);
+  };
   const pictureFrom = async (source: PictureSource, target: PictureTarget) => {
-    const forToken = target.kind === 'token';
+    // (A face is square, as a token's picture is.)
+    const forToken = target.kind === 'token' || target.kind === 'face';
     let uri: string | undefined;
     if (source === 'files') {
       const doc = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
@@ -1235,6 +1260,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // The table as it is now (the picker took a while).
       const now = latest.get();
       if (!now.table) return;
+      if (target.kind === 'face') return setFaceArt(target.id, target.face, importImage(TOKEN_PICTURES, await tokenPicture(uri)));
       if (forToken) {
         const image = importImage(TOKEN_PICTURES, await tokenPicture(uri));
         if (target.id) now.commit(setPiece(now.table, target.id, { image }));
@@ -3707,6 +3733,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const scaleTile = tile('Scale', 'arrow.up.left.and.arrow.down.right', 'open_in_full', () => openScale([], [id]), !!piece.locked);
       // For what turns to any angle (see turnsFreely): beside Scale.
       const rotateTile = tile('Rotate', 'rotate.right', 'rotate_right', () => openRotate([], [id]), !!piece.locked);
+      // A six-sided die's (or a coin's) own art for its faces, with custom art's icon: part of Pro.
+      const faceTile = tile(piece.kind === 'coin' ? 'Art' : 'Faces', 'photo.on.rectangle', 'add_photo_alternate', pro ? next({ kind: 'faces', id }) : () => setTimeout(openPro, 250));
       // For what usually sits in one place through a game: locked, it stays put (dragging it moves the table).
       const lockRow: FocusRow = { kind: 'toggle', label: 'Lock', value: !!piece.locked, onChange: (on) => commit(setPiece(table, id, { locked: on || undefined })) };
       const takeOffRow: FocusRow = { kind: 'action', label: 'Take off the table', destructive: true, onPress: () => commit(removePiece(table, id)) };
@@ -3768,12 +3796,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               colorTile,
               rotateTile,
               scaleTile,
+              // A six-sided die's own art for its faces (Pro), with custom art's icon.
+              ...(faceCount(piece) ? [faceTile] : []),
             ],
             [{ kind: 'toggle', label: 'Roll in place', value: !!piece.rollInPlace, onChange: (on) => commit(setPiece(table, id, { rollInPlace: on || undefined })) }, takeOffRow],
           );
         case 'coin':
           // (Gold, as its art is: no color to choose.)
-          return focus('Coin', [tile('Flip', 'arrow.triangle.2.circlepath', 'sync', () => rollDice([id])), scaleTile], [takeOffRow]);
+          return focus('Coin', [tile('Flip', 'arrow.triangle.2.circlepath', 'sync', () => rollDice([id])), scaleTile, faceTile], [takeOffRow]);
         case 'spinner':
           return focus('Spinner', [tile('Spin', 'arrow.clockwise.circle', 'autorenew', () => rollDice([id])), colorTile, scaleTile], [lockRow, takeOffRow]);
         case 'text':
@@ -4087,6 +4117,28 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         tiles: [],
         banner: <ScaleControl value={scaleOf(table, menu.stacks, menu.pieces)} onChange={previewScale} />,
         actions: [],
+      };
+    }
+    if (menu.kind === 'faces') {
+      const piece = table.pieces?.find((p) => p.id === menu.id);
+      if (!piece || !faceCount(piece)) return null;
+      const coin = piece.kind === 'coin';
+      return {
+        title: coin ? 'Coin art' : 'Die faces',
+        tiles: [],
+        // Each face as it shows: tapped, its art's chosen (once this has gone, so the system's picture menu opens).
+        banner: (
+          <FaceSlots
+            piece={piece}
+            onPick={(face) => {
+              setMenu(null);
+              setTimeout(() => choosePicture({ kind: 'face', id: piece.id, face }), 300);
+            }}
+          />
+        ),
+        actions: piece.faces
+          ? [{ label: coin ? 'Use the gold coin' : 'Use the standard faces', onPress: () => commit(setPiece(table, piece.id, { faces: undefined })) }]
+          : [],
       };
     }
     if (menu.kind === 'dieValue') {
@@ -5030,7 +5082,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       <AddCardsModal visible={addingCards} decks={decks} onAdd={addCardsToTable} onClose={() => setAddingCards(false)} />
       {/* The table's menu, and choosing a deck to add. */}
       <ActionSheet
-        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
+        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
         title={sheet?.title}
         banner={sheet && 'banner' in sheet ? sheet.banner : undefined}
         wideTile={sheet && 'wideTile' in sheet ? sheet.wideTile : undefined}
@@ -5039,7 +5091,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         moreLocked={sheet && 'moreLocked' in sheet ? sheet.moreLocked : undefined}
         actions={sheet?.actions ?? []}
         // Scaling is kept as it's made: put away, it's done (and one undo).
-        closeLabel={menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' ? 'Done' : undefined}
+        closeLabel={menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' ? 'Done' : undefined}
         // The table's settings (and its theme, chosen from them) dropped from the top, by its name, on iPad and iPhone.
         // Every other menu: on iPad a window where the finger was, on iPhone a sheet from the bottom.
         place={

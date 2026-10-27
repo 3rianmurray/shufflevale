@@ -165,6 +165,8 @@ export function packManifest(decks: Deck[], tables: SandboxTable[] = [], groups:
   const packPiece = (p: TablePiece): TablePiece => ({
     ...p,
     ...(p.image ? { image: keyOf(p.image) } : {}),
+    // A die's or coin's own face art too.
+    ...(p.faces ? { faces: p.faces.map((f) => (f ? keyOf(f) : null)) } : {}),
     ...(p.items ? { items: p.items.map(packItem) } : {}),
     ...(p.supply ? { supply: packItem(p.supply) } : {}),
   });
@@ -566,6 +568,16 @@ function pieceFrom(
   if (finite(v.angle)) p.angle = angleFrom(v.angle);
   const picture = typeof v.image === 'string' ? pictureKey(v.image) : undefined;
   if (picture) p.image = picture;
+  // A die's or coin's own face art: one picture (or standard, null) per face, as many as it has (see faceCount).
+  const faceSlots = kind === 'coin' ? 2 : kind === 'die' ? 6 : 0;
+  const given: unknown[] = Array.isArray(v.faces) ? v.faces : [];
+  if (faceSlots && given.length) {
+    const faces = Array.from({ length: faceSlots }, (_, i) => {
+      const key = given[i];
+      return typeof key === 'string' ? (pictureKey(key) ?? null) : null;
+    });
+    if (faces.some(Boolean)) p.faces = faces;
+  }
   for (const flag of ['square', 'grid', 'labelBelow', 'hideNumbers', 'locked', 'vertical', 'reversed', 'rollInPlace'] as const) if (v[flag] === true) p[flag] = true;
   if (v.labelAlign === 'left' || v.labelAlign === 'center' || v.labelAlign === 'right') p.labelAlign = v.labelAlign;
   if (kind === 'score') {
@@ -697,8 +709,9 @@ export function remapTable(t: FileTable, map: DeckIdMap, ids: () => string, pict
   });
   const item = (i: BagItem): BagItem[] => (i.card ? card(i.card).map((c) => ({ card: c })) : [{ piece: piece(i.piece!) }]);
   const piece = (p: TablePiece): TablePiece => {
-    const { image, over, items, supply, ...rest } = p;
+    const { image, over, items, supply, faces, ...rest } = p;
     const path = image && picture ? picture(image) : undefined;
+    const faceArt = faces && picture ? faces.map((f) => (f ? (picture(f) ?? null) : null)) : undefined;
     const under = over ? stackIds.get(over) : undefined;
     const inside = items?.flatMap(item);
     const [kept] = supply ? item(supply) : [];
@@ -706,6 +719,7 @@ export function remapTable(t: FileTable, map: DeckIdMap, ids: () => string, pict
       ...rest,
       id: ids(),
       ...(path ? { image: path } : {}),
+      ...(faceArt?.some(Boolean) ? { faces: faceArt } : {}),
       ...(under ? { over: under } : {}),
       ...(inside?.length ? { items: inside } : {}),
       ...(kept ? { supply: kept } : {}),

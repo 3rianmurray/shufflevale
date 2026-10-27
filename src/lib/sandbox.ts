@@ -151,6 +151,25 @@ export interface TablePiece {
   scale?: number;
   /** A die that rolls where it lies (spinning and bouncing), rather than tumbling across the table. */
   rollInPlace?: boolean;
+  /**
+   * The player's own art for a six-sided die's faces (1 to 6) or a coin's (heads, then tails): a saved picture's
+   * path for each, or null for the standard face. None when every face is standard (see faceCount).
+   */
+  faces?: (string | null)[];
+}
+
+/** How many faces a piece's own art can be given for: a six-sided die's six, a coin's two; none for anything else. */
+export function faceCount(p: Pick<TablePiece, 'kind' | 'sides'>): number {
+  if (p.kind === 'coin') return 2;
+  if (p.kind === 'die' && (p.sides ?? 6) === 6) return 6;
+  return 0;
+}
+
+/** A piece's faces with face `i` (from 0) given a picture, or put back to standard (null): none once all are standard. */
+export function withFace(p: TablePiece, i: number, picture: string | null): TablePiece['faces'] {
+  const n = faceCount(p);
+  const faces = Array.from({ length: n }, (_, k) => (k === i ? picture : (p.faces?.[k] ?? null)));
+  return faces.some(Boolean) ? faces : undefined;
 }
 
 /** The colors a counter or die can be, by name. */
@@ -1052,12 +1071,12 @@ export const bagItems = (p: TablePiece): BagItem[] => p.items ?? (p.cards ?? [])
 
 /**
  * What makes two things the same, for a supply: the same card (either way up), or a piece that looks just the
- * same (its kind and faces, color, shape, picture, words and size; not where it lies or what it shows now).
+ * same (its kind and faces, color, shape, pictures, words and size; not where it lies or what it shows now).
  */
 export function itemLook(i: BagItem): string {
   if (i.card) return `card:${i.card.deckId}:${i.card.cardId}`;
   const p = i.piece!;
-  return JSON.stringify([p.kind, p.sides, p.color, p.shape, p.image, p.square, p.label, p.scale ?? 1, p.spaces, p.first, p.look, p.w, p.h]);
+  return JSON.stringify([p.kind, p.sides, p.color, p.shape, p.image, p.square, p.label, p.scale ?? 1, p.spaces, p.first, p.look, p.w, p.h, p.faces ?? null]);
 }
 
 /** Whether things are one or more of the very same thing (what a supply can be made of). */

@@ -380,6 +380,8 @@ function Die({
     return () => clearTimeout(timer);
   }, [rollKey, sides, travel, time]);
   const shown = face ?? piece.value;
+  /** The player's own art for the face it shows (a six-sided die's), if it has some. */
+  const faceArt = sides === 6 ? (piece.faces?.[shown - 1] ?? null) : null;
   const dx = rollFrom?.dx ?? 0;
   const dy = rollFrom?.dy ?? 0;
   // It spins the way it's thrown.
@@ -449,7 +451,8 @@ function Die({
             {/* The light catching the top face's edge. */}
             <Path path={rounded(CUBE_TOP, CUBE_ROUND)} color={shade(color, 0.35)} style="stroke" strokeWidth={0.8 * OS} opacity={0.5} />
             {selected ? <Path path={rounded(CUBE_OUTLINE, CUBE_ROUND)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
-            {(PIPS[shown] ?? []).map((cell) => {
+            {/* (The player's own art for this face, if it has some, is drawn over the face instead: below.) */}
+            {(faceArt ? [] : (PIPS[shown] ?? [])).map((cell) => {
               const [cx, cy] = at([CUBE_FACE.x + CUBE_FACE.size * ((cell % 3) * 0.3 + 0.2), CUBE_FACE.y + CUBE_FACE.size * (Math.floor(cell / 3) * 0.3 + 0.2)]);
               return <Circle key={cell} cx={cx} cy={cy} r={0.085 * px} color={ink} />;
             })}
@@ -469,6 +472,22 @@ function Die({
           </>
         )}
       </Canvas>
+      {faceArt ? (
+        // The player's own art for the face it shows, filling its top face, its corners rounded as the face's are.
+        <Image
+          source={{ uri: imageUri(faceArt) }}
+          style={{
+            position: 'absolute',
+            left: CUBE_FACE.x * size,
+            top: CUBE_FACE.y * size,
+            width: CUBE_FACE.size * size,
+            height: CUBE_FACE.size * size,
+            borderRadius: CUBE_ROUND * size,
+          }}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
+      ) : null}
       {sides === 6 ? null : (
         <Text
           allowFontScaling={false}
@@ -604,7 +623,17 @@ function Coin({ piece, rollKey, size, selected }: { piece: TablePiece; rollKey: 
           {pieceShadow(OS)}
         </Circle>
       </Canvas>
-      <Image source={shown === 1 ? COIN_HEADS : COIN_TAILS} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
+      {/* The player's own art for the side it shows, if it has some: round, with a gold rim; or the gold coin's. */}
+      {piece.faces?.[shown - 1] ? (
+        <Image
+          source={{ uri: imageUri(piece.faces[shown - 1]!) }}
+          style={[StyleSheet.absoluteFill, styles.coinOwn, { borderRadius: size / 2, borderWidth: size * 0.05 }]}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
+      ) : (
+        <Image source={shown === 1 ? COIN_HEADS : COIN_TAILS} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
+      )}
       {selected ? <View style={[StyleSheet.absoluteFill, styles.coinSelected, { borderRadius: size / 2 }]} /> : null}
     </Animated.View>
   );
@@ -1233,6 +1262,8 @@ const styles = StyleSheet.create({
   timerHint: { position: 'absolute', left: 0, textAlign: 'center', fontSize: 9, fontWeight: '700', opacity: 0.7 },
   zone: { flex: 1, borderWidth: 3, borderRadius: 12 },
   coinSelected: { borderWidth: 3, borderColor: colors.accent },
+  // A coin with the player's own art: its rim in the gold coin's gold.
+  coinOwn: { borderColor: '#c9a133' },
   scorePad: { flex: 1, boxShadow: '1px 3px 8px rgba(0, 0, 0, 0.45)' },
   scoreColumns: { flex: 1, flexDirection: 'row' },
   scoreCell: { alignItems: 'center', justifyContent: 'center' },

@@ -192,6 +192,28 @@ test('a table’s components, custom art and card sizes come with it', () => {
   assert.ok(t.pieces!.every((p) => p.id.startsWith('n')));
 });
 
+test('a die’s and a coin’s own face art come with the table', () => {
+  const d = deck();
+  const table = {
+    id: 't1', name: 'T', createdAt: 0, updatedAt: 0, stacks: [], hands: [[], [], [], []], handNames: ['Hand 1', 'Hand 2', 'Hand 3', 'Hand 4'],
+    pieces: [
+      { id: 'p1', kind: 'die' as const, x: 0, y: 0, value: 1, sides: 6, faces: ['decks/tokens/one.png', null, null, null, null, 'decks/tokens/six.png'] },
+      { id: 'p2', kind: 'coin' as const, x: 0, y: 0, value: 1, faces: [null, 'decks/tokens/tails.png'] },
+    ],
+  };
+  const reads: string[] = [];
+  const text = JSON.stringify(packDecks([d], (p) => (reads.push(p), `data-of-${p}`), [table]));
+  assert.deepEqual(reads.filter((r) => r.startsWith('decks/tokens/')).sort(), ['decks/tokens/one.png', 'decks/tokens/six.png', 'decks/tokens/tails.png']);
+  const read = unpackFile(text);
+  let n = 0;
+  const t = remapTable(read.tables[0], new Map(), () => `n${n++}`, (key) => `decks/tokens/new-${key}`);
+  const [die, coin] = t.pieces!;
+  // Each face's picture saved again, the standard ones left standard, in their places.
+  assert.deepEqual(die.faces!.map((f) => f !== null), [true, false, false, false, false, true]);
+  assert.ok(die.faces![0]!.startsWith('decks/tokens/new-'));
+  assert.deepEqual(coin.faces!.map((f) => f !== null), [false, true]);
+});
+
 test('a table’s pieces are checked: unknown kinds, nonsense values and missing pictures go', () => {
   const d = deck();
   const raw = JSON.parse(JSON.stringify(packDecks([d], (p) => `data-of-${p}`, [{ id: 't', name: 'T', createdAt: 0, updatedAt: 0, handNames: [], hands: [[], [], [], []], stacks: [] }])));
