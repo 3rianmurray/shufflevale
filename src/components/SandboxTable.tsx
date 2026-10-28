@@ -1195,6 +1195,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       return;
     }
     if (piece.kind !== 'counter') {
+      // Anything else (custom art, a token, a playing piece, a marker), as a stack or a bag: a tap picks it out; a
+      // tap on it picked out opens its own options (and lets any others go). (Not a zone: it's the table's layout.)
+      if (onCloth(piece)) return haptics.tick();
+      if (pickedPieces.includes(id)) {
+        if (pickedPieces.length + chosen.length > 1) selectStacks([]);
+        setMenu({ kind: 'piece', id });
+        return;
+      }
+      setSelected([]);
+      setPickedPieces([id]);
       haptics.tick();
       return;
     }
