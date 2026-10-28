@@ -511,11 +511,10 @@ export function scaleOf(t: SandboxTable, stackIds: string[], pieceIds: string[])
 export function scaleItems(t: SandboxTable, stackIds: string[], pieceIds: string[], k: number, size: CardSize): SandboxTable {
   const scale = keptScale(k);
   const ratio = (scale ?? 1) / scaleOf(t, stackIds, pieceIds);
-  // Each grouped one: its own scale times `ratio`, and moved as far from its group's middle times `ratio`. (Not a
-  // locked group's: it doesn't move, so each in it is just scaled, where it is.)
+  // Each grouped one: its own scale times `ratio`, and moved as far from its group's middle times `ratio` (a locked
+  // group too: its middle stays where it is).
   const inGroup = new Map<string, { x: number; y: number }>();
-  for (const { group, box, stackIds: s, pieceIds: p } of groupBoxes(t, stackIds, pieceIds, size)) {
-    if (groupLocked(t, group)) continue;
+  for (const { box, stackIds: s, pieceIds: p } of groupBoxes(t, stackIds, pieceIds, size)) {
     for (const id of [...s, ...p]) inGroup.set(id, { x: box.x + box.w / 2, y: box.y + box.h / 2 });
   }
   const placed = <T extends { id: string; x: number; y: number }>(item: T) => {
@@ -1739,10 +1738,16 @@ export function ungroupItems(t: SandboxTable, stackIds: string[], pieceIds: stri
 /** Whether a group is locked in place (see `lockedGroups`). */
 export const groupLocked = (t: SandboxTable, group: string | undefined) => !!group && !!t.lockedGroups?.includes(group);
 
-/** Whether a stack or piece stays where it is: it's locked, or it's in a locked group (two or more of it on the table). */
+/** Whether a stack or piece is in a group (of two or more on the table). */
+export const inLiveGroup = (t: SandboxTable, item: { group?: string }) => !!item.group && liveGroups(t).has(item.group);
+
+/**
+ * Whether a stack or piece stays where it is: one in a group goes as its group does (locked in place only if the
+ * group is: the group's lock is the one that counts, not its own); any other, if it's locked.
+ */
 export function staysPut(t: SandboxTable, item: { locked?: boolean; group?: string } | undefined): boolean {
   if (!item) return false;
-  return !!item.locked || (groupLocked(t, item.group) && liveGroups(t).has(item.group!));
+  return inLiveGroup(t, item) ? groupLocked(t, item.group) : !!item.locked;
 }
 
 /** Groups locked in place, or let go (each still works as itself; only moving any of them is stopped). */
@@ -1776,7 +1781,7 @@ export function withGroups(t: SandboxTable, stackIds: string[], pieceIds: string
 
 /**
  * The group a stack or piece is in, as its stacks' and pieces' ids, if it's in one (of two or more); and whether
- * it's locked in place (every one of it is).
+ * it's locked in place (the group is: see lockGroups).
  */
 export function groupMembers(t: SandboxTable, id: string): { stackIds: string[]; pieceIds: string[]; locked: boolean } | null {
   const group = t.stacks.find((s) => s.id === id)?.group ?? t.pieces?.find((p) => p.id === id)?.group;
@@ -1786,7 +1791,7 @@ export function groupMembers(t: SandboxTable, id: string): { stackIds: string[];
   return {
     stackIds: stacks.map((s) => s.id),
     pieceIds: pieces.map((p) => p.id),
-    locked: groupLocked(t, group) || (stacks.every((s) => s.locked) && pieces.every((p) => p.locked)),
+    locked: groupLocked(t, group),
   };
 }
 

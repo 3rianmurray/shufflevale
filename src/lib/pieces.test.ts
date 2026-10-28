@@ -204,9 +204,10 @@ test('things grouped are picked out together, boxed as one, laid out as one, pas
   assert.deepEqual(withGroups(t, ['s2'], []), { stackIds: ['s2', 's1'], pieceIds: ['tok'] });
   assert.deepEqual(withGroups(t, ['far'], ['lone']), { stackIds: ['far'], pieceIds: ['lone'] });
   assert.deepEqual(groupMembers(t, 'tok'), { stackIds: ['s1', 's2'], pieceIds: ['tok'], locked: false });
-  // Locked, every one of it: the group's locked (it stays where it is).
+  // Each in it locked on its own: the group isn't (its lock is the one that counts), and they go with it.
   const locked = { ...t, stacks: t.stacks.map((s) => ({ ...s, locked: true })), pieces: t.pieces!.map((p) => ({ ...p, locked: true })) };
-  assert.equal(groupMembers(locked, 's1')!.locked, true);
+  assert.equal(groupMembers(locked, 's1')!.locked, false);
+  assert.equal(moveStacks(locked, ['s1'], { x: 50, y: 0 }).stacks.find((s) => s.id === 's1')!.x, 450);
   // One box round all of it, only once all of it's picked out.
   const [box] = groupBoxes(t, ['s1', 's2'], ['tok'], cardSize);
   assert.deepEqual(box.box, { x: 350, y: 330, w: 220, h: 520 + PIECE_SIZE.token.h / 2 - 330 });

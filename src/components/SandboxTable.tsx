@@ -49,6 +49,7 @@ import {
   groupBoxes,
   groupItems,
   centerOnTable,
+  inLiveGroup,
   layerFlat,
   liesFlat,
   lockGroups,
@@ -2469,7 +2470,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // Locked custom art (a board, say), as a locked zone: the table under it works as ever (a pan, a lasso round
         // what's on it), and a hold still gives its options.
         const lockedArt =
-          onPiece && !overArt && onPiece.piece.kind === 'art' && onPiece.piece.locked && !L.lockedOut(onPiece.piece.id) ? onPiece.piece : null;
+          onPiece && !overArt && onPiece.piece.kind === 'art' && onPiece.piece.locked && !L.lockedOut(onPiece.piece.id) && !inLiveGroup(L.table!, onPiece.piece)
+            ? onPiece.piece
+            : null;
         if (onPiece && !overArt && !lockedArt) return pressPiece(onPiece.piece.id, onPiece.part, w);
         if (lockedArt) holdZone(lockedArt.id);
         // A zone's or card spot's name, just outside it: it's held by its name as by itself, however full of cards
@@ -3928,7 +3931,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // Cards, custom art and dice all turn to one angle (not what's locked in place); side by side with Scale.
         ...(n || turning.length ? [{ label: 'Rotate', icon: icon('rotate.right', 'rotate_right'), onPress: () => openRotate(chosen, turning.map((p) => p.id)) }] : []),
         // (Not what's locked in place.)
-        { label: 'Scale', icon: icon('arrow.up.left.and.arrow.down.right', 'open_in_full'), onPress: () => openScale(chosen, pieces.filter((p) => !p.locked).map((p) => p.id)) },
+        // (One in a group goes as its group does, locked or not.)
+        { label: 'Scale', icon: icon('arrow.up.left.and.arrow.down.right', 'open_in_full'), onPress: () => openScale(chosen, pieces.filter((p) => !p.locked || inLiveGroup(table, p)).map((p) => p.id)) },
         ...(pieces.length ? [{ label: 'Color', icon: icon('paintpalette', 'palette'), onPress: () => setTimeout(() => setMenu({ kind: 'pieceColor' }), 250) }] : []),
         { label: 'Copy', icon: COPY_ICON, onPress: () => copyThese(chosen, pieces.map((p) => p.id)) },
       ];
