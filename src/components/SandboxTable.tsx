@@ -1262,11 +1262,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const dropIntoBag = (bagId: string, items: BagItem[], without: SandboxTable) => {
     const bag = without.pieces?.find((p) => p.id === bagId);
     if (!bag || !items.length) return;
-    // A bag that's part of Pro, with Pro off: what's dropped stays where it was.
-    if (lockedOut(bagId)) {
-      haptics.warn();
-      return openPro();
-    }
     if (!bagTakes(bag, items)) return haptics.warn();
     const put = (asSupply: boolean) => {
       commit(putInBag(without, bagId, items, asSupply));
@@ -1397,6 +1392,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    * where it was in the picture, at the same scale. One undo puts it back.
    */
   const cutOutArt = async (id: string) => {
+    // Changing its picture is part of Pro (but on the Playground, to try it).
+    if (!pro && !playgroundHere) return openPro();
     const art = latest.get().table?.pieces?.find((p) => p.id === id && p.kind === 'art');
     if (!art?.image) return;
     try {
@@ -1460,17 +1457,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     commit(gridItems(table, chosen, pickedPieces, size));
     haptics.drop();
   };
-  // ---- Pro: every component but dice and card spots is part of it. The Playground's are there to try: what's on
-  // it can be copied and pasted there, but no cards of the player's own come onto it, nor more components from the
-  // menu, and none of its Pro components go elsewhere (pasting them anywhere else needs Pro). ----
+  // ---- Pro: making what's drawn with the player's own pictures (custom art, custom tokens, dice and coins' faces; see
+  // isProPiece). Using them is free: a table someone shares, with theirs on it, plays in full; only making more, or
+  // changing their pictures, needs Pro (as does pasting them onto other tables). The Playground's are there to try:
+  // what's on it can be copied and pasted there, but no cards of the player's own come onto it. ----
   const pro = usePro();
   const examples = useExamples();
   const playgroundHere = !!table && isPlayground(table.id);
-  /** A Pro component that can't be used here: Pro is off (refunded, say) and this isn't the Playground. Left as it lies. */
-  const lockedOut = (id: string) => {
-    const p = table?.pieces?.find((x) => x.id === id);
-    return !!p && !pro && !playgroundHere && isProPiece(p);
-  };
   const openPro = () => router.push({ pathname: '/pro', params: { reason: 'components' } });
   // The Playground's cards, without Pro: only the Playing Cards example's, and only while it's as it was made (not
   // changed into a deck of someone's own). Any others are taken off as it opens, and it says why.
@@ -1801,13 +1794,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       dropZoneSize: () => void;
       setScoreScroll: (s: { id: string; scroll: number } | null) => void;
       dropScoreScroll: () => void;
-      lockedOut: (id: string) => boolean;
       openPro: () => void;
       zoomTo: (target: ZoomTarget) => void;
     };
     return { set: (next: typeof box) => Object.assign(box, next), get: () => box };
   });
-  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onGridButton, gridPicked, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, onDragRollButton, rollDice, lockedOut, openPro, zoomTo: (t) => zoomToTarget(t) });
+  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onGridButton, gridPicked, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, onDragRollButton, rollDice, openPro, zoomTo: (t) => zoomToTarget(t) });
 
   // The gesture in progress (never drawn from, so kept outside React state).
   const [gestureState] = useState(() => {
@@ -2236,14 +2228,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     /** A finger down on a piece (or an unlocked zone): a tap uses it, a drag moves it (and any picked out with it), a hold gives its options. */
     const pressPiece = (pressed: string, part: PiecePart, w: { x: number; y: number }) => {
       const L = latest.get();
-      // Part of Pro, with Pro off (and not on the Playground): left as it lies.
-      if (L.lockedOut(pressed)) {
-        touch.mode = 'button';
-        touch.onEmpty = false;
-        haptics.warn();
-        L.openPro();
-        return;
-      }
       // One in a group (see groupItems), not yet picked out: its group's picked out, and goes with it as one (a tap
       // just picks it out).
       // (A locked group stays where it is, picked out or not: its piece is pressed as any locked one is, on its own.)
@@ -2453,7 +2437,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // piece, nor a card) is right under the finger.
         // A score pad's corner grip: dragged, it makes the pad taller or shorter (as a zone's resizes it).
         const padGrip = L.table ? scoreGripAt(L.table, w.x, w.y, SCORE_GRIP_REACH / cameraZoom(readCamera())) : null;
-        if (padGrip && !L.lockedOut(padGrip.id)) {
+        if (padGrip) {
           if (L.selected.length || L.pickedPieces.length) L.setSelected([]);
           touch.zone = { id: padGrip.id, from: w, size: pieceSizeOf({ ...padGrip, scale: 1 }), scale: padGrip.scale ?? 1 };
           touch.mode = 'zoneResize';
@@ -2478,15 +2462,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // Locked custom art (a board, say), as a locked zone: the table under it works as ever (a pan, a lasso round
         // what's on it), and a hold still gives its options.
         const lockedArt =
-          onPiece && !overArt && onPiece.piece.kind === 'art' && onPiece.piece.locked && !L.lockedOut(onPiece.piece.id) && !inLiveGroup(L.table!, onPiece.piece)
+          onPiece && !overArt && onPiece.piece.kind === 'art' && onPiece.piece.locked && !inLiveGroup(L.table!, onPiece.piece)
             ? onPiece.piece
             : null;
         if (onPiece && !overArt && !lockedArt) return pressPiece(onPiece.piece.id, onPiece.part, w);
         if (lockedArt) holdZone(lockedArt.id);
         // A zone's or card spot's name, just outside it: it's held by its name as by itself, however full of cards
-        // it is (one that's part of Pro, with Pro off, is just painted on).
-        const byName = L.table ? labelAt(L.table, w.x, w.y, FINGER_REACH / 2 / cameraZoom(readCamera())) : null;
-        const named = byName && !L.lockedOut(byName.id) ? byName : null;
+        // it is.
+        const named = L.table ? labelAt(L.table, w.x, w.y, FINGER_REACH / 2 / cameraZoom(readCamera())) : null;
         if (named && !named.locked) return pressPiece(named.id, 'body', w);
         if (named && !touch.holdTimer) holdZone(named.id);
         const hit = L.table && !named ? stackAt(L.table, w.x, w.y, L.size) : null;
@@ -2541,16 +2524,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // is; locked, the table under it works as ever (and a hold still gives its options).
         if (L.table) {
           const grip = zoneGripAt(L.table, w.x, w.y, ZONE_GRIP_REACH / cameraZoom(readCamera()));
-          if (grip && !L.lockedOut(grip.id)) {
+          if (grip) {
             if (L.selected.length || L.pickedPieces.length) L.setSelected([]);
             touch.zone = { id: grip.id, from: w, size: pieceSizeOf({ ...grip, scale: 1 }), scale: grip.scale ?? 1 };
             touch.mode = 'zoneResize';
             haptics.lift();
             return;
           }
-          // (One that's part of Pro, with Pro off, is just painted on: the table under it works as ever.)
-          const found = zoneAt(L.table, w.x, w.y);
-          const zone = found && !L.lockedOut(found.id) ? found : null;
+          const zone = zoneAt(L.table, w.x, w.y);
           if (zone && !zone.locked) return pressPiece(zone.id, 'body', w);
           if (zone && !touch.holdTimer) holdZone(zone.id);
         }
@@ -2805,7 +2786,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         L.setLassoPath(touch.lassoScreen);
         const caught = stacksInShape(L.table, touch.lasso, L.size);
         const picked = [...touch.lassoBase, ...caught.filter((id) => !touch.lassoBase.includes(id))];
-        const pieces = [...touch.lassoPieceBase, ...piecesInShape(L.table, touch.lasso).filter((id) => !touch.lassoPieceBase.includes(id) && !L.lockedOut(id))];
+        const pieces = [...touch.lassoPieceBase, ...piecesInShape(L.table, touch.lasso).filter((id) => !touch.lassoPieceBase.includes(id))];
         const grew = picked.length > L.selected.length || pieces.length > L.pickedPieces.length;
         if (picked.join() !== L.selected.join()) L.setSelected(picked);
         // Counters and dice too (set after the cards, which let them go when there are none).

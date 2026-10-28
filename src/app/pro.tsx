@@ -16,12 +16,12 @@ type Reason = 'cards' | 'files' | 'components';
 const REASONS: Record<Reason, string> = {
   cards: `The free version holds ${FREE_CARD_LIMIT} cards. Pro removes the limit.`,
   files: 'Sharing and backing up decks and tables are part of Pro. Opening a file someone sends you is free.',
-  components: 'Custom art, custom tokens and your own faces on dice and coins are part of Pro. Every other component is free.',
+  components: 'Making custom art, custom tokens and your own faces on dice and coins is part of Pro. Every other component is free, and so is playing with ones a friend shares.',
 };
 
 const PERKS: [string, string][] = [
   ['Unlimited cards', `No ${FREE_CARD_LIMIT}-card limit: every deck for every game, and every prototype.`],
-  ['Your own art', 'Custom art, custom tokens, and your own faces on dice and coins.'],
+  ['Your own art', 'Make custom art, custom tokens, and your own faces on dice and coins.'],
   ['Share decks and tables', 'Send a deck, a group or a whole table to a friend as one file. Opening it is free for them.'],
   ['Back up', 'Keep everything safe in Files, and bring it to a new phone.'],
   ['Support Shufflevale', 'Made by one person. Every Pro keeps it growing.'],
