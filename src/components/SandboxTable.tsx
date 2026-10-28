@@ -48,6 +48,7 @@ import {
   gridItems,
   groupBoxes,
   groupItems,
+  centerOnTable,
   layerFlat,
   liesFlat,
   lockGroups,
@@ -5176,6 +5177,17 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                       fitView(table);
                       // After a few times: the quick pinch does this too.
                       offerTipAfterUses('tables-quick-pinch', undefined, 900);
+                    },
+                  ],
+                  // Everything moved together into the middle of the table, as it's laid out; then all of it in view.
+                  [
+                    'scope',
+                    'center_focus_strong',
+                    'Center on Table',
+                    () => {
+                      const centered = centerOnTable(table, size);
+                      if (centered !== table) commit(centered);
+                      fitView(centered);
                     },
                   ],
                   // Cards and components alike: one menu.

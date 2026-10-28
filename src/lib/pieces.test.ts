@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerFlat, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies, groupItems, ungroupItems, withGroups, groupMembers, groupBoxes, liesOver, lockGroups, staysPut, moveStacks } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerFlat, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies, groupItems, ungroupItems, withGroups, groupMembers, groupBoxes, liesOver, lockGroups, staysPut, moveStacks, centerOnTable } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
 test('dice are drawn (and found) the one further down and right in front; other pieces keep their places', () => {
@@ -232,6 +232,18 @@ test('things grouped are picked out together, boxed as one, laid out as one, pas
   const apart = ungroupItems(held, ['s1', 's2'], ['tok']);
   assert.deepEqual(withGroups(apart, ['s2'], []), { stackIds: ['s2'], pieceIds: [] });
   assert.equal(apart.lockedGroups, undefined);
+});
+
+test('everything moved together into the middle of the table, as it was laid out', () => {
+  const cardSize = () => ({ w: 100, h: 140 });
+  let t = { ...table(), stacks: [{ id: 's', x: 400, y: 400, angle: 0, cards: [{ iid: 'a', deckId: 'd', cardId: 'a', faceUp: true }] }] };
+  t = addPiece(t, { ...newPiece('art', 'board', { x: 500, y: 400 }), w: 400, h: 400, locked: true });
+  const c = centerOnTable(t, cardSize);
+  const art = c.pieces![0];
+  // The board's box (the widest) is now in the middle; the card kept its place on it.
+  assert.deepEqual([art.x, art.y], [1800, 1200]);
+  assert.deepEqual([c.stacks[0].x - art.x, c.stacks[0].y - art.y], [-100, 0]);
+  assert.equal(centerOnTable(c, cardSize), c);
 });
 
 test('a timer starts, pauses keeping what it had left, and is set back once it runs out', () => {

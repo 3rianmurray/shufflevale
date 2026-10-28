@@ -2115,6 +2115,24 @@ export function tableBounds(t: SandboxTable, size: CardSize): Area | null {
   return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
 }
 
+/**
+ * Everything on the table (cards and pieces, locked ones too) moved together so it's in the middle of the table, as
+ * it's laid out. A ready-made layout's part of the table goes with it.
+ */
+export function centerOnTable(t: SandboxTable, size: CardSize): SandboxTable {
+  const bounds = tableBounds(t, size);
+  if (!bounds) return t;
+  const dx = Math.round(TABLE_W / 2 - (bounds.x + bounds.w / 2));
+  const dy = Math.round(TABLE_H / 2 - (bounds.y + bounds.h / 2));
+  if (!dx && !dy) return t;
+  return {
+    ...t,
+    stacks: t.stacks.map((s) => ({ ...s, x: s.x + dx, y: s.y + dy })),
+    ...(t.pieces ? { pieces: t.pieces.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy })) } : {}),
+    ...(t.focus ? { focus: { ...t.focus, x: t.focus.x + dx, y: t.focus.y + dy } } : {}),
+  };
+}
+
 /** How close a fitted view comes in, at most: a card or two shouldn't fill the screen. */
 export const FIT_MAX_ZOOM = 1.5;
 
