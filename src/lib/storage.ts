@@ -137,15 +137,13 @@ export interface Settings {
   solitaireMade?: boolean;
   /** The Playing Cards deck the app made last, reused for new Solitaire tables while it's still there. */
   playingCardsDeckId?: string;
-  /** The Playground table (every component, to try: a Free Play example) has been made, once; and which it is. */
+  /** The Playground table (every component laid out: a Free Play example) has been made, once; and which it is. */
   playgroundMade?: boolean;
   playgroundTableId?: string;
   /** The Playground layout's version it has the components of (see PLAYGROUND_VERSION; none is the first). */
   playgroundVersion?: number;
   /** The Solitaire example table (found by its name, if it was made before this was noted). */
   solitaireTableId?: string;
-  /** How the Playing Cards deck looked as it was made (see deckLook): the Playground's cards, unchanged. */
-  playingCardsLook?: string;
   /** Tips (see lib/tips) are turned off. */
   tipsOff?: boolean;
   /** The tips already shown (each shows once). */

@@ -89,21 +89,8 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /**
-   * A copy of a table, just after it. Not of the Playground without Pro: a copy would be a table of its own with
-   * every component on it, to keep (only the Playground itself lets them be tried).
-   */
-  const duplicateTable = (id: string) => {
-    if (!pro && isPlayground(id)) {
-      haptics.warn();
-      Alert.alert('The Playground can’t be copied', 'It’s there to try everything, custom art included. Custom art on tables of your own is part of Pro.', [
-        { text: 'OK', style: 'cancel' },
-        { text: 'See Pro', onPress: () => openPro() },
-      ]);
-      return undefined;
-    }
-    return duplicateSandbox(id);
-  };
+  /** A copy of a table, just after it (the Playground's too: a copy is an ordinary table). */
+  const duplicateTable = (id: string) => duplicateSandbox(id);
   /** Duplicating or deleting from a menu: after a couple of times, the tip that swiping a row does it quicker. */
   const swipeTipSoon = () => offerTipAfterUses('home-swipe', 2, 1200);
 

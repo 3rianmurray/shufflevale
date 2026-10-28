@@ -96,7 +96,6 @@ import {
   ART_MAX,
   reorderBag,
   shuffleBag,
-  keepCards,
   MIN_ZOOM,
   takeFromBag,
   trackSpaceAt,
@@ -176,7 +175,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { artPicture, faceArtColor, facePicture, loadUpright, tokenPicture } from '../lib/images';
 import { TOKEN_SHAPES, tokenOutline, tokenShapeOf } from '../lib/tokenShapes';
 import type { TokenShape } from '../lib/tokenShapes';
-import { deckLook, isPlayground, isProPiece, usePro } from '../lib/pro';
+import { isPlayground, isProPiece, usePro } from '../lib/pro';
 import { updateSandbox, useSandbox } from '../lib/sandboxStore';
 import { clipSize, setClip, useClip } from '../lib/tableClipboard';
 import { offerTipAfterUses, offerTipSoon, tipLearned } from '../lib/tips';
@@ -1303,8 +1302,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    */
   const choosePicture = (target: PictureTarget) => {
     // Pictures of the player's own (custom art, a token's, a die's or coin's faces) are part of Pro. (The Playground's
-    // own custom art can still be changed there, to try it.)
-    if (!pro && !(playgroundHere && target.kind === 'art' && target.id)) return openPro();
+    // own pieces' can still be changed there, to try it.)
+    if (!pro && !(playgroundHere && target.id)) return openPro();
     const sources: PictureSource[] = ['photos', 'files', 'camera'];
     // A face with art of its own can be put back to the standard one, too.
     const faced = target.kind === 'face' ? table?.pieces?.find((p) => p.id === target.id) : undefined;
@@ -1459,40 +1458,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   };
   // ---- Pro: making what's drawn with the player's own pictures (custom art, custom tokens, dice and coins' faces; see
   // isProPiece). Using them is free: a table someone shares, with theirs on it, plays in full; only making more, or
-  // changing their pictures, needs Pro (as does pasting them onto other tables). The Playground's are there to try:
-  // what's on it can be copied and pasted there, but no cards of the player's own come onto it. ----
+  // changing their pictures, needs Pro (as does pasting them onto other tables). On the Playground, an ordinary table
+  // otherwise, its own can be changed and pasted without Pro, to try what Pro does. ----
   const pro = usePro();
   const examples = useExamples();
   const playgroundHere = !!table && isPlayground(table.id);
   const openPro = () => router.push({ pathname: '/pro', params: { reason: 'components' } });
-  // The Playground's cards, without Pro: only the Playing Cards example's, and only while it's as it was made (not
-  // changed into a deck of someone's own). Any others are taken off as it opens, and it says why.
-  const playgroundDeck = playgroundHere ? decksById.get(loadSettings().playingCardsDeckId ?? '') : undefined;
-  const playgroundCardsOk = !playgroundDeck || deckLook(playgroundDeck) === loadSettings().playingCardsLook;
-  useEffect(() => {
-    if (pro || !playgroundHere || !table) return;
-    const ok = (c: SandboxCard) => c.deckId === playgroundDeck?.id && playgroundCardsOk;
-    const all = [...table.stacks.flatMap((s) => s.cards), ...table.hands.flat(), ...(table.trash ?? [])];
-    if (all.every(ok)) return;
-    // Not undoable: they were never meant to be here.
-    updateSandbox(keepCards(table, ok));
-    Alert.alert(
-      'Some cards were taken off the Playground',
-      playgroundCardsOk
-        ? 'The Playground plays with its own Playing Cards. Your own decks, and every component, can be used together with Pro.'
-        : 'The Playing Cards deck has been changed, so its cards don’t play here. Restore examples (in the home screen’s menu) brings it back as it was.',
-    );
-    // As it opens, and if Pro or the deck changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pro, playgroundHere, playgroundCardsOk, playgroundDeck?.id, table?.id]);
-  /** Something brought onto the Playground without Pro: it's for trying what's there. */
-  const playgroundOnly = () => {
-    haptics.warn();
-    Alert.alert('The Playground is for trying things out', 'Everything on it can be used here. Bringing cards of your own onto it is part of Pro.', [
-      { text: 'OK', style: 'cancel' },
-      { text: 'See Pro', onPress: openPro },
-    ]);
-  };
   /** Where what's added goes: where the table was held to add it, if it was; or the middle of the view. */
   const [addAt, setAddAt] = useState<{ x: number; y: number } | null>(null);
   const middleOfView = () => (view ? toTable(readCamera(), view.w / 2, (insets.top + TOP_BAR_H + handTop - HAND_TAB_H) / 2) : { x: TABLE_W / 2, y: TABLE_H / 2 });
@@ -3343,16 +3314,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   /** What's copied put on the table (`copies` times, laid out in a grid, none on another), and picked out. */
   const pasteClip = (inMiddle = false, copies = 1) => {
     if (!table || !view || !clip) return;
-    if (!pro && playgroundHere) {
-      // On the Playground, without Pro: anything copied from it (every component, and its own cards), but no
-      // cards of anyone's own decks (it plays with its own).
-      const cardsIn = (p: TablePiece): SandboxCard[] => bagItems(p).flatMap((i) => (i.card ? [i.card] : i.piece ? cardsIn(i.piece) : []));
-      const cards = [...clip.stacks.flatMap((s) => s.cards), ...clip.pieces.flatMap(cardsIn)];
-      if (!cards.every((c) => c.deckId === playgroundDeck?.id && playgroundCardsOk)) return playgroundOnly();
-    } else if (!pro && clip.pieces.some(isProPiece)) {
-      // Anywhere else, Pro's components need Pro (copied from the Playground, too).
-      return openPro();
-    }
+    // More of what's made with your own pictures needs Pro (but on the Playground, to try it).
+    if (!pro && !playgroundHere && clip.pieces.some(isProPiece)) return openPro();
     if (!roomFor(table, clipCards(clip) * copies)) return;
     if (artCount + clip.pieces.filter((p) => p.kind === 'art').length * copies > ART_MAX) return artFull();
     const { table: next, stackIds, pieceIds } = pasteCopies(table, clip, copies, inMiddle ? middleOfView() : addSpot(), newId, size);
@@ -3371,13 +3334,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     return false;
   };
   const addDeckToTable = (deck: Deck) => {
-    if (!pro && playgroundHere) return playgroundOnly();
     if (!table || !roomFor(table, deckSize(deck))) return;
     arrive(addDeck(table, deck, viewMiddle(), newId));
   };
   /** Some of a deck's cards, chosen one by one: in one face-down stack. */
   const addCardsToTable = (deck: Deck, cardIds: string[]) => {
-    if (!pro && playgroundHere) return playgroundOnly();
     const more = deck.cards.filter((c) => cardIds.includes(c.id)).reduce((n, c) => n + copiesOf(c), 0);
     if (!table || !roomFor(table, more)) return;
     arrive(addCards(table, deck, cardIds, viewMiddle(), newId));
@@ -4019,8 +3980,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const scaleTile = tile('Scale', 'arrow.up.left.and.arrow.down.right', 'open_in_full', () => openScale([], [id]), !!piece.locked);
       // For what turns to any angle (see turnsFreely): beside Scale.
       const rotateTile = tile('Rotate', 'rotate.right', 'rotate_right', () => openRotate([], [id]), !!piece.locked);
-      // A six-sided die's (or a coin's) own art for its faces, with custom art's icon: part of Pro.
-      const faceTile = tile(piece.kind === 'coin' ? 'Art' : 'Faces', 'photo.on.rectangle', 'add_photo_alternate', pro ? next({ kind: 'faces', id }) : () => setTimeout(openPro, 250));
+      // A six-sided die's (or a coin's) own art for its faces, with custom art's icon: part of Pro (but on the
+      // Playground, to try it).
+      const faceTile = tile(piece.kind === 'coin' ? 'Art' : 'Faces', 'photo.on.rectangle', 'add_photo_alternate', pro || playgroundHere ? next({ kind: 'faces', id }) : () => setTimeout(openPro, 250));
       // For what usually sits in one place through a game: locked, it stays put (dragging it moves the table).
       const lockRow: FocusRow = { kind: 'toggle', label: 'Lock', value: !!piece.locked, onChange: (on) => commit(setPiece(table, id, { locked: on || undefined })) };
       const takeOffRow: FocusRow = { kind: 'action', label: 'Take off the table', destructive: true, onPress: () => commit(removePiece(table, id)) };
@@ -4490,8 +4452,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const next = (m: Menu) => () => setTimeout(() => setMenu(m), 250);
       const icon = (ios: string, android: string) => ({ ios, android, web: android }) as SheetTile['icon'];
       // Free, every one: cards (whole decks, or chosen one by one), dice, and the rest of the table's components, for
-      // playing alongside a game. (Cards, on the Playground, need Pro: it plays with its own.)
-      const cardsHere = (go: () => void) => () => (!pro && playgroundHere ? setTimeout(playgroundOnly, 250) : go());
+      // playing alongside a game.
       // What's made with the player's own pictures, part of Pro. Without it: all three under one PRO heading (rather
       // than a tag on each), opening Pro. With it: custom art among the rest, as a token or a d6 of your own is made
       // from the Pieces and Dice menus.
@@ -4505,9 +4466,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       return {
         title: 'Add to the table',
         tiles: [
-          { label: 'Full decks', icon: icon('rectangle.stack', 'layers'), onPress: cardsHere(next({ kind: 'addDeck' })) },
+          { label: 'Full decks', icon: icon('rectangle.stack', 'layers'), onPress: next({ kind: 'addDeck' }) },
           // Its own screen, which iOS can only show once this menu has gone.
-          { label: 'Cards', icon: icon('rectangle.portrait', 'crop_portrait'), opensModal: pro || !playgroundHere, onPress: cardsHere(() => setAddingCards(true)) },
+          { label: 'Cards', icon: icon('rectangle.portrait', 'crop_portrait'), opensModal: true, onPress: () => setAddingCards(true) },
           { label: 'Dice', icon: icon('dice', 'casino'), onPress: next({ kind: 'addDie' }) },
           { label: 'Card spot', icon: icon('square.dashed', 'check_box_outline_blank'), onPress: () => addPieceToTable('spot') },
           { label: 'Coin', icon: icon('centsign.circle', 'toll'), onPress: () => addPieceToTable('coin') },

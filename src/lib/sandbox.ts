@@ -2322,13 +2322,12 @@ export function solitaire(t: SandboxTable, deck: Deck, ids: () => string, random
 const MARKET_CARDS = 4;
 
 /**
- * The Playground example: every component laid out as a little board game, to try them all (without Pro, too:
- * see isPlayground). In rows, top to bottom: its name; a track, with two players' pieces at its start; the cards
- * (the deck in a card spot, a zone beside it for a discard pile, and a market zone lining up four cards dealt face up
- * from it), with a score pad beside them; a bag of cubes, an endless supply of discs, a counter, a timer, the
- * first-player marker and a spinner; dice and a coin; and a line of words saying how to begin. Its only cards are
- * the Playing Cards example's (shuffled): never a deck of someone's own, which would make it a table of their game
- * with every component on it (see deckLook).
+ * The Playground example: every component laid out as a little board game, to show what a table can do (its
+ * custom pieces can be changed there without Pro, to try it: see isPlayground). In rows, top to bottom: its name; a
+ * track, with two players' pieces at its start; the cards (the deck in a card spot, a zone beside it for a discard
+ * pile, and a market zone lining up four cards dealt face up from it), with a score pad beside them; a bag of cubes,
+ * an endless supply of discs, a counter, a timer, the first-player marker and a spinner; dice and a coin; and a line
+ * of words saying how to begin. Its cards are the Playing Cards example's (shuffled), if it's there.
  */
 export function playground(t: SandboxTable, deck: Deck | undefined, ids: () => string, random: () => number = Math.random): SandboxTable {
   const cx = TABLE_W / 2;

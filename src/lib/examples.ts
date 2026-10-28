@@ -1,5 +1,5 @@
 // The app's own examples: a Playing Cards deck and a Solitaire table dealt from it, and the Playground (every
-// component, to try), made once on first opening to show what Free Play can do, and put back as new from Help
+// component laid out as a little game, to show what a table can do), made once on first opening to show what Free Play can do, and put back as new from Help
 // whenever they're wanted again (deleted or changed).
 import { Alert } from 'react-native';
 
@@ -7,7 +7,6 @@ import { useDecks } from './DecksContext';
 import * as haptics from './haptics';
 import { newId } from './id';
 import { playingCards } from './playingCards';
-import { deckLook } from './pro';
 import { newSandbox, playground, PLAYGROUND_VERSION, solitaire } from './sandbox';
 import type { SandboxTable } from './sandbox';
 import { createSandboxWith, sandboxes, updateSandbox } from './sandboxStore';
@@ -75,8 +74,7 @@ export function useExamples() {
     const found = playingDeck();
     const deck = found ? refillDeck(found.id, PLAYING_CARDS, cards, back) : createReadyDeck(PLAYING_CARDS, cards, back);
     if (!deck) throw new Error('The Playing Cards deck couldn’t be found.');
-    // As it's made: the Playground's cards are this deck's only while it stays so (see deckLook).
-    saveSettings({ ...loadSettings(), playingCardsDeckId: deck.id, playingCardsLook: deckLook(deck) });
+    saveSettings({ ...loadSettings(), playingCardsDeckId: deck.id });
     (found ? reset : added).push(PLAYING_CARDS);
 
     // The Solitaire table: dealt again in place (keeping its spot on the home screen), or made again.
@@ -134,16 +132,11 @@ export function useExamples() {
     if (s.playgroundMade) {
       if ((s.playgroundVersion ?? 1) >= PLAYGROUND_VERSION) return;
       const there = !!s.playgroundTableId && sandboxes().some((t) => t.id === s.playgroundTableId);
-      // With the Playing Cards example's cards, while it's as it was made (see deckLook); otherwise none.
-      const deck = playingDeck();
-      if (there) restorePlayground(deck && deckLook(deck) === s.playingCardsLook ? deck : undefined);
+      if (there) restorePlayground(playingDeck());
       saveSettings({ ...loadSettings(), playgroundVersion: PLAYGROUND_VERSION });
       return;
     }
-    const deck = playingDeck();
-    // Noted as it is now, if it never was (made before the Playground came, before there was a reason to change it).
-    if (deck && !s.playingCardsLook) saveSettings({ ...loadSettings(), playingCardsLook: deckLook(deck) });
-    restorePlayground(deck);
+    restorePlayground(playingDeck());
   };
 
   /** Asks first (changes to the examples are lost), then restores them and says so. */
