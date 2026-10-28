@@ -96,6 +96,10 @@ test('two fingers keep the table under them as they slide, spread and twist', ()
   const c = moveCamera(start, from, to);
   near(cameraZoom(c), 2);
   near(cameraAngle(c), 90);
+  // With the rotation locked: the same zoom, no turn.
+  const level = moveCamera(start, from, to, false);
+  near(cameraZoom(level), 2);
+  near(cameraAngle(level), 0);
   // The table points first under the fingers are under them still.
   from.forEach((f, i) => {
     const p = toScreen(c, f.x, f.y);

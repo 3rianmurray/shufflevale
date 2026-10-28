@@ -233,6 +233,8 @@ export interface SandboxTable {
   snapToGrid?: boolean;
   /** The camera stays put: sliding, zooming and turning the table do nothing (cards still move). */
   lockCamera?: boolean;
+  /** The view keeps its turn: two fingers still slide and zoom it, but don't turn it. */
+  lockRotation?: boolean;
   /** The table's theme (a key of TABLE_THEMES in tableThemes.ts): its cloth, and a tray to go with it. None is the classic felt. */
   background?: string;
   /** The grid's lines are drawn (snapping is separate: see snapToGrid). */
@@ -344,10 +346,10 @@ export function startCamera(view: { w: number; h: number }, focus?: Area): Camer
 
 /**
  * The camera moved by fingers: where two fingers started on screen (`from`) and where they are now (`to`), the
- * table under them stays under them, so they slide, zoom and turn it together. One finger just slides it.
- * Zooming stops at the limits (about the fingers' middle).
+ * table under them stays under them, so they slide, zoom and turn it together (or, not `turns`, only slide and zoom
+ * it). One finger just slides it. Zooming stops at the limits (about the fingers' middle).
  */
-export function moveCamera(start: Camera, from: { x: number; y: number }[], to: { x: number; y: number }[]): Camera {
+export function moveCamera(start: Camera, from: { x: number; y: number }[], to: { x: number; y: number }[], turns = true): Camera {
   if (from.length === 1 || to.length === 1) {
     return { ...start, tx: start.tx + to[0].x - from[0].x, ty: start.ty + to[0].y - from[0].y };
   }
@@ -359,6 +361,11 @@ export function moveCamera(start: Camera, from: { x: number; y: number }[], to: 
   const d = px * px + py * py || 1;
   let zr = (qx * px + qy * py) / d;
   let zi = (qy * px - qx * py) / d;
+  // Not turning: just the zoom (how much further apart the fingers are).
+  if (!turns) {
+    zr = Math.hypot(zr, zi);
+    zi = 0;
+  }
   // Kept within the zoom limits.
   const zoom = cameraZoom(start) * Math.hypot(zr, zi);
   const limited = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));

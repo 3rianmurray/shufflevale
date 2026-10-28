@@ -2864,9 +2864,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           touch.camFrom = now;
           return;
         }
-        let cam = moveCamera(touch.camStart, touch.camFrom, now);
+        // (Not turned, with the rotation locked.)
+        const turns = !latest.get().table?.lockRotation;
+        let cam = moveCamera(touch.camStart, touch.camFrom, now, turns);
         // Turned with two fingers, it settles onto quarter turns when close (with a tick as it does).
-        if (now.length === 2) {
+        if (now.length === 2 && turns) {
           cam = snapCamera(cam, { x: (now[0].x + now[1].x) / 2, y: (now[0].y + now[1].y) / 2 });
           const square = cameraSquare(cam);
           if (square && !touch.camSquare) haptics.tick();
@@ -5121,6 +5123,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                   ['number', 'tag', 'Stack counts', !table.hideCounts, (on: boolean) => ({ hideCounts: !on }), 'Shows how many cards each stack holds.'],
                   ['hand.raised', 'back_hand', 'Hands', !table.hideHands, (on: boolean) => ({ hideHands: on ? undefined : true }), 'Shows the hands’ tray. Hidden, the hands keep their cards.'],
                   ['lock', 'lock', 'Lock camera', !!table.lockCamera, (on: boolean) => ({ lockCamera: on }), 'The view stays put: sliding, zooming and turning the table do nothing. Cards still move.'],
+                  ['lock.rotation', 'screen_lock_rotation', 'Lock rotation', !!table.lockRotation, (on: boolean) => ({ lockRotation: on || undefined }), 'Two fingers still slide and zoom the table, but don’t turn it.'],
                 ] as const
               ).map(([ios, android, label, value, change, hint]) => (
                 <View key={label} style={styles.toolRow}>

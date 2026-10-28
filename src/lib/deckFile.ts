@@ -689,6 +689,7 @@ function tableFrom(v: unknown, known: Map<string, Set<string>>, pictureKey: (key
       ...(typeof v.gridStep === 'number' && GRID_STEPS.includes(v.gridStep) ? { gridStep: v.gridStep } : {}),
       ...flag('snapToGrid'),
       ...flag('lockCamera'),
+      ...flag('lockRotation'),
       ...flag('showGrid'),
       ...flag('hideCounts'),
       ...flag('hideHands'),
