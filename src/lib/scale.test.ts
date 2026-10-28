@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { cardSizeOf, matchStackSizes, newSandbox, pieceAt, scaleItems, scaleOf, SCALE_MAX, SCALE_MIN, stackAt, addPiece, newPiece } from './sandbox.ts';
+import { cardSizeOf, matchStackSizes, newSandbox, pieceAt, scaleItems, scaleOf, SCALE_MAX, SCALE_MIN, stackAt, addPiece, newPiece, groupItems } from './sandbox.ts';
 import type { SandboxCard, SandboxTable } from './sandbox.ts';
 
 // Two decks: a standard one (100 wide) and a mini one (70 wide).
@@ -25,6 +25,20 @@ test('a card put onto a stack of another size takes the stack’s size (its bott
   // Already one size: left as it was.
   const same = tableWith([card('a'), card('b')]);
   assert.equal(matchStackSizes(same, size), same);
+});
+
+test('a group scales as one thing about its middle, keeping its layout', () => {
+  // Two cards side by side (500 and 800 across), and a counter twice its size between them, all one group.
+  let t = tableWith([card('a')], [card('b')]);
+  t = addPiece(t, { ...newPiece('counter', 'c', { x: 650, y: 500 }), scale: 2 });
+  t = groupItems(t, ['s0', 's1'], ['c'], 'g');
+  const g = scaleItems(t, ['s0', 's1'], ['c'], 1.5, size);
+  // Half as big again: each card, the counter (from twice to three times), and the gaps between them.
+  assert.deepEqual(g.stacks.map((s) => [s.x, s.cards[0].scale]), [[425, 1.5], [875, 1.5]]);
+  assert.deepEqual([g.pieces![0].x, g.pieces![0].scale], [650, 3]);
+  // Not grouped: each just its own size, where it is.
+  const apart = scaleItems(tableWith([card('a')], [card('b')]), ['s0', 's1'], [], 1.5, size);
+  assert.deepEqual(apart.stacks.map((s) => s.x), [500, 800]);
 });
 
 test('scaling stacks scales every card in them, within the limits, and 1 puts them back', () => {

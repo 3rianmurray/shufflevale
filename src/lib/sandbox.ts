@@ -504,12 +504,35 @@ export function scaleOf(t: SandboxTable, stackIds: string[], pieceIds: string[])
 
 /**
  * Stacks and pieces drawn at a scale of their own size (each card of a stack its bottom card's, so they stay one
- * size), within SCALE_MIN and SCALE_MAX. 1 puts them back to their own sizes.
+ * size), within SCALE_MIN and SCALE_MAX. 1 puts them back to their own sizes. A group (see groupItems) scales as one
+ * thing, about its middle: each in it as much bigger or smaller as the first picked out is (see scaleOf), and as
+ * much nearer or further from the middle, so it keeps its layout.
  */
 export function scaleItems(t: SandboxTable, stackIds: string[], pieceIds: string[], k: number, size: CardSize): SandboxTable {
   const scale = keptScale(k);
-  const stacks = t.stacks.map((s) => (stackIds.includes(s.id) ? { ...s, cards: s.cards.map((c, i) => (i ? c : { ...c, scale })) } : s));
-  const pieces = t.pieces?.map((p) => (pieceIds.includes(p.id) ? { ...p, scale } : p));
+  const ratio = (scale ?? 1) / scaleOf(t, stackIds, pieceIds);
+  // Each grouped one: its own scale times `ratio`, and moved as far from its group's middle times `ratio`. (Not a
+  // locked group's: it doesn't move, so each in it is just scaled, where it is.)
+  const inGroup = new Map<string, { x: number; y: number }>();
+  for (const { group, box, stackIds: s, pieceIds: p } of groupBoxes(t, stackIds, pieceIds, size)) {
+    if (groupLocked(t, group)) continue;
+    for (const id of [...s, ...p]) inGroup.set(id, { x: box.x + box.w / 2, y: box.y + box.h / 2 });
+  }
+  const placed = <T extends { id: string; x: number; y: number }>(item: T) => {
+    const mid = inGroup.get(item.id)!;
+    return { ...item, x: Math.round(mid.x + (item.x - mid.x) * ratio), y: Math.round(mid.y + (item.y - mid.y) * ratio) };
+  };
+  const stacks = t.stacks.map((s) => {
+    if (!stackIds.includes(s.id)) return s;
+    const own = inGroup.has(s.id) ? keptScale((s.cards[0].scale ?? 1) * ratio) : scale;
+    const scaled = { ...s, cards: s.cards.map((c, i) => (i ? c : { ...c, scale: own })) };
+    return inGroup.has(s.id) ? placed(scaled) : scaled;
+  });
+  const pieces = t.pieces?.map((p) => {
+    if (!pieceIds.includes(p.id)) return p;
+    if (!inGroup.has(p.id)) return { ...p, scale };
+    return placed({ ...p, scale: keptScale((p.scale ?? 1) * ratio) });
+  });
   return matchStackSizes({ ...t, stacks, ...(pieces ? { pieces } : {}) }, size);
 }
 
