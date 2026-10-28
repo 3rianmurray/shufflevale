@@ -692,6 +692,9 @@ function tableFrom(v: unknown, known: Map<string, Set<string>>, pictureKey: (key
       ...flag('showGrid'),
       ...flag('hideCounts'),
       ...flag('hideHands'),
+      ...(Array.isArray(v.lockedGroups) && v.lockedGroups.some((g) => idFrom(g))
+        ? { lockedGroups: v.lockedGroups.flatMap((g) => (idFrom(g) ? [g as string] : [])).slice(0, 500) }
+        : {}),
       ...(pieces.length ? { pieces } : {}),
       ...camera,
       ...focus,

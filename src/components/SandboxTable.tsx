@@ -50,6 +50,8 @@ import {
   groupItems,
   layerFlat,
   liesFlat,
+  lockGroups,
+  staysPut,
   liesOver,
   ZONE_OPACITY_MIN,
   groupMembers,
@@ -1551,9 +1553,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const grab = gestureState.get().groupFrom;
     const over = turn ? null : bagAt(table, grab.x + by.x, grab.y + by.y, pickedPieces);
     if (over) {
-      const cardsIn = chosen.flatMap((id) => table.stacks.find((s) => s.id === id && !s.locked)?.cards ?? []);
-      const piecesIn = (table.pieces ?? []).filter((p) => pickedPieces.includes(p.id) && p.id !== over.id);
-      const lockedOut = new Set(table.stacks.filter((s) => s.locked).map((s) => s.id));
+      const cardsIn = chosen.flatMap((id) => table.stacks.find((s) => s.id === id && !staysPut(table, s))?.cards ?? []);
+      const piecesIn = (table.pieces ?? []).filter((p) => pickedPieces.includes(p.id) && p.id !== over.id && !staysPut(table, p));
+      const lockedOut = new Set(table.stacks.filter((s) => staysPut(table, s)).map((s) => s.id));
       return dropIntoBag(over.id, [...cardsIn.map((card) => ({ card })), ...piecesIn.map((piece) => ({ piece }))], {
         ...table,
         stacks: table.stacks.filter((s) => !chosen.includes(s.id) || lockedOut.has(s.id)),
@@ -1987,7 +1989,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const lockedAlone = (src: Source | null) => {
     if (!src || (src.kind !== 'top' && src.kind !== 'card')) return false;
     const stack = latest.get().table?.stacks.find((s) => s.id === src.stackId);
-    return !!stack?.locked && stack.cards.length === 1;
+    const t = latest.get().table;
+    return !!t && staysPut(t, stack) && !!stack && stack.cards.length === 1;
   };
   const pickUp = () => {
     const touch = gestureState.get();
@@ -2510,7 +2513,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               touch.holdTimer = null;
               if (touch.mode !== 'press' || touch.pressed?.kind !== 'top' || touch.pressed.stackId !== pressedStack) return;
               const now = latest.get();
-              if (now.table?.stacks.find((s) => s.id === pressedStack)?.locked) {
+              // (Not one locked, or in a locked group: it stays where it is.)
+              if (now.table && staysPut(now.table, now.table.stacks.find((s) => s.id === pressedStack))) {
                 haptics.warn();
                 return;
               }
@@ -2579,7 +2583,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       }
       // A second finger on custom art or a die being pressed or dragged (alone): it twists it, as a card's is.
       if (touch.mode === 'piece' && touch.piece) {
-        const art = L.table?.pieces?.find((p) => p.id === touch.piece!.id && turnsFreely(p) && !p.locked);
+        const art = L.table?.pieces?.find((p) => p.id === touch.piece!.id && turnsFreely(p) && !staysPut(L.table!, p));
         const first = touch.fingers.get(touch.first);
         const c = changed.find((t) => t.id !== touch.first);
         // On the roll button, as dice are dragged: they're put down where they've got to, and rolled from there.
@@ -2740,8 +2744,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           // A quick drag from a bag (alone) takes its top thing out, as from a stack; held first, the bag moves.
           const pulled = latest.get().table?.pieces?.find((p) => p.id === touch.piece!.id && p.kind === 'bag');
           if (pulled && !touch.piece.whole && touch.piece.group.length === 1 && (pulled.supply || bagItems(pulled).length)) return pullFromBag(pulled, f.now);
-          // A locked piece (on its own) stays put: the drag moves the table instead.
-          const locked = latest.get().table?.pieces?.find((p) => p.id === touch.piece!.id && p.locked);
+          // A locked piece (on its own, or in a locked group) stays put: the drag moves the table instead.
+          const now = latest.get().table;
+          const locked = now?.pieces?.find((p) => p.id === touch.piece!.id && staysPut(now, p));
           if (locked && touch.piece.group.length === 1 && touch.piece.group[0] === locked.id) {
             touch.piece = null;
             if (latest.get().cameraLocked) {
@@ -3912,6 +3917,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // The groups among it (each wholly picked out: see withGroups), and what they hold.
       const boxes = groupBoxes(table, chosen, pieceIds, size);
       const boxed = new Set(boxes.flatMap((g) => [...g.stackIds, ...g.pieceIds]));
+      /** All of it is groups (nothing picked out on its own). */
+      const groupsOnly = boxes.length > 0 && boxed.size === total;
       // Laid out as every other menu is (see CardFocus): what's done most as round buttons, the rest in a list.
       const tiles: SheetTile[] = [
         // Dice, coins and spinners: rolled, flipped and spun together.
@@ -3970,14 +3977,23 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               },
             ]
           : []),
-        // Cards and pieces alike (a group all at once): on if every one's locked.
-        {
-          kind: 'toggle' as const,
-          label: 'Lock',
-          value: allLocked,
-          onChange: (on: boolean) =>
-            commit(pieceIds.reduce((t, id) => setPiece(t, id, { locked: on || undefined }), chosen.reduce((t, id) => setStack(t, id, { locked: on }), table))),
-        },
+        // Groups (all of it is groups): the groups themselves locked in place, not each thing in them (each still
+        // works as itself; only moving any of them is stopped). Otherwise each, cards and pieces alike: on if every
+        // one's locked.
+        groupsOnly
+          ? {
+              kind: 'toggle' as const,
+              label: 'Lock',
+              value: boxes.every((b) => table.lockedGroups?.includes(b.group)),
+              onChange: (on: boolean) => commit(lockGroups(table, boxes.map((b) => b.group), on)),
+            }
+          : {
+              kind: 'toggle' as const,
+              label: 'Lock',
+              value: allLocked,
+              onChange: (on: boolean) =>
+                commit(pieceIds.reduce((t, id) => setPiece(t, id, { locked: on || undefined }), chosen.reduce((t, id) => setStack(t, id, { locked: on }), table))),
+            },
         { kind: 'action', label: total === 1 ? 'Take off the table' : `Take all ${total} off the table`, destructive: true, onPress: takeAllOff },
       ];
       return {
@@ -4735,7 +4751,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const movedTo = (p: TablePiece) =>
     pieceDrag?.ids.includes(p.id)
       ? { x: p.x + pieceDrag.dx, y: p.y + pieceDrag.dy }
-      : groupMoving && groupShift && pickedPieces.includes(p.id)
+      : groupMoving && groupShift && pickedPieces.includes(p.id) && !staysPut(table, p)
         ? { x: p.x + groupShift.dx, y: p.y + groupShift.dy }
         : undefined;
   /** A piece as it's drawn on the table (always the same view, never drawn afresh as it moves). */
@@ -4822,7 +4838,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             {artOver(null)}
             {table.stacks.map((s) => (
               <Fragment key={s.id}>
-              {groupMoving && chosenIds.has(s.id) && !s.locked ? null : (
+              {groupMoving && chosenIds.has(s.id) && !staysPut(table, s) ? null : (
                 <StackView
                   key={s.id}
                   stack={s}
@@ -4899,7 +4915,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               <Animated.View
                 style={[styles.groupLayer, groupStyle, (groupInHand !== null || pileFlights.some((f) => !f.into)) && styles.hidden]}>
                 {table.stacks
-                  .filter((s) => chosenIds.has(s.id) && !s.locked)
+                  .filter((s) => chosenIds.has(s.id) && !staysPut(table, s))
                   .map((s) => (
                     <StackView
                       key={s.id}

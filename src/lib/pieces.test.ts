@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerFlat, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies, groupItems, ungroupItems, withGroups, groupMembers, groupBoxes, liesOver } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerFlat, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies, groupItems, ungroupItems, withGroups, groupMembers, groupBoxes, liesOver, lockGroups, staysPut, moveStacks } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
 test('dice are drawn (and found) the one further down and right in front; other pieces keep their places', () => {
@@ -221,9 +221,17 @@ test('things grouped are picked out together, boxed as one, laid out as one, pas
   const copyGroup = pasted.table.stacks.find((s) => s.id === pasted.stackIds[0])!.group;
   assert.ok(copyGroup && copyGroup !== 'g');
   assert.ok(pasted.table.pieces!.find((p) => p.id === pasted.pieceIds[0])!.group === copyGroup);
-  // Let go, each is its own again.
-  const apart = ungroupItems(t, ['s1', 's2'], ['tok']);
+  // The group locked (not each in it): none of it moves, alone or together; each isn't locked itself.
+  const held = lockGroups(t, ['g'], true);
+  assert.equal(groupMembers(held, 's1')!.locked, true);
+  assert.ok(held.stacks.every((s) => !s.locked) && held.pieces!.every((p) => !p.locked));
+  assert.deepEqual(moveStacks(held, ['s1'], { x: 50, y: 0 }).stacks.find((s) => s.id === 's1')!.x, 400);
+  assert.equal(movePieces(held, ['tok'], { x: 50, y: 0 }).pieces!.find((p) => p.id === 'tok')!.x, 460);
+  assert.equal(staysPut(lockGroups(held, ['g'], false), held.stacks[0]), false);
+  // Let go, each is its own again (and its lock goes with it).
+  const apart = ungroupItems(held, ['s1', 's2'], ['tok']);
   assert.deepEqual(withGroups(apart, ['s2'], []), { stackIds: ['s2'], pieceIds: [] });
+  assert.equal(apart.lockedGroups, undefined);
 });
 
 test('a timer starts, pauses keeping what it had left, and is set back once it runs out', () => {

@@ -243,6 +243,8 @@ export interface SandboxTable {
   hideHands?: boolean;
   /** Stacks don't show how many cards they hold. */
   hideCounts?: boolean;
+  /** The groups locked in place (see groupItems): none of a group is moved, though each still works as itself. */
+  lockedGroups?: string[];
   /** Cards taken off the table, kept to put back (newest last). */
   trash?: SandboxCard[];
   /** Counters and dice, in drawing order (later ones on top), above every card. */
@@ -1536,7 +1538,7 @@ export function separateDice(t: SandboxTable, movable: string[]): SandboxTable {
 export function movePieces(t: SandboxTable, ids: string[], by: { x: number; y: number }): SandboxTable {
   const pieces = t.pieces ?? [];
   // Locked ones stay put.
-  const moving = pieces.filter((p) => ids.includes(p.id) && !p.locked).map((p) => ({ ...p, x: Math.round(p.x + by.x), y: Math.round(p.y + by.y) }));
+  const moving = pieces.filter((p) => ids.includes(p.id) && !staysPut(t, p)).map((p) => ({ ...p, x: Math.round(p.x + by.x), y: Math.round(p.y + by.y) }));
   ids = moving.map((p) => p.id);
   if (!moving.length) return t;
   return separateDice({ ...t, pieces: [...pieces.filter((p) => !ids.includes(p.id)), ...moving] }, ids);
@@ -1601,8 +1603,8 @@ export function gridSpots(sizes: { w: number; h: number }[], mid: { x: number; y
  * gridDice). Locked ones (and zones) stay where they are.
  */
 export function gridItems(t: SandboxTable, stackIds: string[], pieceIds: string[], size: CardSize): SandboxTable {
-  const stacks = t.stacks.filter((s) => stackIds.includes(s.id) && !s.locked);
-  const pieces = (t.pieces ?? []).filter((p) => pieceIds.includes(p.id) && !p.locked && !onCloth(p));
+  const stacks = t.stacks.filter((s) => stackIds.includes(s.id) && !staysPut(t, s));
+  const pieces = (t.pieces ?? []).filter((p) => pieceIds.includes(p.id) && !staysPut(t, p) && !onCloth(p));
   const live = liveGroups(t);
   const groupOf = (g: string | undefined) => (g && live.has(g) ? g : undefined);
   if (!stacks.length && pieces.every((p) => p.kind === 'die' && !groupOf(p.group))) return gridDice(t, pieces.map((p) => p.id));
@@ -1701,13 +1703,30 @@ export function groupItems(t: SandboxTable, stackIds: string[], pieceIds: string
   };
 }
 
-/** Stacks and pieces out of whatever group they were in (each its own again). */
+/** Stacks and pieces out of whatever group they were in (each its own again; a locked group's lock goes with it). */
 export function ungroupItems(t: SandboxTable, stackIds: string[], pieceIds: string[]): SandboxTable {
+  const gone = [...t.stacks.filter((s) => stackIds.includes(s.id)).map((s) => s.group), ...(t.pieces ?? []).filter((p) => pieceIds.includes(p.id)).map((p) => p.group)];
   return {
-    ...t,
+    ...lockGroups(t, gone.filter((g): g is string => !!g), false),
     stacks: t.stacks.map((s) => (stackIds.includes(s.id) && s.group ? { ...s, group: undefined } : s)),
     ...(t.pieces ? { pieces: t.pieces.map((p) => (pieceIds.includes(p.id) && p.group ? { ...p, group: undefined } : p)) } : {}),
   };
+}
+
+/** Whether a group is locked in place (see `lockedGroups`). */
+export const groupLocked = (t: SandboxTable, group: string | undefined) => !!group && !!t.lockedGroups?.includes(group);
+
+/** Whether a stack or piece stays where it is: it's locked, or it's in a locked group (two or more of it on the table). */
+export function staysPut(t: SandboxTable, item: { locked?: boolean; group?: string } | undefined): boolean {
+  if (!item) return false;
+  return !!item.locked || (groupLocked(t, item.group) && liveGroups(t).has(item.group!));
+}
+
+/** Groups locked in place, or let go (each still works as itself; only moving any of them is stopped). */
+export function lockGroups(t: SandboxTable, groups: string[], on: boolean): SandboxTable {
+  const kept = (t.lockedGroups ?? []).filter((g) => !groups.includes(g));
+  const lockedGroups = on ? [...kept, ...groups] : kept;
+  return { ...t, lockedGroups: lockedGroups.length ? lockedGroups : undefined };
 }
 
 /** The groups that have two or more things on the table (one left alone is no group). */
@@ -1741,7 +1760,11 @@ export function groupMembers(t: SandboxTable, id: string): { stackIds: string[];
   if (!group || !liveGroups(t).has(group)) return null;
   const stacks = t.stacks.filter((s) => s.group === group);
   const pieces = (t.pieces ?? []).filter((p) => p.group === group);
-  return { stackIds: stacks.map((s) => s.id), pieceIds: pieces.map((p) => p.id), locked: stacks.every((s) => s.locked) && pieces.every((p) => p.locked) };
+  return {
+    stackIds: stacks.map((s) => s.id),
+    pieceIds: pieces.map((p) => p.id),
+    locked: groupLocked(t, group) || (stacks.every((s) => s.locked) && pieces.every((p) => p.locked)),
+  };
 }
 
 /** A box on the table (its left, top, width and height), level with the table. */
@@ -1997,9 +2020,9 @@ export function stacksInShape(t: SandboxTable, shape: P[], size: CardSize): stri
     .map((s) => s.id);
 }
 
-/** Moves stacks by the same amount each (a group dragged together). Locked ones stay put. */
+/** Moves stacks by the same amount each (a group dragged together). Locked ones (or ones in a locked group) stay put. */
 export const moveStacks = (t: SandboxTable, ids: string[], by: { x: number; y: number }, place = (p: { x: number; y: number; angle: number }) => p) => {
-  const moving = new Set(ids.filter((id) => !t.stacks.find((s) => s.id === id)?.locked));
+  const moving = new Set(ids.filter((id) => !staysPut(t, t.stacks.find((s) => s.id === id))));
   const moved = t.stacks.map((s) => (moving.has(s.id) ? { ...s, ...place({ x: s.x + by.x, y: s.y + by.y, angle: s.angle }) } : s));
   // Brought to the top, as they were just touched.
   return { ...t, stacks: [...moved.filter((s) => !moving.has(s.id)), ...moved.filter((s) => moving.has(s.id))] };
@@ -2380,7 +2403,7 @@ export function rotateStacks(
   const r = (angle * Math.PI) / 180;
   const cos = Math.cos(r);
   const sin = Math.sin(r);
-  const moving = new Set(ids.filter((id) => !t.stacks.find((s) => s.id === id)?.locked));
+  const moving = new Set(ids.filter((id) => !staysPut(t, t.stacks.find((s) => s.id === id))));
   const moved = t.stacks.map((s) => {
     if (!moving.has(s.id)) return s;
     const dx = s.x - pivot.x;
