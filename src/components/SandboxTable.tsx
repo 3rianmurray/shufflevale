@@ -1515,6 +1515,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     // A die isn't put down on another.
     commit(raiseArt(separateDice(addPiece(table, { ...newPiece(kind, id, { x: mid.x + nudge, y: mid.y + nudge }, sides, shape), ...extra }), [id]), [id]));
     haptics.drop();
+    return id;
   };
   /** How many dice the Add a die menu adds at once (kept for next time). */
   const [dieCount, setDieCount] = useState(1);
@@ -1532,6 +1533,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     setSelected([]);
     setPickedPieces(ids);
     haptics.drop();
+  };
+  /** A d6 with art of its own (part of Pro): put on the table, then its faces, to give it its art. */
+  const addCustomD6 = () => {
+    if (!pro) return openPro();
+    const id = addPieceToTable('die', 6);
+    if (id) setTimeout(() => setMenu({ kind: 'faces', id }), 300);
   };
   /** Opens (or moves, or closes) the gap in the hand's row, the cards sliding over to make room. */
   const changeGap = (g: number | null) => {
@@ -4504,9 +4511,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // Free, every one: cards (whole decks, or chosen one by one), dice, and the rest of the table's components, for
       // playing alongside a game. (Cards, on the Playground, need Pro: it plays with its own.)
       const cardsHere = (go: () => void) => () => (!pro && playgroundHere ? setTimeout(playgroundOnly, 250) : go());
-      // Under them, what's made with the player's own pictures, part of Pro: without it, they open Pro, under one PRO
-      // heading rather than a tag on each.
-      const proTile = (t: SheetTile): SheetTile => (pro ? t : { ...t, opensModal: false, onPress: () => setTimeout(openPro, 250) });
+      // What's made with the player's own pictures, part of Pro. Without it: all three under one PRO heading (rather
+      // than a tag on each), opening Pro. With it: custom art among the rest, as a token or a d6 of your own is made
+      // from the Pieces and Dice menus.
+      const customArt: SheetTile = {
+        label: 'Custom art',
+        icon: icon('photo.on.rectangle', 'add_photo_alternate'),
+        opensModal: pro,
+        onPress: pro ? () => (artCount < ART_MAX ? choosePicture({ kind: 'art' }) : artFull()) : () => setTimeout(openPro, 250),
+      };
+      const toPro = (label: string, ios: string, android: string, drawn?: 'shapes'): SheetTile => ({ label, icon: icon(ios, android), drawn, onPress: () => setTimeout(openPro, 250) });
       return {
         title: 'Add to the table',
         tiles: [
@@ -4526,14 +4540,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           { label: 'Bag', icon: icon('bag', 'shopping_bag'), onPress: () => addPieceToTable('bag') },
           { label: 'Text', icon: icon('textformat', 'title'), onPress: () => addPieceToTable('text') },
           { label: 'Zone', icon: icon('rectangle.dashed', 'crop_free'), onPress: () => addPieceToTable('zone') },
+          ...(pro ? [customArt] : []),
         ] as SheetTile[],
-        moreTiles: (
-          [
-            { label: 'Custom art', icon: icon('photo.on.rectangle', 'add_photo_alternate'), opensModal: true, onPress: () => (artCount < ART_MAX ? choosePicture({ kind: 'art' }) : artFull()) },
-            { label: 'Custom token', icon: icon('photo.on.rectangle', 'add_photo_alternate'), opensModal: true, onPress: () => choosePicture({ kind: 'token' }) },
-          ] as SheetTile[]
-        ).map(proTile),
-        moreLocked: !pro,
+        ...(pro
+          ? {}
+          : {
+              moreTiles: [customArt, toPro('Custom token', 'square.on.circle', 'category', 'shapes'), toPro('Custom d6', 'die.face.6', 'casino')],
+              moreLocked: true,
+            }),
         // Under them, always there: what's been copied, put down where the table was held (or in the middle of the
         // view), once or as many times as asked (laid out in a grid); grayed out while nothing has been. (Pro's rules
         // are pasteClip's.)
@@ -4652,7 +4666,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // (Part of Pro: tagged, and opening Pro, until it's unlocked.)
         wideTile: {
           label: 'Custom token',
-          icon: { ios: 'photo.on.rectangle', android: 'add_photo_alternate', web: 'add_photo_alternate' } as SheetTile['icon'],
+          icon: { ios: 'square.on.circle', android: 'category', web: 'category' } as SheetTile['icon'],
+          drawn: 'shapes' as const,
           opensModal: pro,
           pro: !pro,
           onPress: () => (pro ? choosePicture({ kind: 'token' }) : setTimeout(openPro, 250)),
@@ -4661,6 +4676,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       };
     }
     if (menu.kind === 'addDie') {
+      const icon6 = { ios: 'die.face.6', android: 'casino', web: 'casino' } as SheetTile['icon'];
       return {
         title: dieCount === 1 ? 'Add a die' : `Add ${dieCount} dice`,
         tiles: [],
@@ -4688,6 +4704,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           </View>
           </View>
         ),
+        // A d6 of the player's own: one put down, then its faces to give it its art. (Part of Pro: tagged, and
+        // opening Pro, until it's unlocked.)
+        wideTile: {
+          label: 'Custom d6',
+          icon: icon6,
+          pro: !pro,
+          onPress: () => (pro ? addCustomD6() : setTimeout(openPro, 250)),
+        },
         actions: [],
       };
     }

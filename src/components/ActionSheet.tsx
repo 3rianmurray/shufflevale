@@ -10,6 +10,7 @@ import { inTileRows } from '../lib/tileRows';
 import { placeWindow } from '../lib/windowSpot';
 import type { Point, Rect } from '../lib/windowSpot';
 import { colors } from '../theme';
+import { ShapesIcon } from './ShapesIcon';
 import { Text } from './Text';
 import { TourTip } from './TourOverlay';
 import { ALL_ORIENTATIONS } from '../lib/orientations';
@@ -32,6 +33,8 @@ export interface SheetAction {
 export interface SheetTile extends SheetAction {
   /** SF Symbol on iOS, Material Symbol on Android and web. */
   icon: SymbolViewProps['name'];
+  /** An icon drawn by the app instead, where there's no symbol like it (see ShapesIcon). */
+  drawn?: 'shapes';
   /** Shown dimmed and can't be pressed, e.g. a card's current place. */
   disabled?: boolean;
 }
@@ -242,7 +245,11 @@ export function ActionSheet(props: Props) {
         accessibilityLabel={t.label}
         accessibilityState={{ disabled: t.disabled || isOff(t) }}
         style={({ pressed }) => [styles.tile, isGuided(t) && styles.guided, pressed && styles.pressed, locked && styles.tileLocked, (t.disabled || isOff(t)) && styles.tileDisabled]}>
-        <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
+        {t.drawn === 'shapes' ? (
+          <ShapesIcon size={22} color={t.destructive ? colors.danger : colors.text} />
+        ) : (
+          <SymbolView name={t.icon} size={22} tintColor={t.destructive ? colors.danger : colors.text} />
+        )}
         <Text style={[styles.tileText, t.destructive && { color: colors.danger }]} numberOfLines={1}>
           {t.label}
         </Text>
