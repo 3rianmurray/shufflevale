@@ -1307,8 +1307,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    * so the picker that follows always opens (one of our sheets still sliding away could stop it).
    */
   const choosePicture = (target: PictureTarget) => {
-    // New custom art (or a token), and a die's or coin's own faces, are part of Pro.
-    if ((target.kind === 'face' || !target.id) && !pro) return openPro();
+    // Pictures of the player's own (custom art, a token's, a die's or coin's faces) are part of Pro. (The Playground's
+    // own custom art can still be changed there, to try it.)
+    if (!pro && !(playgroundHere && target.kind === 'art' && target.id)) return openPro();
     const sources: PictureSource[] = ['photos', 'files', 'camera'];
     // A face with art of its own can be put back to the standard one, too.
     const faced = target.kind === 'face' ? table?.pieces?.find((p) => p.id === target.id) : undefined;
@@ -1494,7 +1495,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   /** Something brought onto the Playground without Pro: it's for trying what's there. */
   const playgroundOnly = () => {
     haptics.warn();
-    Alert.alert('The Playground is for trying things out', 'Everything on it can be used here. Bringing more onto it, and using components on tables of your own, is part of Pro.', [
+    Alert.alert('The Playground is for trying things out', 'Everything on it can be used here. Bringing cards of your own onto it is part of Pro.', [
       { text: 'OK', style: 'cancel' },
       { text: 'See Pro', onPress: openPro },
     ]);
@@ -1506,7 +1507,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const addPieceToTable = (kind: PieceKind, sides?: number, shape?: PieceShape, extra?: Partial<TablePiece>) => {
     if (!table || !view) return;
     // (The menus show these as Pro's: this is so nothing else can.)
-    if (!pro && isProPiece({ kind })) return openPro();
+    if (!pro && isProPiece({ kind, ...extra })) return openPro();
     const mid = addSpot();
     // In the middle of the view, a little apart from the last few (so they don't hide each other); where held, right there.
     const nudge = addAt ? 0 : ((table.pieces?.length ?? 0) % 5) * 24;
@@ -4500,11 +4501,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       // table's layout. Those with more to choose (which die, which deck, which picture) open another menu.
       const next = (m: Menu) => () => setTimeout(() => setMenu(m), 250);
       const icon = (ios: string, android: string) => ({ ios, android, web: android }) as SheetTile['icon'];
-      // Free, along the top: cards (whole decks, or chosen one by one), dice and card spots. (Cards, on the
-      // Playground, need Pro: it plays with its own.)
+      // Free, every one: cards (whole decks, or chosen one by one), dice, and the rest of the table's components, for
+      // playing alongside a game. (Cards, on the Playground, need Pro: it plays with its own.)
       const cardsHere = (go: () => void) => () => (!pro && playgroundHere ? setTimeout(playgroundOnly, 250) : go());
-      // Under them, the rest, part of Pro: without it, they open Pro (on the Playground too: it's to try what's there),
-      // under one PRO heading rather than a tag on each.
+      // Under them, what's made with the player's own pictures, part of Pro: without it, they open Pro, under one PRO
+      // heading rather than a tag on each.
       const proTile = (t: SheetTile): SheetTile => (pro ? t : { ...t, opensModal: false, onPress: () => setTimeout(openPro, 250) });
       return {
         title: 'Add to the table',
@@ -4514,21 +4515,22 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           { label: 'Cards', icon: icon('rectangle.portrait', 'crop_portrait'), opensModal: pro || !playgroundHere, onPress: cardsHere(() => setAddingCards(true)) },
           { label: 'Dice', icon: icon('dice', 'casino'), onPress: next({ kind: 'addDie' }) },
           { label: 'Card spot', icon: icon('square.dashed', 'check_box_outline_blank'), onPress: () => addPieceToTable('spot') },
+          { label: 'Coin', icon: icon('centsign.circle', 'toll'), onPress: () => addPieceToTable('coin') },
+          { label: 'Spinner', icon: icon('arrow.clockwise.circle', 'autorenew'), onPress: () => addPieceToTable('spinner') },
+          { label: 'Counter', icon: icon('plus.forwardslash.minus', 'exposure'), onPress: () => addPieceToTable('counter') },
+          { label: 'Score pad', icon: icon('list.number', 'scoreboard'), onPress: () => addPieceToTable('score') },
+          { label: 'Timer', icon: icon('timer', 'timer'), onPress: () => addPieceToTable('timer') },
+          { label: 'Track', icon: icon('number.square', 'pin'), onPress: () => addPieceToTable('track') },
+          { label: 'Pieces', icon: icon('figure.stand', 'person'), onPress: next({ kind: 'addShape' }) },
+          { label: '1st player', icon: icon('star.circle', 'stars'), onPress: () => addPieceToTable('marker') },
+          { label: 'Bag', icon: icon('bag', 'shopping_bag'), onPress: () => addPieceToTable('bag') },
+          { label: 'Text', icon: icon('textformat', 'title'), onPress: () => addPieceToTable('text') },
+          { label: 'Zone', icon: icon('rectangle.dashed', 'crop_free'), onPress: () => addPieceToTable('zone') },
         ] as SheetTile[],
         moreTiles: (
           [
-            { label: 'Coin', icon: icon('centsign.circle', 'toll'), onPress: () => addPieceToTable('coin') },
-            { label: 'Spinner', icon: icon('arrow.clockwise.circle', 'autorenew'), onPress: () => addPieceToTable('spinner') },
-            { label: 'Counter', icon: icon('plus.forwardslash.minus', 'exposure'), onPress: () => addPieceToTable('counter') },
-            { label: 'Score pad', icon: icon('list.number', 'scoreboard'), onPress: () => addPieceToTable('score') },
-            { label: 'Timer', icon: icon('timer', 'timer'), onPress: () => addPieceToTable('timer') },
-            { label: 'Track', icon: icon('number.square', 'pin'), onPress: () => addPieceToTable('track') },
-            { label: 'Pieces', icon: icon('figure.stand', 'person'), onPress: next({ kind: 'addShape' }) },
-            { label: '1st player', icon: icon('star.circle', 'stars'), onPress: () => addPieceToTable('marker') },
             { label: 'Custom art', icon: icon('photo.on.rectangle', 'add_photo_alternate'), opensModal: true, onPress: () => (artCount < ART_MAX ? choosePicture({ kind: 'art' }) : artFull()) },
-            { label: 'Bag', icon: icon('bag', 'shopping_bag'), onPress: () => addPieceToTable('bag') },
-            { label: 'Text', icon: icon('textformat', 'title'), onPress: () => addPieceToTable('text') },
-            { label: 'Zone', icon: icon('rectangle.dashed', 'crop_free'), onPress: () => addPieceToTable('zone') },
+            { label: 'Custom token', icon: icon('photo.on.rectangle', 'add_photo_alternate'), opensModal: true, onPress: () => choosePicture({ kind: 'token' }) },
           ] as SheetTile[]
         ).map(proTile),
         moreLocked: !pro,
@@ -4647,11 +4649,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           </View>
         ),
         // A token of the player's own: a picture, cropped to a shape (chosen as it's cropped).
+        // (Part of Pro: tagged, and opening Pro, until it's unlocked.)
         wideTile: {
           label: 'Custom token',
           icon: { ios: 'photo.on.rectangle', android: 'add_photo_alternate', web: 'add_photo_alternate' } as SheetTile['icon'],
-          opensModal: true,
-          onPress: () => choosePicture({ kind: 'token' }),
+          opensModal: pro,
+          pro: !pro,
+          onPress: () => (pro ? choosePicture({ kind: 'token' }) : setTimeout(openPro, 250)),
         },
         actions: [],
       };

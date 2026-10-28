@@ -1,15 +1,18 @@
 // Adding what's in a Shufflevale file: from the home screen's menu, or a file opened in the app from elsewhere
 // (Files, Messages, Mail, AirDrop: see app/open.tsx). Its decks go at the top of the list (a table's in a group
 // named for it), and its tables with the rest, pointed at the decks as added, their pieces' pictures saved. A
-// backup saved in parts is added from all its parts together.
+// backup saved in parts is added from all its parts together. Opening a file is free (sharing and backing up are
+// Pro's); its cards need room in the free version, as any new cards do.
 import { Alert } from 'react-native';
 
 import { useDecks } from './DecksContext';
-import { cardsByDeck, deckIdsOn, pictureData, remapTable } from './deckFile';
+import { cardsByDeck, DeckFileError, deckIdsOn, pictureData, remapTable } from './deckFile';
 import type { DeckIdMap, UnpackedDeck, UnpackedFile } from './deckFile';
 import { checkParts, dropCopies, readFileAt } from './deckExport';
 import * as haptics from './haptics';
 import { newId } from './id';
+import { cardRoom } from './limits';
+import { exampleAllowances, usePro } from './pro';
 import { createSandboxWith } from './sandboxStore';
 import { saveImageData } from './storage';
 
@@ -42,7 +45,13 @@ function tableGroup(found: UnpackedFile): string | undefined {
  * of a file saved in parts, picked together. (A function of the screen's decks, so a hook.)
  */
 export function useFileImport() {
-  const { importDecks } = useDecks();
+  const { decks: own, importDecks } = useDecks();
+  const pro = usePro();
+
+  /** How many cards a file would add (each once, as the free version's limit counts them). */
+  const cardsIn = (found: UnpackedFile) => found.decks.reduce((n, d) => n + d.cards.length, 0);
+  /** Whether a file's cards fit in the room the free version has left (always, with Pro). */
+  const fits = (found: UnpackedFile) => cardsIn(found) <= cardRoom(own, exampleAllowances(), pro);
 
   /** Adds decks, noting in `map` where each of them (and its cards) went, for tables' cards to point at. */
   const addDecks = (decks: UnpackedDeck[], map: DeckIdMap, options?: Parameters<typeof importDecks>[1]) => {
@@ -70,7 +79,9 @@ export function useFileImport() {
     for (const t of found.tables) createSandboxWith(t.name, (empty) => ({ ...empty, ...remapTable(t, map, newId, picture) }));
   };
 
+  /** Adds one file (opening one is free; its cards need room in the free version, as any new cards do). */
   const addFile = (found: UnpackedFile) => {
+    if (!fits(found)) throw new DeckFileError(`It has ${count(cardsIn(found), 'card')}, more than the free version has room for. Shufflevale Pro removes the limit.`);
     const groupName = tableGroup(found);
     const map: DeckIdMap = new Map();
     addDecks(found.decks, map, { groupName, groups: found.groups });
@@ -119,5 +130,5 @@ export function useFileImport() {
     }
   };
 
-  return { addFile, addParts };
+  return { addFile, addParts, fits, cardsIn };
 }

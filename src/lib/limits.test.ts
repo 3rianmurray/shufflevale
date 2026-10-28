@@ -18,9 +18,10 @@ test('the app’s own example cards don’t count, but cards added to an example
   assert.equal(cardsUsed([deck('cards', 60), deck('mine', 8)], examples), 16);
 });
 test('room left: what’s under the limit, never below none; unlimited with Pro', () => {
+  assert.equal(FREE_CARD_LIMIT, 200);
   assert.equal(cardRoom([deck('a', 40)], none, false), FREE_CARD_LIMIT - 40);
-  assert.equal(cardRoom([deck('a', 70)], none, false), 0);
-  assert.equal(cardRoom([deck('a', 70)], none, true), Infinity);
+  assert.equal(cardRoom([deck('a', FREE_CARD_LIMIT + 10)], none, false), 0);
+  assert.equal(cardRoom([deck('a', FREE_CARD_LIMIT + 10)], none, true), Infinity);
   // Splitting cards across decks doesn't get round it.
-  assert.equal(cardRoom([deck('a', 30), deck('b', 30)], none, false), 0);
+  assert.equal(cardRoom([deck('a', FREE_CARD_LIMIT / 2), deck('b', FREE_CARD_LIMIT / 2)], none, false), 0);
 });

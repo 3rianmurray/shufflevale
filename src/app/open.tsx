@@ -9,7 +9,6 @@ import { Text } from '../components/Text';
 import { DeckFileError } from '../lib/deckFile';
 import { readDeckFile } from '../lib/deckExport';
 import type { OpenedFile } from '../lib/deckExport';
-import { usePro } from '../lib/pro';
 import { fileSummary, useFileImport } from '../lib/useFileImport';
 import { colors } from '../theme';
 
@@ -17,14 +16,14 @@ import { colors } from '../theme';
 const leave = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
 /**
- * A Shufflevale file opened in the app from elsewhere (see +native-intent.tsx): what's in it, and adding it. Files
- * are part of Pro: without it, the Pro screen is offered, and once it's bought the file can still be added.
+ * A Shufflevale file opened in the app from elsewhere (see +native-intent.tsx): what's in it, and adding it. Opening
+ * one is free; if its cards don't fit in the free version, the Pro screen is offered, and once it's bought the file
+ * can still be added.
  */
 export default function OpenFileScreen() {
   const { file } = useLocalSearchParams<{ file?: string }>();
   const insets = useSafeAreaInsets();
-  const pro = usePro();
-  const { addFile } = useFileImport();
+  const { addFile, fits, cardsIn } = useFileImport();
   const [found, setFound] = useState<OpenedFile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -81,11 +80,11 @@ export default function OpenFileScreen() {
           <>
             <Text style={styles.title}>Add {fileSummary(found)}?</Text>
             <Text style={styles.body}>
-              {pro
-                ? found.tables.length === 1 && found.decks.length
+              {!fits(found)
+                ? `It has ${cardsIn(found)} cards, more than the free version has room for. Shufflevale Pro removes the limit.`
+                : found.tables.length === 1 && found.decks.length
                   ? `Its decks go in a new group, “${found.tables[0].name} Decks”.`
-                  : 'They’re added alongside what you have; nothing is replaced.'
-                : 'Opening Shufflevale files is part of Pro.'}
+                  : 'They’re added alongside what you have; nothing is replaced.'}
             </Text>
           </>
         ) : file ? (
@@ -95,8 +94,8 @@ export default function OpenFileScreen() {
         )}
       </View>
       <View style={[styles.actions, adding && !error && styles.hidden]}>
-        {found && pro ? <Button label="Add" variant="primary" onPress={add} /> : null}
-        {found && !pro ? <Button label="See Pro" variant="primary" onPress={() => router.push({ pathname: '/pro', params: { reason: 'files' } })} /> : null}
+        {found && fits(found) ? <Button label="Add" variant="primary" onPress={add} /> : null}
+        {found && !fits(found) ? <Button label="See Pro" variant="primary" onPress={() => router.push({ pathname: '/pro', params: { reason: 'cards' } })} /> : null}
         <Button label={found ? 'Not now' : 'Close'} onPress={leave} />
       </View>
     </View>

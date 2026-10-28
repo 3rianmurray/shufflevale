@@ -63,7 +63,7 @@ export default function HomeScreen() {
   } = useDecks();
   const insets = useSafeAreaInsets();
   const sandboxes = useSandboxes();
-  const { addFile, addParts } = useFileImport();
+  const { addFile, addParts, fits } = useFileImport();
 
   // The walkthrough starts by itself the first time the app opens; after that, from the help button.
   useEffect(() => {
@@ -96,7 +96,7 @@ export default function HomeScreen() {
   const duplicateTable = (id: string) => {
     if (!pro && isPlayground(id)) {
       haptics.warn();
-      Alert.alert('The Playground can’t be copied', 'It’s there to try every component. Using them on tables of your own is part of Pro.', [
+      Alert.alert('The Playground can’t be copied', 'It’s there to try everything, custom art included. Custom art on tables of your own is part of Pro.', [
         { text: 'OK', style: 'cancel' },
         { text: 'See Pro', onPress: () => openPro() },
       ]);
@@ -218,8 +218,8 @@ export default function HomeScreen() {
   };
 
 
-  // Shufflevale files (part of Pro): sharing or backing up a deck, a group, a table or everything, and opening one.
-  // Without Pro, these open the Pro screen instead. (The share sheet and the Files pickers are system screens,
+  // Shufflevale files: sharing or backing up a deck, a group, a table or everything (part of Pro: without it, these
+  // open the Pro screen instead), and opening one (free). (The share sheet and the Files pickers are system screens,
   // which iOS can only show once a menu has gone: hence `opensModal`.)
   /** A Share and a Back up action for a file of `what`, each marked PRO (opening Pro) until Pro is unlocked. */
   const fileActions = (label: string, what: () => FileContents, first?: boolean) => [
@@ -246,21 +246,27 @@ export default function HomeScreen() {
   };
   /**
    * Opens a Shufflevale file (or all the parts of one saved in parts): its decks go at the top of the list, and its
-   * tables (pointed at them) with the rest.
+   * tables (pointed at them) with the rest. Free, as long as its cards fit in the free version; a backup saved in
+   * parts (made with Pro, to be brought back) needs Pro.
    */
   const importFromFile = async () => {
     try {
       const picked = await pickDeckFiles();
       if (!picked) return;
+      if (picked.length > 1 && !pro) return openPro('files');
+      let tooBig = false;
       await whileBusy('Opening')(async () => {
         if (picked.length > 1) return addParts(picked);
         const found = await readDeckFile(picked[0]);
         try {
-          addFile(found);
+          if (fits(found)) addFile(found);
+          else tooBig = true;
         } finally {
           found.done();
         }
       });
+      // Its cards don't fit in the free version: Pro removes the limit.
+      if (tooBig) openPro('cards');
     } catch (e) {
       haptics.warn();
       Alert.alert('Couldn’t open that file', e instanceof DeckFileError ? e.message : 'Something went wrong reading it.');
@@ -646,7 +652,8 @@ export default function HomeScreen() {
             opensModal: true,
             onPress: examples.confirmRestore,
           },
-          { label: 'Import decks or tables', pro: !pro, opensModal: pro, groupStart: true, onPress: pro ? importFromFile : () => openPro('files') },
+          // (Free: opening a file someone's shared.)
+          { label: 'Import decks or tables', opensModal: true, groupStart: true, onPress: importFromFile },
           ...(decks.length
             ? [
                 {
