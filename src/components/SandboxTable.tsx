@@ -179,6 +179,7 @@ import { isPlayground, isProPiece, usePro } from '../lib/pro';
 import { updateSandbox, useSandbox } from '../lib/sandboxStore';
 import { clipSize, setClip, useClip } from '../lib/tableClipboard';
 import { offerTipAfterUses, offerTipSoon, tipLearned } from '../lib/tips';
+import { keepUndoHistory, undoHistoryFor } from '../lib/undoHistory';
 import { tourEvent } from '../lib/tour';
 import { cardRadius, cardRatio, cardSizeMm, copiesOf, deckSize, PRESET_SIZES_MM } from '../lib/types';
 import type { Deck } from '../lib/types';
@@ -472,9 +473,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const sideways = !IS_PAD && screenW > screenH;
   /** The hand tabs' row, as wide as its tabs need (measured): a sideways iPhone's tray is sized by it. */
   const [tabsW, setTabsW] = useState(0);
-  const [history, setHistory] = useState<SandboxTable[]>([]);
+  // (Kept, for the last few tables, while the app's open: coming back to one, its changes can still be undone. See
+  // undoHistory.)
+  const [history, setHistory] = useState<SandboxTable[]>(() => undoHistoryFor<SandboxTable>(id).history);
   /** Changes undone, latest last, to make again (gone once anything else changes). */
-  const [future, setFuture] = useState<SandboxTable[]>([]);
+  const [future, setFuture] = useState<SandboxTable[]>(() => undoHistoryFor<SandboxTable>(id).future);
+  useEffect(() => {
+    if (history.length || future.length) keepUndoHistory(id, { history, future });
+  }, [id, history, future]);
   const [handIndex, setHandIndex] = useState(0);
   const [folded, setFolded] = useState(false);
   /** Stacks picked out with the lasso: outlined in gold, and dragged together. */
