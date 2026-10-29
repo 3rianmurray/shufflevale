@@ -299,6 +299,8 @@ const TURN_SETTLE_MS = 320;
 const TRAY_CORNER = 14;
 /** The flip button shown while carrying cards (bottom left): its size, and its space from the screen's edge and the tray. */
 const FLIP_SIZE = 64;
+/** The room between the buttons in the corner's column (at their full size). */
+const COLUMN_GAP = 12;
 const FLIP_MARGIN = 16;
 /** As in table mode: a press must move this far, and be held this long, before it can lift a hand card out. */
 const DRAG_SLOP = 8;
@@ -1620,7 +1622,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   // coins, or spinners) alone, roll; with two or more things, grid (laid out evenly); and on top, ••• (everything
   // else, as a hold on them gives).
   /** The button `n` places above the corner's (the flip one's). */
-  const slot = (n: number) => ({ x: flipButton.x, y: flipButton.y - n * (FLIP_SIZE + 12), size: FLIP_SIZE });
+  const slot = (n: number) => ({
+    x: flipButton.x,
+    y: flipButton.y + FLIP_SIZE - columnSize - n * (columnSize + columnGap),
+    size: columnSize,
+  });
   /** A picked-out stack has two or more cards: the shuffle button shows. */
   const canShuffle = chosen.some((id) => (table?.stacks.find((s) => s.id === id)?.cards.length ?? 0) > 1);
   /** Two or more things picked out: the grid button lays them out (one alone has nothing to line up with). */
@@ -1633,6 +1639,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     ...(gridLive ? (['grid'] as const) : []),
     ...(chosen.length || pickedPieces.length ? (['more'] as const) : []),
   ];
+  // The column's buttons (and the room between them) smaller, if they'd otherwise reach the top bar (as on an iPhone
+  // on its side, with several showing): just small enough that all of them fit under it.
+  const columnRoom = flipButton.y + FLIP_SIZE - (barBottom + 8);
+  const columnCount = Math.max(1, column.length);
+  const columnSize = Math.min(FLIP_SIZE, Math.floor(columnRoom / (columnCount + ((columnCount - 1) * COLUMN_GAP) / FLIP_SIZE)));
+  const columnGap = (COLUMN_GAP * columnSize) / FLIP_SIZE;
+  /** How much a column button's icon is shrunk with it. */
+  const columnScale = columnSize / FLIP_SIZE;
+  /** A round button's place and size on screen. */
+  const roundAt = (b: { x: number; y: number; size: number }) => ({ left: b.x, top: b.y, width: b.size, height: b.size, borderRadius: b.size / 2 });
   /** Where a button of the column stands (one not in it, as dice dragged have their roll one: just above it). */
   const slotOf = (b: ColumnButton) => slot(column.includes(b) ? column.indexOf(b) : column.length);
   const shuffleButton = slotOf('shuffle');
@@ -1645,7 +1661,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const on = (b: { x: number; y: number; size: number }) => Math.hypot(x - (b.x + b.size / 2), y - (b.y + b.size / 2)) <= b.size / 2 + 8;
     // Not while the tools are out: they lie over the buttons, which wait, dimmed.
     if (!buttonsLive) return null;
-    if (chosen.length && on(flipButton)) return 'flip';
+    if (chosen.length && on(slot(0))) return 'flip';
     if (canShuffle && on(shuffleButton)) return 'shuffle';
     if (chosen.length > 1 && on(gatherButton)) return 'gather';
     if (column.includes('more') && on(moreButton)) return 'more';
@@ -1653,7 +1669,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   };
   const rollButton = slotOf('roll');
   const gridButton = slotOf('grid');
-  const onButton = (b: { x: number; y: number }, x: number, y: number) => Math.hypot(x - (b.x + FLIP_SIZE / 2), y - (b.y + FLIP_SIZE / 2)) <= FLIP_SIZE / 2 + 8;
+  const onButton = (b: { x: number; y: number; size: number }, x: number, y: number) => Math.hypot(x - (b.x + b.size / 2), y - (b.y + b.size / 2)) <= b.size / 2 + 8;
   const onRollButton = (x: number, y: number) => !!rollKind && buttonsLive && onButton(rollButton, x, y);
   const onGridButton = (x: number, y: number) => gridLive && buttonsLive && onButton(gridButton, x, y);
   /** The roll button, while dice are dragged, under another finger (see dragRollKind). */
@@ -5265,17 +5281,15 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           {held || groupMoving || chosen.length ? (
             <View
               pointerEvents="none"
-              style={[styles.flipButton, { left: flipButton.x, top: flipButton.y, width: FLIP_SIZE, height: FLIP_SIZE, borderRadius: FLIP_SIZE / 2 }, toolsOpen && !held && !groupMoving && styles.waiting]}>
-              <SymbolView name={FLIP_ICON} size={28} weight="semibold" tintColor={colors.accentText} />
+              style={[styles.flipButton, roundAt(held || groupMoving ? flipButton : slot(0)), toolsOpen && !held && !groupMoving && styles.waiting]}>
+              <SymbolView name={FLIP_ICON} size={28 * (held || groupMoving ? 1 : columnScale)} weight="semibold" tintColor={colors.accentText} />
             </View>
           ) : null}
 
           {/* With a stack of two or more picked out (not dragged): above the flip button, one to shuffle it. */}
           {!held && !groupMoving && canShuffle ? (
-            <View
-              pointerEvents="none"
-              style={[styles.flipButton, { left: shuffleButton.x, top: shuffleButton.y, width: FLIP_SIZE, height: FLIP_SIZE, borderRadius: FLIP_SIZE / 2 }, toolsOpen && styles.waiting]}>
-              <SymbolView name={{ ios: 'shuffle', android: 'shuffle', web: 'shuffle' }} size={26} weight="semibold" tintColor={colors.accentText} />
+            <View pointerEvents="none" style={[styles.flipButton, roundAt(shuffleButton), toolsOpen && styles.waiting]}>
+              <SymbolView name={{ ios: 'shuffle', android: 'shuffle', web: 'shuffle' }} size={26 * columnScale} weight="semibold" tintColor={colors.accentText} />
             </View>
           ) : null}
 
@@ -5283,17 +5297,20 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           {!held && chosen.length > 1 ? (
             <View
               pointerEvents="none"
-              style={[styles.flipButton, { left: flipButton.x, top: groupMoving ? stackButton.y : gatherButton.y, width: FLIP_SIZE, height: FLIP_SIZE, borderRadius: FLIP_SIZE / 2 }, toolsOpen && !held && !groupMoving && styles.waiting]}>
-              <SymbolView name={{ ios: 'square.stack.3d.down.right', android: 'layers', web: 'layers' }} size={26} weight="semibold" tintColor={colors.accentText} />
+              style={[styles.flipButton, roundAt(groupMoving ? stackButton : gatherButton), toolsOpen && !held && !groupMoving && styles.waiting]}>
+              <SymbolView
+                name={{ ios: 'square.stack.3d.down.right', android: 'layers', web: 'layers' }}
+                size={26 * (groupMoving ? 1 : columnScale)}
+                weight="semibold"
+                tintColor={colors.accentText}
+              />
             </View>
           ) : null}
 
           {/* With anything picked out (not dragged): its other options (as a hold on it gives), on top of the column. */}
           {!held && !groupMoving && column.includes('more') ? (
-            <View
-              pointerEvents="none"
-              style={[styles.flipButton, styles.moreButtonLook, { left: moreButton.x, top: moreButton.y, width: FLIP_SIZE, height: FLIP_SIZE, borderRadius: FLIP_SIZE / 2 }, toolsOpen && styles.waiting]}>
-              <SymbolView name={{ ios: 'ellipsis', android: 'more_horiz', web: 'more_horiz' }} size={24} weight="bold" tintColor={colors.text} />
+            <View pointerEvents="none" style={[styles.flipButton, styles.moreButtonLook, roundAt(moreButton), toolsOpen && styles.waiting]}>
+              <SymbolView name={{ ios: 'ellipsis', android: 'more_horiz', web: 'more_horiz' }} size={24 * columnScale} weight="bold" tintColor={colors.text} />
             </View>
           ) : null}
 
@@ -5302,9 +5319,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             them all.
           */}
           {(!held && !groupMoving && rollKind) || dragRollKind ? (
-            <View
-              pointerEvents="none"
-              style={[styles.flipButton, { left: rollButton.x, top: rollButton.y, width: FLIP_SIZE, height: FLIP_SIZE, borderRadius: FLIP_SIZE / 2 }, toolsOpen && styles.waiting]}>
+            <View pointerEvents="none" style={[styles.flipButton, roundAt(rollButton), toolsOpen && styles.waiting]}>
               <SymbolView
                 name={
                   (dragRollKind ?? rollKind) === 'coin'
@@ -5313,7 +5328,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                       ? { ios: 'arrow.clockwise.circle', android: 'autorenew', web: 'autorenew' }
                       : { ios: 'dice', android: 'casino', web: 'casino' }
                 }
-                size={26}
+                size={26 * columnScale}
                 weight="semibold"
                 tintColor={colors.accentText}
               />
@@ -5321,10 +5336,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           ) : null}
           {/* With two or more things picked out: one to lay them out in an even grid. */}
           {!held && !groupMoving && gridLive ? (
-            <View
-              pointerEvents="none"
-              style={[styles.flipButton, { left: gridButton.x, top: gridButton.y, width: FLIP_SIZE, height: FLIP_SIZE, borderRadius: FLIP_SIZE / 2 }, toolsOpen && styles.waiting]}>
-              <SymbolView name={{ ios: 'square.grid.2x2', android: 'grid_view', web: 'grid_view' }} size={24} weight="semibold" tintColor={colors.accentText} />
+            <View pointerEvents="none" style={[styles.flipButton, roundAt(gridButton), toolsOpen && styles.waiting]}>
+              <SymbolView name={{ ios: 'square.grid.2x2', android: 'grid_view', web: 'grid_view' }} size={24 * columnScale} weight="semibold" tintColor={colors.accentText} />
             </View>
           ) : null}
 
