@@ -5,7 +5,7 @@ import type { SymbolViewProps } from 'expo-symbols';
 import { Animated, Easing, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { previousTourStep, useTourStep } from '../lib/tour';
+import { previousTourStep, tourStepIndex, useTourStep } from '../lib/tour';
 import { inTileRows } from '../lib/tileRows';
 import { placeWindow } from '../lib/windowSpot';
 import type { Point, Rect } from '../lib/windowSpot';
@@ -150,21 +150,25 @@ export function ActionSheet(props: Props) {
 
   // The walkthrough, when its step is about one of this menu's choices: the tip shows here, by that choice.
   const tour = useTourStep();
+  // (Or a step about what the menu shows, rather than one of its choices: the tip shows here, with nothing marked.)
   const guided =
-    visible && tour?.step.tile && [...(tiles ?? []), ...(moreTiles ?? []), ...wideTiles, ...actions].some((a) => a.label === tour.step.tile) ? tour : null;
+    visible && (tour?.step.inMenu || (tour?.step.tile && [...(tiles ?? []), ...(moreTiles ?? []), ...wideTiles, ...actions].some((a) => a.label === tour.step.tile)))
+      ? tour
+      : null;
   const guide = useMemo(() => {
-    const box = { chosen: false, was: false };
+    const box = { chosen: false, was: false, step: -1 };
     return { box };
   }, []);
-  // Closed without making that choice: back to the step that opens the menu, so the player isn't left stranded.
+  // Closed without doing what it asked (still on that step): back to the step that opens the menu, so the player
+  // isn't left stranded.
   useEffect(() => {
     if (guided) {
-      Object.assign(guide.box, { was: true, chosen: false });
+      Object.assign(guide.box, { was: true, chosen: false, step: guided.index });
       return;
     }
     if (!visible && guide.box.was) {
-      if (!guide.box.chosen) previousTourStep();
-      Object.assign(guide.box, { was: false, chosen: false });
+      if (!guide.box.chosen && tourStepIndex() === guide.box.step) previousTourStep();
+      Object.assign(guide.box, { was: false, chosen: false, step: -1 });
     }
   }, [guided, visible, guide]);
   const isGuided = (a: SheetAction) => guided?.step.tile === a.label;

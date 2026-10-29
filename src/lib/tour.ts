@@ -67,6 +67,8 @@ export interface TourStep {
   next?: string;
   /** Inside a menu (which draws over everything): the menu itself shows the tip, by this tile. */
   tile?: string;
+  /** Inside a menu, but about what it shows rather than one of its tiles (e.g. the dice to pick): the menu shows the tip. */
+  inMenu?: boolean;
   /**
    * Where the tip sits: by default beside its control (above or below), or in the middle without one. 'top' puts
    * it at the top of the screen, 'right' to the control's right (narrower), to keep clear of what's needed.
@@ -206,7 +208,7 @@ export const TOUR: TourStep[] = [
     title: 'Pick a die',
     text: 'Tap any die to put it on the table.',
     until: 'dice-added',
-    place: 'top',
+    inMenu: true,
   },
   {
     title: 'Roll it',
@@ -281,6 +283,9 @@ export function setTourTarget(target: TourTarget, rect: Rect | null) {
 
 /** What the current step waits for, if anything (a cheap check, outside React). */
 export const tourWaitingFor = (): TourEvent | undefined => (state.step === null ? undefined : TOUR[state.step].until);
+
+/** The step showing now, by number (null when none is), outside React. */
+export const tourStepIndex = () => state.step;
 
 /** Whether the tour is running (a cheap check, outside React). */
 export const tourRunning = () => state.step !== null || state.pausedAt !== null;

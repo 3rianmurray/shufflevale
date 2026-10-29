@@ -97,7 +97,8 @@ export function TourOverlay() {
   }, [settleKey]);
   // Each step fades in once settled, and out as soon as the player has done it (or the screen starts to move):
   // what was showing stays drawn, fading, until the next is ready.
-  const live = !!tour && !tour.step.tile && (!tour.step.target || !!rect) && settled === settleKey;
+  // (A step a menu shows itself, by a tile or about what it shows, isn't drawn here.)
+  const live = !!tour && !tour.step.tile && !tour.step.inMenu && (!tour.step.target || !!rect) && settled === settleKey;
   const [fade] = useState(() => new Animated.Value(0));
   useEffect(() => {
     Animated.timing(fade, {
