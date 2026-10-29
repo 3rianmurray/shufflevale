@@ -184,7 +184,7 @@ export const TOUR: TourStep[] = [
   },
   {
     title: 'Your hand',
-    text: 'Close the options, then drag a card down into the tray at the bottom: that hand holds it. The tabs switch between four hands.',
+    text: 'Drag a card down into the tray at the bottom: that hand holds it. The tabs switch between four hands.',
     until: 'tables-to-hand',
     place: 'top',
     dim: false,
