@@ -4,7 +4,9 @@ import type { ReactNode } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useDecks } from '../lib/DecksContext';
 import * as haptics from '../lib/haptics';
+import { loadSettings, saveSettings } from '../lib/storage';
 import { endTour, nextTourStep, TOUR, useTourStep, useTourTargetRect } from '../lib/tour';
 import type { TourStep } from '../lib/tour';
 import { colors } from '../theme';
@@ -83,6 +85,7 @@ function Ring({ rect }: { rect: { x: number; y: number; w: number; h: number } }
  */
 export function TourOverlay() {
   const tour = useTourStep();
+  const { getDeck, deleteDeck } = useDecks();
   const rect = useTourTargetRect(tour?.step.target);
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -113,10 +116,14 @@ export function TourOverlay() {
     return { keep: (frame: ReactNode) => Object.assign(box, { frame }), get: () => box.frame };
   }, []);
 
-  // The end: back to the home screen, and a tap to feel it's done.
+  // The end: back to the home screen, and a tap to feel it's done. The sample deck made for it has done its job,
+  // so it goes (the walkthrough makes it again, if it's run again).
   const finish = () => {
     endTour();
     if (router.canDismiss()) router.dismissAll();
+    const sample = loadSettings().sampleDeckId;
+    if (sample && getDeck(sample)) deleteDeck(sample);
+    saveSettings({ ...loadSettings(), sampleDeckId: undefined });
     haptics.success();
   };
 
