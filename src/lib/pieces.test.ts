@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerFlat, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies, groupItems, ungroupItems, withGroups, groupMembers, groupBoxes, liesOver, lockGroups, staysPut, moveStacks, centerOnTable } from './sandbox.ts';
+import { addPiece, movePiece, newPiece, pieceAt, piecesInShape, removePiece, rollDie, setPiece, newSandbox, PIECE_SIZE, THROW_MAX, THROW_MIN, throwDice, separateDice, movePieces, gridDice, DICE_SPACE, toggleTimer, parseTimerText, timerText, zoneAt, spotAt, zoneGripAt, resizeZone, ZONE_MIN, putInBag, drawFromBag, emptyBag, tableCardCount, prune, bagItems, itemKey, reorderBag, shuffleBag, allAlike, bagTakes, endSupply, raiseArt, artLevel, layerFlat, keepArtLevels, copyItems, pasteItems, clipCards, fitZone, trackSize, trackSpaceAt, pieceSizeOf, playground, keepCards, upgradeTable, fitSpots, settleStacks, zoneCellAt, labelAt, addScore, scoreColumns, scoreSize, scoreSpotAt, setScorePlayers, setScore, SCORE_PAD, SCORE_HEAD, SCORE_ROW, scoreWindow, resizeScore, faceCount, withFace, inDrawOrder, gridItems, pasteCopies, groupItems, ungroupItems, withGroups, groupMembers, groupBoxes, liesOver, lockGroups, staysPut, moveStacks, centerOnTable, TABLE_W, TABLE_H } from './sandbox.ts';
 import type { TablePiece } from './sandbox.ts';
 
 test('dice are drawn (and found) the one further down and right in front; other pieces keep their places', () => {
@@ -265,8 +265,9 @@ test('the Playground has a custom d6, and a chess set of custom art: the board l
   const [bk] = at('black-king');
   assert.ok(wk.y > board.y && bk.y < board.y && wk.x === bk.x && wk.x > wq.x);
   assert.equal(at('white-pawn').length, 8);
-  // The view takes it in.
+  // The view takes it in, and all of it lies in the middle of the table.
   assert.ok(t.focus!.y + t.focus!.h >= board.y + h / 2);
+  assert.ok(Math.abs(t.focus!.x + t.focus!.w / 2 - TABLE_W / 2) <= 1 && Math.abs(t.focus!.y + t.focus!.h / 2 - TABLE_H / 2) <= 1);
 });
 
 test('everything moved together into the middle of the table, as it was laid out', () => {

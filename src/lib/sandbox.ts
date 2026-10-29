@@ -2388,8 +2388,11 @@ export function playground(
   art?: PlaygroundArt,
 ): SandboxTable {
   const chess = art?.chess;
-  const cx = TABLE_W / 2;
-  const cy = TABLE_H / 2;
+  // How far it all reaches round its own middle (to the chessboard's foot, with its chess set), so all of it lies
+  // in the middle of the table.
+  const reach = { left: -580, right: 600, top: -480, bottom: chess ? CHESS_Y + Math.round((chess.board.h * CHESS_SQUARE) / CHESS_GRID.square / 2) + 30 : 470 };
+  const cx = Math.round(TABLE_W / 2 - (reach.left + reach.right) / 2);
+  const cy = Math.round(TABLE_H / 2 - (reach.top + reach.bottom) / 2);
   const at = (dx: number, dy: number) => ({ x: cx + dx, y: cy + dy });
   const piece = (kind: PieceKind, dx: number, dy: number, more: Partial<TablePiece> = {}): TablePiece => ({ ...newPiece(kind, ids(), at(dx, dy)), ...more });
   const cube = (color: string) => ({ piece: { ...newPiece('meeple', ids(), { x: 0, y: 0 }, 6, 'cube'), color } });
@@ -2443,8 +2446,7 @@ export function playground(
   // The chess set, under the rest (custom art: after the rest, so it lies over the zones; it's nowhere near them).
   if (chess) table = { ...table, pieces: [...(table.pieces ?? []), ...chessSet(chess, at(0, CHESS_Y), ids)] };
   // In view: all of it, with a little room round (the chess set too, if it's there).
-  const bottom = chess ? CHESS_Y + Math.round((chess.board.h * CHESS_SQUARE) / CHESS_GRID.square / 2) + 30 : 470;
-  return { ...table, focus: { x: cx - 580, y: cy - 480, w: 1180, h: bottom + 480 } };
+  return { ...table, focus: { x: cx + reach.left, y: cy + reach.top, w: reach.right - reach.left, h: reach.bottom - reach.top } };
 }
 
 /** How far below the Playground's middle its chessboard's middle is (table units): under the rest, a little apart. */
@@ -2452,10 +2454,10 @@ const CHESS_Y = 820;
 
 /**
  * The Playground's layout: raised each time it changes (2: the card spot and the score pad; 3: laid out in rows,
- * with a market zone; 4: a chess set of custom art; 5: a custom d6), so a Playground made before is laid out again,
- * once.
+ * with a market zone; 4: a chess set of custom art; 5: a custom d6; 6: all of it in the middle of the table), so a
+ * Playground made before is laid out again, once.
  */
-export const PLAYGROUND_VERSION = 5;
+export const PLAYGROUND_VERSION = 6;
 
 /** The table with only the cards that pass keep (on the table, in the hands and in the trash; empty stacks go). */
 export function keepCards(t: SandboxTable, keep: (c: SandboxCard) => boolean): SandboxTable {
