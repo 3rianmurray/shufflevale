@@ -2325,6 +2325,12 @@ const MARKET_CARDS = 4;
 export type ChessPicture = 'board' | `${'white' | 'black'}-${'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn'}`;
 /** Each of the chess set's pictures, saved (a saved picture's path), with its size in pixels. */
 export type ChessArt = Record<ChessPicture, { image: string; w: number; h: number }>;
+/** The Playground's own art, saved (see playgroundArt.ts): its chess set, and its custom d6's faces and their colors. */
+export interface PlaygroundArt {
+  chess: ChessArt;
+  dieFaces: string[];
+  dieColors: string[];
+}
 
 /** How big a square of the Playground's chessboard is (table units). */
 const CHESS_SQUARE = 64;
@@ -2370,17 +2376,18 @@ function chessSet(art: ChessArt, mid: { x: number; y: number }, ids: () => strin
  * custom pieces can be changed there without Pro, to try it: see isPlayground). In rows, top to bottom: its name; a
  * track, with two players' pieces at its start; the cards (the deck in a card spot, a zone beside it for a discard
  * pile, and a market zone lining up four cards dealt face up from it), with a score pad beside them; a bag of cubes,
- * an endless supply of discs, a counter, a timer, the first-player marker and a spinner; dice and a coin; a line of
- * words saying how to begin; and under it all, a chess set of custom art (see chessSet), given its pictures. Its
- * cards are the Playing Cards example's (shuffled), if it's there.
+ * an endless supply of discs, a counter, a timer, the first-player marker and a spinner; dice and a coin (and,
+ * given its art, a d6 with faces of its own); a line of words saying how to begin; and under it all, given its art,
+ * a chess set (see chessSet). Its cards are the Playing Cards example's (shuffled), if it's there.
  */
 export function playground(
   t: SandboxTable,
   deck: Deck | undefined,
   ids: () => string,
   random: () => number = Math.random,
-  chess?: ChessArt,
+  art?: PlaygroundArt,
 ): SandboxTable {
+  const chess = art?.chess;
   const cx = TABLE_W / 2;
   const cy = TABLE_H / 2;
   const at = (dx: number, dy: number) => ({ x: cx + dx, y: cy + dy });
@@ -2413,6 +2420,8 @@ export function playground(
       piece('die', -45, 280, { value: 5 }),
       piece('die', 40, 280, { sides: 20, value: 20 }),
       piece('coin', 130, 280),
+      // A d6 of its own: a picture on each face, the die the color of the stone they're on.
+      ...(art ? [piece('die', 215, 280, { value: 1, faces: art.dieFaces, faceColors: art.dieColors })] : []),
       piece('text', 0, 420, { label: 'Tap, hold or drag anything to try it.' }),
     ],
   };
@@ -2443,9 +2452,10 @@ const CHESS_Y = 820;
 
 /**
  * The Playground's layout: raised each time it changes (2: the card spot and the score pad; 3: laid out in rows,
- * with a market zone; 4: a chess set of custom art), so a Playground made before is laid out again, once.
+ * with a market zone; 4: a chess set of custom art; 5: a custom d6), so a Playground made before is laid out again,
+ * once.
  */
-export const PLAYGROUND_VERSION = 4;
+export const PLAYGROUND_VERSION = 5;
 
 /** The table with only the cards that pass keep (on the table, in the hands and in the trash; empty stacks go). */
 export function keepCards(t: SandboxTable, keep: (c: SandboxCard) => boolean): SandboxTable {

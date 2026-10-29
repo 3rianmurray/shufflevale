@@ -55,6 +55,11 @@ interface Props {
    */
   backs?: boolean;
   startGrid?: Grid;
+  /**
+   * For a die's (or a coin's) faces instead of cards: as many as it has, at most (the first cells taken), and said
+   * as faces throughout.
+   */
+  faces?: number;
   /** Called with one image uri per card, in card order (just the one, when picking one), and the grid used. */
   onDone: (cards: string[], grid: Grid) => void;
   onCancel: () => void;
@@ -63,7 +68,9 @@ interface Props {
 }
 
 /** Slices one image laid out as a grid of cards into separate card images, or takes one card from it. */
-export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGrid, cardRatio, onDone, onCancel, onClosed }: Props) {
+export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGrid, cardRatio, faces, onDone, onCancel, onClosed }: Props) {
+  /** What's cut out: a deck's cards, or a die's faces. */
+  const noun = faces ? 'face' : 'card';
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const [loaded, setLoaded] = useState<(LoadedImage & { source: string }) | null>(null);
@@ -117,10 +124,14 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
           if (pickOne) {
             // Choosing a card back: if the sheet has one in its last cell, that's the one.
             if (found.backInLastCell) setChosen({ r: found.rows - 1, c: found.columns - 1 });
+          } else if (faces) {
+            // A die's faces: every cell (a die has no back), as many as it has faces.
+            const all = found.rows * found.columns;
+            setCountText(all > faces ? String(faces) : '');
           } else {
             setCountText(found.count < found.rows * found.columns ? String(found.count) : '');
           }
-          setGuess({ ...found, source: uri });
+          setGuess({ ...found, backInLastCell: faces ? false : found.backInLastCell, source: uri });
         } catch {
           // Not worth bothering the player about: they set the grid by hand, as before.
         } finally {
@@ -131,7 +142,7 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
     return () => {
       canceled = true;
     };
-  }, [uri, cardRatio, pickOne, startGrid]);
+  }, [uri, cardRatio, pickOne, startGrid, faces]);
 
   const rows = parseCount(rowsText, 1, MAX_CELLS_PER_SIDE);
   const columns = parseCount(colsText, 1, MAX_CELLS_PER_SIDE);
@@ -223,7 +234,8 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
   const importCards = async () => {
     if (!image) return;
     const all = cellRects(image.width, image.height, grid);
-    const rects = pickOne ? [all[pick.r * columns + pick.c]] : all.filter((_, n) => !left.has(n));
+    // (A die's faces: no more than it has.)
+    const rects = pickOne ? [all[pick.r * columns + pick.c]] : all.filter((_, n) => !left.has(n)).slice(0, faces ?? Infinity);
     const out: string[] = [];
     try {
       for (const [i, rect] of rects.entries()) {
@@ -247,7 +259,7 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
           scrollEnabled={!painting}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: 24, paddingHorizontal: PADDING, gap: 16 }}>
-          <Text style={styles.title}>{pickOne ? 'Choose a card from the sheet' : backs ? 'Sheet of backs' : 'Import sprite sheet'}</Text>
+          <Text style={styles.title}>{pickOne ? 'Choose a card from the sheet' : backs ? 'Sheet of backs' : faces ? 'Faces from a sprite sheet' : 'Import sprite sheet'}</Text>
           {pickOne ? <Text style={styles.help}>Set the grid, then tap the card to use.</Text> : null}
           {backs ? <Text style={styles.help}>Each number is the card that back goes with.</Text> : null}
 
@@ -292,8 +304,8 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
                     {...paint.responder.panHandlers}
                     style={StyleSheet.absoluteFill}
                     accessible
-                    accessibilityLabel={`${taking} of ${grid.count} cards chosen`}
-                    accessibilityHint="Tap or drag across cards to leave them out or put them back."
+                    accessibilityLabel={`${taking} of ${grid.count} ${noun}s chosen`}
+                    accessibilityHint={`Tap or drag across ${noun}s to leave them out or put them back.`}
                   />
                 )}
               </View>
@@ -316,7 +328,7 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
             <NumberField label="Columns" value={colsText} onChange={setColsText} max={MAX_CELLS_PER_SIDE} fallback={columns} />
             {pickOne ? null : (
               <NumberField
-                label="Cards"
+                label={faces ? 'Faces' : 'Cards'}
                 value={countText}
                 onChange={setCountText}
                 placeholder={String(cells)}
@@ -327,7 +339,7 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
           </View>
           {pickOne ? null : (
             <View style={styles.chooseRow}>
-              <Text style={[styles.help, { flex: 1, marginTop: 0 }]}>Tap or drag across cards to leave them out.</Text>
+              <Text style={[styles.help, { flex: 1, marginTop: 0 }]}>Tap or drag across {noun}s to leave them out.</Text>
               <Button
                 label={left.size ? 'Select All' : 'Deselect All'}
                 onPress={() => {
@@ -340,7 +352,9 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
           {pickOne ? null : (
             <>
               <Text style={styles.help}>
-                Cards counts the cells that have artwork, starting from cell 1. Leave it empty to use every cell.
+                {faces
+                  ? `Faces counts the cells that have artwork, starting from cell 1: face 1 is cell 1, and so on, up to ${faces}.`
+                  : 'Cards counts the cells that have artwork, starting from cell 1. Leave it empty to use every cell.'}
               </Text>
               <Segment
                 label="Order"
@@ -369,7 +383,7 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
           ) : null}
 
           <Segment
-            label="Rotate cards"
+            label={faces ? 'Rotate faces' : 'Rotate cards'}
             value={turn}
             onChange={setTurn}
             options={[
@@ -378,7 +392,7 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
               [90, 'Right ⟳'],
             ]}
           />
-          <Text style={styles.help}>For art drawn sideways, such as cards played horizontally.</Text>
+          <Text style={styles.help}>{faces ? 'For art drawn sideways.' : 'For art drawn sideways, such as cards played horizontally.'}</Text>
         </ScrollView>
 
         <View style={[styles.actions, { paddingBottom: insets.bottom + 12 }]}>
@@ -390,8 +404,10 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
                   ? 'Cutting…'
                   : 'Use this card'
                 : busy
-                  ? `Cutting ${progress + 1} of ${taking}…`
-                  : `Add ${taking} ${taking === 1 ? 'card' : 'cards'}`
+                  ? `Cutting ${progress + 1} of ${faces ? Math.min(taking, faces) : taking}…`
+                  : faces
+                    ? `Use ${Math.min(taking, faces)} ${Math.min(taking, faces) === 1 ? 'face' : 'faces'}`
+                    : `Add ${taking} ${taking === 1 ? 'card' : 'cards'}`
             }
             variant="primary"
             onPress={importCards}

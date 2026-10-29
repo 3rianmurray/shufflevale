@@ -185,6 +185,7 @@ import type { Deck } from '../lib/types';
 import { colors } from '../theme';
 import { ActionSheet } from './ActionSheet';
 import { CropModal } from './CropModal';
+import { SpriteSheetModal } from './SpriteSheetModal';
 import { FaceSlots } from './FaceSlots';
 import type { SheetAction, SheetTile } from './ActionSheet';
 import { CardFocus } from './CardFocus';
@@ -416,7 +417,11 @@ type PictureSource = 'photos' | 'files' | 'camera';
  * What a picture's for: a token, or custom art (a new one, or with an id, that one's picture changed); or a face of
  * a die's or coin's (from 0).
  */
-type PictureTarget = { kind: 'token' | 'art'; id?: string } | { kind: 'face'; id: string; face: number };
+type PictureTarget =
+  | { kind: 'token' | 'art'; id?: string }
+  | { kind: 'face'; id: string; face: number }
+  /** A sprite sheet of a die's (or coin's) faces, cut up into them in turn (see SpriteSheetModal). */
+  | { kind: 'faceSheet'; id: string };
 
 /** A card being carried by a finger. */
 interface Held {
@@ -596,6 +601,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const [addingCards, setAddingCards] = useState(false);
   /** A picture chosen for a die's or coin's face, being cropped square (see FaceSlots). */
   const [faceCrop, setFaceCrop] = useState<{ uri: string; id: string; face: number } | null>(null);
+  /** A sprite sheet chosen for a die's (or coin's) faces, being cut up into them (see SpriteSheetModal). */
+  const [faceSheet, setFaceSheet] = useState<{ uri: string; id: string } | null>(null);
   /** A picture chosen for a token (a new one, or the one with `id`), being cropped to its shape (see TOKEN_SHAPES). */
   const [tokenCrop, setTokenCrop] = useState<{ uri: string; id?: string } | null>(null);
   /** The shape a token's being cropped to (the last chosen, for the next new one). */
@@ -1309,7 +1316,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const faced = target.kind === 'face' ? table?.pieces?.find((p) => p.id === target.id) : undefined;
     const standard = target.kind === 'face' && faced?.faces?.[target.face] ? () => setFaceArt(target.id, target.face, null) : null;
     const faceName = target.kind !== 'face' ? '' : faced?.kind === 'coin' ? (target.face ? 'Tails' : 'Heads') : `Face ${target.face + 1}`;
-    const title = faceName || (target.id ? 'Change the picture' : target.kind === 'art' ? 'Custom art' : 'Token picture');
+    const title = faceName || (target.kind === 'faceSheet' ? 'Sprite sheet' : target.id ? 'Change the picture' : target.kind === 'art' ? 'Custom art' : 'Token picture');
     if (Platform.OS === 'ios') {
       const options = ['Photos', 'Files', 'Take a photo', ...(standard ? ['Use the standard face'] : []), 'Cancel'];
       ActionSheetIOS.showActionSheetWithOptions({ title, options, cancelButtonIndex: options.length - 1 }, (i) => {
@@ -1369,6 +1376,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       if (!now.table) return;
       // A face's: cropped first to the face's own shape (see faceShape), just as wanted.
       if (target.kind === 'face') return setFaceCrop({ uri, id: target.id, face: target.face });
+      // A sheet of faces: cut up into them (its grid found for a start).
+      if (target.kind === 'faceSheet') return setFaceSheet({ uri, id: target.id });
       // A token's: cropped to a shape, chosen as it's cropped (a token's own to start with, or the last chosen).
       if (forToken) {
         const token = target.id ? now.table.pieces?.find((p) => p.id === target.id) : undefined;
@@ -4410,9 +4419,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             }}
           />
         ),
-        actions: piece.faces
-          ? [{ label: coin ? 'Use the gold coin' : 'Use the standard faces', onPress: () => commit(setPiece(table, piece.id, { faces: undefined })) }]
-          : [],
+        actions: [
+          // All of them from one picture laid out as a grid (a sprite sheet), its grid found for a start.
+          { label: 'From a sprite sheet', onPress: () => setTimeout(() => choosePicture({ kind: 'faceSheet', id: piece.id }), 300) },
+          ...(piece.faces
+            ? [{ label: coin ? 'Use the gold coin' : 'Use the standard faces', onPress: () => commit(setPiece(table, piece.id, { faces: undefined })) }]
+            : []),
+        ],
       };
     }
     if (menu.kind === 'zoneOpacity') {
@@ -4780,6 +4793,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   /** The shape a face's art is being cropped to (the die's face's, or the coin's round side). */
   const cropPiece = faceCrop ? table.pieces?.find((p) => p.id === faceCrop.id) : undefined;
   const cropShape = cropPiece ? faceShape(cropPiece) : { ratio: 1, outline: null };
+  /** The die (or coin) whose faces are being cut from a sprite sheet. */
+  const sheetPiece = faceSheet ? table.pieces?.find((p) => p.id === faceSheet.id) : undefined;
 
   return (
     // Dice on a table in 3D (see Dice3DContext).
@@ -5505,6 +5520,40 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           const crop = faceCrop;
           setFaceCrop(null);
           if (crop) setTimeout(() => setMenu({ kind: 'faces', id: crop.id }), 300);
+        }}
+      />
+      {/*
+        A sheet of a die's (or coin's) faces, cut up into them: face 1 from the first cell, and so on, each taking its
+        art's color as one face does (one undo); then the faces again.
+      */}
+      <SpriteSheetModal
+        uri={faceSheet?.uri ?? null}
+        cardRatio={sheetPiece ? faceShape(sheetPiece).ratio : 1}
+        faces={sheetPiece ? faceCount(sheetPiece) : 6}
+        onDone={(cut) => {
+          const sheet = faceSheet;
+          setFaceSheet(null);
+          if (!sheet || !sheetPiece || !cut.length) return;
+          const shape = faceShape(sheetPiece);
+          (async () => {
+            const made: { image: string; color: string }[] = [];
+            for (const uri of cut) {
+              const picture = await facePicture(uri, shape.ratio);
+              made.push({ image: importImage(TOKEN_PICTURES, picture), color: await faceArtColor(picture, shape.outline) });
+            }
+            const now = latest.get();
+            let piece = now.table?.pieces?.find((p) => p.id === sheet.id);
+            if (!now.table || !piece) return;
+            for (const [face, { image, color }] of made.entries()) piece = { ...piece, ...withFace(piece, face, image, color) };
+            now.commit(setPiece(now.table, sheet.id, { faces: piece.faces, faceColors: piece.faceColors }));
+            haptics.tick();
+            setTimeout(() => latest.get().setMenu({ kind: 'faces', id: sheet.id }), 300);
+          })().catch((e: unknown) => Alert.alert('Couldn’t use that picture', e instanceof Error ? e.message : String(e)));
+        }}
+        onCancel={() => {
+          const sheet = faceSheet;
+          setFaceSheet(null);
+          if (sheet) setTimeout(() => setMenu({ kind: 'faces', id: sheet.id }), 300);
         }}
       />
       {/* A token's picture, cropped to the shape chosen under it (the token takes that shape). */}

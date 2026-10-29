@@ -235,15 +235,20 @@ test('things grouped are picked out together, boxed as one, laid out as one, pas
   assert.equal(apart.lockedGroups, undefined);
 });
 
-test('the Playground has a chess set of custom art: the board locked under every piece, each on its own square', () => {
+test('the Playground has a custom d6, and a chess set of custom art: the board locked under every piece, each on its own square', () => {
   const pic = (name: string, w: number, h: number) => ({ image: `tokens/${name}.png`, w, h });
   const names = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'] as const;
   const chess = Object.fromEntries([
     ['board', pic('board', 1112, 1123)],
     ...(['white', 'black'] as const).flatMap((side) => names.map((n) => [`${side}-${n}`, pic(`${side}-${n}`, 220, n === 'king' ? 480 : 400)])),
-  ]) as Parameters<typeof playground>[4] & object;
+  ]) as NonNullable<Parameters<typeof playground>[4]>['chess'];
   let n = 0;
-  const t = playground(table(), undefined, () => `p${n++}`, Math.random, chess);
+  const faces = [1, 2, 3, 4, 5, 6].map((f) => `tokens/face-${f}.png`);
+  const t = playground(table(), undefined, () => `p${n++}`, Math.random, { chess, dieFaces: faces, dieColors: faces.map(() => '#d7b888') });
+  // Its own d6 too: a picture on each face, each its color.
+  const custom = t.pieces!.find((p) => p.kind === 'die' && p.faces);
+  assert.deepEqual(custom?.faces, faces);
+  assert.equal(custom?.faceColors?.length, 6);
   const art = t.pieces!.filter((p) => p.kind === 'art');
   assert.equal(art.length, 33);
   const [board, ...men] = art;
