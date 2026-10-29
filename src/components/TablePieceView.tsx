@@ -1038,7 +1038,8 @@ function SolidSide({
  * round it for a shadow. `at` takes a point in a 0–1 box over the piece to the drawing's own.
  */
 function artFrame(w: number, h: number, OS: number) {
-  const pad = Math.max(w, h) * PAD;
+  // (At least as far as the shadow reaches, which is the same at any size: a small piece's would be cut off.)
+  const pad = Math.max(Math.max(w, h) * PAD, SHADOW_ROOM);
   const cw = (w + pad * 2) * OS;
   const ch = (h + pad * 2) * OS;
   const at = (p: Pt) => [(p[0] * w + pad) * OS, (p[1] * h + pad) * OS] as const;
@@ -1064,6 +1065,8 @@ function artFrame(w: number, h: number, OS: number) {
 }
 
 const pieceShadow = (OS: number) => <Shadow dx={2 * OS} dy={4 * OS} blur={4 * OS} color="rgba(0,0,0,0.45)" shadowOnly />;
+/** How far a piece's shadow (see pieceShadow) reaches past it, at most: its drop, and its blur's spread. */
+const SHADOW_ROOM = 16;
 
 /** A shape with its corners rounded (by up to `r`, as a share of the piece's width), as a solid's edges are. */
 function roundedPath(art: ReturnType<typeof artFrame>, pts: Pt[], r: number) {
