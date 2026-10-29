@@ -1,8 +1,9 @@
-import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '../components/AppIcon';
 import { Text } from '../components/Text';
+import { cameraLogText } from '../lib/cameraLog';
 import { isPro, setProOverride, TESTER_BUILD, useProState } from '../lib/pro';
 import type { ProOverride } from '../lib/pro';
 import { versionLabel } from '../lib/version';
@@ -65,6 +66,10 @@ export default function AboutScreen() {
               );
             })}
           </View>
+          {/* The table's camera log (see cameraLog), shared to read or send. */}
+          <Pressable onPress={() => void Share.share({ message: cameraLogText() || 'No camera log yet.' })} accessibilityRole="button" style={styles.testerItem}>
+            <Text style={styles.testerText}>Share camera log</Text>
+          </Pressable>
         </View>
       ) : null}
       <Text style={styles.footnote}>© 2026 Brian Murray</Text>

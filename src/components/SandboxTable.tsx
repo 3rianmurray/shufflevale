@@ -180,6 +180,7 @@ import { updateSandbox, useSandbox } from '../lib/sandboxStore';
 import { clipSize, setClip, useClip } from '../lib/tableClipboard';
 import { offerTipAfterUses, offerTipSoon, tipLearned } from '../lib/tips';
 import { keepUndoHistory, undoHistoryFor } from '../lib/undoHistory';
+import { cameraLog } from '../lib/cameraLog';
 import { tourEvent } from '../lib/tour';
 import { cardRadius, cardRatio, cardSizeMm, copiesOf, deckSize, PRESET_SIZES_MM } from '../lib/types';
 import type { Deck } from '../lib/types';
@@ -662,7 +663,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const camX = useSharedValue(0);
   const camY = useSharedValue(0);
   const readCamera = (): Camera => ({ a: camA.get(), b: camB.get(), tx: camX.get(), ty: camY.get() });
-  const writeCamera = (c: Camera) => {
+  /** Where a camera write came from, for the tester log (see cameraLog): none for a finger moving the view. */
+  const writeCamera = (c: Camera, from?: string) => {
+    if (from) cameraLog(`camera ${from}: a=${c.a.toFixed(3)} b=${c.b.toFixed(3)} tx=${Math.round(c.tx)} ty=${Math.round(c.ty)}`);
     camA.set(c.a);
     camB.set(c.b);
     camX.set(c.tx);
@@ -699,6 +702,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const box = { done: false };
     return { done: () => box.done, mark: () => Object.assign(box, { done: true }) };
   });
+  // The tester log: when this table's screen opens and closes (a reload would show as a new open, and a placement).
+  useEffect(() => {
+    cameraLog(`table ${id} opened`);
+    return () => cameraLog(`table ${id} closed`);
+  }, [id]);
   const layOut = (e: LayoutChangeEvent) => {
     const space = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
     // The phone turned (the screen changed shape): what was in the middle of the view stays in the middle, the
@@ -708,11 +716,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const was = { x: view.w / 2, y: (barBottom + handTop - HAND_TAB_H) / 2 };
       const now = { x: space.w / 2, y: (was.y * space.h) / view.h };
       const cam = readCamera();
-      writeCamera({ ...cam, tx: cam.tx + now.x - was.x, ty: cam.ty + now.y - was.y });
+      writeCamera({ ...cam, tx: cam.tx + now.x - was.x, ty: cam.ty + now.y - was.y }, 'turned the phone');
     }
     setView(space);
+    cameraLog(`layout ${Math.round(space.w)}x${Math.round(space.h)} placed=${placed.done()} table=${!!table}`);
     if (placed.done() || !table) return;
-    writeCamera(table.camera ?? startCamera({ w: space.w, h: space.h - HAND_H }, table.focus));
+    writeCamera(table.camera ?? startCamera({ w: space.w, h: space.h - HAND_H }, table.focus), table.camera ? 'from the saved view' : 'start');
     placed.mark();
     // Never looked at before (a new table, or Solitaire the first time): everything fitted in view, once laid out.
     if (!table.camera) setFitFirst(true);
@@ -2761,6 +2770,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           }
 
           touch.piece.moved = true;
+          cameraLog(`piece drag starts (${touch.piece.group.length} piece${touch.piece.group.length === 1 ? '' : 's'})`);
           haptics.lift();
         }
         const w = toTable(readCamera(), f.now.x, f.now.y);
@@ -3403,7 +3413,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   /** Everything in sight (cards and all): below the top bar's buttons, above the hand, upright (for this table, as it'll be). */
   const fitView = (t: SandboxTable, quiet = false) => {
     if (!view) return;
-    writeCamera(fitAllCamera(t, view.w));
+    writeCamera(fitAllCamera(t, view.w), 'fit all');
     // Saved with the table as it is by then (this render's may be a change behind).
     setTimeout(() => latest.get().saveCamera(), 50);
     if (!quiet) haptics.tick();
@@ -3584,7 +3594,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     return null;
   })();
   const spotKey = spot?.key ?? null;
-  const glideCamera = (to: Camera) => {
+  const glideCamera = (to: Camera, from = 'glide') => {
+    cameraLog(`camera ${from} glides to tx=${Math.round(to.tx)} ty=${Math.round(to.ty)}`);
     const t = { duration: SPOT_MS, easing: ReEasing.out(ReEasing.cubic) };
     camA.set(withTiming(to.a, t));
     camB.set(withTiming(to.b, t));
@@ -3608,7 +3619,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const onto = 'item' in target ? zoomOnto(cam, target.item, space) : zoomInOn(cam, target.at, space);
     const out = doubleTapZoom(cam, fit, onto, zoomedTo.get()) === 'out';
     zoomedTo.set(out ? null : onto);
-    glideCamera(out ? fit : onto);
+    glideCamera(out ? fit : onto, 'double tap zoom');
     haptics.tick();
     setTimeout(() => latest.get().saveCamera(), SPOT_MS + 50);
   };
@@ -3620,7 +3631,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const { before, to } = glide.get();
       glide.set({ before: null, to: null });
       const now = readCamera();
-      if (before && to && Math.abs(now.tx - to.tx) < 2 && Math.abs(now.ty - to.ty) < 2 && Math.abs(now.a - to.a) < 0.01) glideCamera(before);
+      if (before && to && Math.abs(now.tx - to.tx) < 2 && Math.abs(now.ty - to.ty) < 2 && Math.abs(now.a - to.a) < 0.01) glideCamera(before, 'menu closed, back to before');
       return;
     }
     if (optionsAt === null) return;
@@ -3641,7 +3652,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const b = z * Math.sin(turn);
     const to = { a, b, tx: at.x - (a * spot.x - b * spot.y), ty: at.y - (b * spot.x + a * spot.y) };
     glide.set({ before: cam, to });
-    glideCamera(to);
+    glideCamera(to, 'menu opened, onto it');
     // As it opens (and if its options change size, or it changes).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spotKey, optionsAt?.x, optionsAt?.y]);
