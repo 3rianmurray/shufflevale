@@ -5,7 +5,7 @@ import { Alert } from 'react-native';
 
 import { newId } from './id';
 import type { DeckGroup } from './groups';
-import type { SandboxTable } from './sandbox';
+import type { ChessArt, SandboxTable } from './sandbox';
 import type { Deck, Session, TableState } from './types';
 
 const DECKS_FILE = 'decks.json';
@@ -140,6 +140,8 @@ export interface Settings {
   /** The Playground table (every component laid out: a Free Play example) has been made, once; and which it is. */
   playgroundMade?: boolean;
   playgroundTableId?: string;
+  /** The Playground's chess set's pictures, once copied in (see chessArt). */
+  chessArt?: ChessArt;
   /** The Playground layout's version it has the components of (see PLAYGROUND_VERSION; none is the first). */
   playgroundVersion?: number;
   /** The Solitaire example table (found by its name, if it was made before this was noted). */

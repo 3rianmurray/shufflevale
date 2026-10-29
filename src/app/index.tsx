@@ -79,7 +79,10 @@ export default function HomeScreen() {
   useEffect(() => {
     const settings = loadSettings();
     // Made after the others came out: for those who had them already, just it.
-    if (settings.solitaireMade) return examples.addPlayground();
+    if (settings.solitaireMade) {
+      examples.addPlayground().catch(() => {});
+      return;
+    }
     saveSettings({ ...settings, solitaireMade: true, playgroundMade: true });
     examples
       .restore()

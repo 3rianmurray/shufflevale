@@ -2321,15 +2321,66 @@ export function solitaire(t: SandboxTable, deck: Deck, ids: () => string, random
 /** How many cards the Playground's market zone has laid out, face up, in a row. */
 const MARKET_CARDS = 4;
 
+/** The chess set's pictures (see chessArt.ts): the board's, and each piece's, by its side and name. */
+export type ChessPicture = 'board' | `${'white' | 'black'}-${'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn'}`;
+/** Each of the chess set's pictures, saved (a saved picture's path), with its size in pixels. */
+export type ChessArt = Record<ChessPicture, { image: string; w: number; h: number }>;
+
+/** How big a square of the Playground's chessboard is (table units). */
+const CHESS_SQUARE = 64;
+/** Where the board's squares are in its picture (pixels, measured from assets/chess/board.png): the first's corner, and their size. */
+const CHESS_GRID = { left: 89, top: 95.5, square: 116.5 };
+/** A side's back row, left to right as white sees it. */
+const BACK_ROW = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'] as const;
+
+/**
+ * A chess set, as custom art: the board (locked, so a drag on it moves the table, not it), and every piece on its
+ * square ready to play, white nearest. The pieces keep their sizes to one another, the king nine tenths of a square
+ * tall. Its middle at `mid`.
+ */
+function chessSet(art: ChessArt, mid: { x: number; y: number }, ids: () => string): TablePiece[] {
+  const board = art.board;
+  const k = CHESS_SQUARE / CHESS_GRID.square;
+  const k2 = (CHESS_SQUARE * 0.9) / Math.max(art['white-king'].h, art['black-king'].h);
+  const drawn = (picture: { image: string; w: number; h: number }, at: { x: number; y: number }, scale: number): TablePiece => ({
+    id: ids(),
+    kind: 'art',
+    x: Math.round(at.x),
+    y: Math.round(at.y),
+    value: 0,
+    image: picture.image,
+    w: Math.round(picture.w * scale),
+    h: Math.round(picture.h * scale),
+  });
+  // A square's middle (`col` from the left, `row` from the top), on the table.
+  const square = (col: number, row: number) => ({
+    x: mid.x + (CHESS_GRID.left + (col + 0.5) * CHESS_GRID.square - board.w / 2) * k,
+    y: mid.y + (CHESS_GRID.top + (row + 0.5) * CHESS_GRID.square - board.h / 2) * k,
+  });
+  const pieces: TablePiece[] = [];
+  for (const [side, back, front] of [['black', 0, 1], ['white', 7, 6]] as const) {
+    BACK_ROW.forEach((name, col) => pieces.push(drawn(art[`${side}-${name}`], square(col, back), k2)));
+    for (let col = 0; col < 8; col++) pieces.push(drawn(art[`${side}-pawn`], square(col, front), k2));
+  }
+  return [{ ...drawn(board, mid, k), locked: true }, ...pieces];
+}
+
 /**
  * The Playground example: every component laid out as a little board game, to show what a table can do (its
  * custom pieces can be changed there without Pro, to try it: see isPlayground). In rows, top to bottom: its name; a
  * track, with two players' pieces at its start; the cards (the deck in a card spot, a zone beside it for a discard
  * pile, and a market zone lining up four cards dealt face up from it), with a score pad beside them; a bag of cubes,
- * an endless supply of discs, a counter, a timer, the first-player marker and a spinner; dice and a coin; and a line
- * of words saying how to begin. Its cards are the Playing Cards example's (shuffled), if it's there.
+ * an endless supply of discs, a counter, a timer, the first-player marker and a spinner; dice and a coin; a line of
+ * words saying how to begin; and under it all, a chess set of custom art (see chessSet), given its pictures. Its
+ * cards are the Playing Cards example's (shuffled), if it's there.
  */
-export function playground(t: SandboxTable, deck: Deck | undefined, ids: () => string, random: () => number = Math.random): SandboxTable {
+export function playground(
+  t: SandboxTable,
+  deck: Deck | undefined,
+  ids: () => string,
+  random: () => number = Math.random,
+  chess?: ChessArt,
+): SandboxTable {
   const cx = TABLE_W / 2;
   const cy = TABLE_H / 2;
   const at = (dx: number, dy: number) => ({ x: cx + dx, y: cy + dy });
@@ -2380,15 +2431,21 @@ export function playground(t: SandboxTable, deck: Deck | undefined, ids: () => s
     const rest = cards.slice(MARKET_CARDS);
     table = { ...table, stacks: [...(rest.length ? [{ id: ids(), ...at(-500, cardsY), angle: 0, cards: rest }] : []), ...dealt] };
   }
-  // In view: all of it, with a little room round.
-  return { ...table, focus: { x: cx - 580, y: cy - 480, w: 1180, h: 950 } };
+  // The chess set, under the rest (custom art: after the rest, so it lies over the zones; it's nowhere near them).
+  if (chess) table = { ...table, pieces: [...(table.pieces ?? []), ...chessSet(chess, at(0, CHESS_Y), ids)] };
+  // In view: all of it, with a little room round (the chess set too, if it's there).
+  const bottom = chess ? CHESS_Y + Math.round((chess.board.h * CHESS_SQUARE) / CHESS_GRID.square / 2) + 30 : 470;
+  return { ...table, focus: { x: cx - 580, y: cy - 480, w: 1180, h: bottom + 480 } };
 }
+
+/** How far below the Playground's middle its chessboard's middle is (table units): under the rest, a little apart. */
+const CHESS_Y = 820;
 
 /**
  * The Playground's layout: raised each time it changes (2: the card spot and the score pad; 3: laid out in rows,
- * with a market zone), so a Playground made before is laid out again, once.
+ * with a market zone; 4: a chess set of custom art), so a Playground made before is laid out again, once.
  */
-export const PLAYGROUND_VERSION = 3;
+export const PLAYGROUND_VERSION = 4;
 
 /** The table with only the cards that pass keep (on the table, in the hands and in the trash; empty stacks go). */
 export function keepCards(t: SandboxTable, keep: (c: SandboxCard) => boolean): SandboxTable {

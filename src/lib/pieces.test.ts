@@ -235,6 +235,35 @@ test('things grouped are picked out together, boxed as one, laid out as one, pas
   assert.equal(apart.lockedGroups, undefined);
 });
 
+test('the Playground has a chess set of custom art: the board locked under every piece, each on its own square', () => {
+  const pic = (name: string, w: number, h: number) => ({ image: `tokens/${name}.png`, w, h });
+  const names = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn'] as const;
+  const chess = Object.fromEntries([
+    ['board', pic('board', 1112, 1123)],
+    ...(['white', 'black'] as const).flatMap((side) => names.map((n) => [`${side}-${n}`, pic(`${side}-${n}`, 220, n === 'king' ? 480 : 400)])),
+  ]) as Parameters<typeof playground>[4] & object;
+  let n = 0;
+  const t = playground(table(), undefined, () => `p${n++}`, Math.random, chess);
+  const art = t.pieces!.filter((p) => p.kind === 'art');
+  assert.equal(art.length, 33);
+  const [board, ...men] = art;
+  assert.equal(board.image, 'tokens/board.png');
+  assert.equal(board.locked, true);
+  // Each on a square of its own, all on the board, upright and no taller than a square.
+  assert.equal(new Set(men.map((p) => `${p.x},${p.y}`)).size, 32);
+  const { w, h } = pieceSizeOf(board);
+  assert.ok(men.every((p) => Math.abs(p.x - board.x) < w / 2 && Math.abs(p.y - board.y) < h / 2));
+  // White nearest: its king on the fifth square of the bottom row (e1), right of the queen.
+  const at = (image: string) => men.filter((p) => p.image === `tokens/${image}.png`);
+  const [wk] = at('white-king');
+  const [wq] = at('white-queen');
+  const [bk] = at('black-king');
+  assert.ok(wk.y > board.y && bk.y < board.y && wk.x === bk.x && wk.x > wq.x);
+  assert.equal(at('white-pawn').length, 8);
+  // The view takes it in.
+  assert.ok(t.focus!.y + t.focus!.h >= board.y + h / 2);
+});
+
 test('everything moved together into the middle of the table, as it was laid out', () => {
   const cardSize = () => ({ w: 100, h: 140 });
   let t = { ...table(), stacks: [{ id: 's', x: 400, y: 400, angle: 0, cards: [{ iid: 'a', deckId: 'd', cardId: 'a', faceUp: true }] }] };

@@ -6,9 +6,10 @@ import { Alert } from 'react-native';
 import { useDecks } from './DecksContext';
 import * as haptics from './haptics';
 import { newId } from './id';
+import { chessArt } from './chessArt';
 import { playingCards } from './playingCards';
 import { newSandbox, playground, PLAYGROUND_VERSION, solitaire } from './sandbox';
-import type { SandboxTable } from './sandbox';
+import type { ChessArt, SandboxTable } from './sandbox';
 import { createSandboxWith, sandboxes, updateSandbox } from './sandboxStore';
 import type { Deck } from './types';
 import { loadSettings, saveSettings } from './storage';
@@ -19,18 +20,18 @@ const PLAYGROUND = 'Playground';
 
 /**
  * The Playground, as new: laid out again in place (keeping its spot, and its name if it's been renamed), or made
- * again (and noted as the Playground), with the Playing Cards deck. Whether it was made.
+ * again (and noted as the Playground), with the Playing Cards deck and the chess set's pictures. Whether it was made.
  */
-function restorePlayground(deck: Deck | undefined): boolean {
+function restorePlayground(deck: Deck | undefined, chess: ChessArt): boolean {
   const id = loadSettings().playgroundTableId;
   const table = id ? sandboxes().find((t) => t.id === id) : undefined;
   // Laid out as it is now: it has every component.
   if (table) {
-    updateSandbox(playground(newSandbox(table.id, table.name, table.createdAt), deck, newId));
+    updateSandbox(playground(newSandbox(table.id, table.name, table.createdAt), deck, newId, Math.random, chess));
     saveSettings({ ...loadSettings(), playgroundVersion: PLAYGROUND_VERSION });
     return false;
   }
-  const made: SandboxTable = createSandboxWith(PLAYGROUND, (empty) => playground(empty, deck, newId));
+  const made: SandboxTable = createSandboxWith(PLAYGROUND, (empty) => playground(empty, deck, newId, Math.random, chess));
   saveSettings({ ...loadSettings(), playgroundTableId: made.id, playgroundMade: true, playgroundVersion: PLAYGROUND_VERSION });
   return true;
 }
@@ -87,7 +88,7 @@ export function useExamples() {
       saveSettings({ ...loadSettings(), solitaireTableId: made.id });
       added.push(SOLITAIRE);
     }
-    (restorePlayground(deck) ? added : reset).push(PLAYGROUND);
+    (restorePlayground(deck, await chessArt()) ? added : reset).push(PLAYGROUND);
     return { added, reset };
   };
 
@@ -95,17 +96,17 @@ export function useExamples() {
    * An example table as it first was (Solitaire dealt afresh, the Playground laid out again), keeping its id, name
    * and place; or null if it isn't one. Solitaire needs the Playing Cards deck: without it, null too.
    */
-  const freshExample = (table: SandboxTable): SandboxTable | null => {
+  const freshExample = (table: SandboxTable, chess: ChessArt): SandboxTable | null => {
     const deck = playingDeck();
     const empty = newSandbox(table.id, table.name, table.createdAt);
-    if (loadSettings().playgroundTableId === table.id) return playground(empty, deck, newId);
+    if (loadSettings().playgroundTableId === table.id) return playground(empty, deck, newId, Math.random, chess);
     if (solitaireTable()?.id === table.id && deck) return solitaire(empty, deck, newId);
     return null;
   };
 
   /** Asks first, then puts an example table back as it first was (see freshExample), through `put`. */
-  const confirmResetTable = (table: SandboxTable, put: (fresh: SandboxTable) => void = updateSandbox) => {
-    const fresh = freshExample(table);
+  const confirmResetTable = async (table: SandboxTable, put: (fresh: SandboxTable) => void = updateSandbox) => {
+    const fresh = freshExample(table, await chessArt());
     if (!fresh) {
       Alert.alert('Couldn’t reset it', 'The Playing Cards deck is gone. Restore the examples from Help.');
       return;
@@ -127,16 +128,16 @@ export function useExamples() {
    * Just the Playground, if it's never been made (for those who had the other examples before it came); or, made
    * with an older layout (see PLAYGROUND_VERSION), laid out again as new, once (if it's still there).
    */
-  const addPlayground = () => {
+  const addPlayground = async () => {
     const s = loadSettings();
     if (s.playgroundMade) {
       if ((s.playgroundVersion ?? 1) >= PLAYGROUND_VERSION) return;
       const there = !!s.playgroundTableId && sandboxes().some((t) => t.id === s.playgroundTableId);
-      if (there) restorePlayground(playingDeck());
+      if (there) restorePlayground(playingDeck(), await chessArt());
       saveSettings({ ...loadSettings(), playgroundVersion: PLAYGROUND_VERSION });
       return;
     }
-    restorePlayground(playingDeck());
+    restorePlayground(playingDeck(), await chessArt());
   };
 
   /** Asks first (changes to the examples are lost), then restores them and says so. */
