@@ -34,7 +34,11 @@ export type TourEvent =
   | 'tables-lifted'
   | 'tables-flipped'
   | 'tables-options'
-  | 'tables-to-hand';
+  | 'tables-to-hand'
+  | 'add-menu'
+  | 'dice-menu'
+  | 'dice-added'
+  | 'dice-rolled';
 
 /** A control a step can point at, on screen. */
 export type TourTarget =
@@ -186,11 +190,39 @@ export const TOUR: TourStep[] = [
     dim: false,
   },
   {
+    title: 'Add some dice',
+    text: 'Hold an empty spot on the table: everything that can be added shows, to go right there.',
+    until: 'add-menu',
+    place: 'top',
+    dim: false,
+  },
+  {
+    title: 'Dice',
+    text: 'Tap Dice.',
+    tile: 'Dice',
+    until: 'dice-menu',
+  },
+  {
+    title: 'Pick a die',
+    text: 'Tap any die to put it on the table.',
+    until: 'dice-added',
+    place: 'top',
+  },
+  {
+    title: 'Roll it',
+    text: 'Tap the die to roll it. Drag it anywhere, too.',
+    until: 'dice-rolled',
+    after: 1500,
+    place: 'top',
+    dim: false,
+  },
+  {
     title: "You're all set",
-    text: 'Tap the table’s name at the top to add decks or cards, or change its color. The wrench on the left snaps cards to a grid. For every gesture, or this tour again, open the menu (☰) on the home screen and choose Help.',
+    text: 'The wrench holds the tools, and Add to Table for more decks, cards, dice and the rest. The Playground, on the home screen, has every component to try. For every gesture, or this tour again, open the menu (☰) on the home screen and choose Help.',
     next: 'Done',
     place: 'top',
-  },];interface State {
+  },
+];interface State {
   /** The step showing, or null when the tour isn't running. */
   step: number | null;
   /** A step whose result is being shown before the next (see `after`): the tour is still on. */

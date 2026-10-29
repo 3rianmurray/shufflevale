@@ -565,6 +565,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (next === null) lastWindow.set({ closedAt: timeNow(), open: false });
     else lastWindow.set({ follow: was.open || timeNow() - was.closedAt < FOLLOW_MS, open: true });
     setMenuState(next);
+    // The walkthrough's dice steps: what can be added, then the dice to choose from.
+    if (next?.kind === 'components') tourEvent('add-menu');
+    if (next?.kind === 'addDie') tourEvent('dice-menu');
   });
   /** Where an iPad's menu window opens: above the finger that opened it, or (a follow-up) where the last window was. */
   const [menuSpot, setMenuSpot] = useState<{ at?: Point; from?: Rect } | null>(null);
@@ -1108,6 +1111,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (!table) return;
     const { table: next, from } = throwDice(table, ids);
     if (!Object.keys(from).length) return;
+    tourEvent('dice-rolled');
     const landing = (id: string) => {
       const p = next.pieces?.find((q) => q.id === id);
       return { x: p?.x ?? 0, y: p?.y ?? 0 };
@@ -1497,6 +1501,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    * out, ready to roll together.
    */
   const addDice = (sides: number, count: number) => {
+    tourEvent('dice-added');
     if (count <= 1) return addPieceToTable('die', sides);
     if (!table || !view) return;
     const mid = addSpot();
@@ -2562,6 +2567,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // On the roll button, as dice are dragged: they're put down where they've got to, and rolled from there.
         if (first && c && touch.piece.moved && L.onDragRollButton(c.x, c.y)) {
           clearHold();
+          tipLearned('tables-drag-roll');
           const pressed = touch.piece;
           const w = toTable(readCamera(), first.now.x, first.now.y);
           L.dropPieces({
@@ -2923,6 +2929,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             const f = touch.fingers.get(touch.first);
             if (src.kind !== 'hand' && f && L.table?.stacks.some((s) => s.id === src.stackId && s.locked)) {
               touch.emptyTap = { x: f.start.x, y: f.start.y, at: now, locked: true };
+              offerTipSoon('tables-lasso-locked', 1200);
             }
             touch.tapTimer = setTimeout(() => {
               touch.tapTimer = null;
@@ -2966,6 +2973,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             ...(pressed.out ? { out: pressed.out } : {}),
             ...(pressed.turn !== undefined ? { turn: pressed.turn } : {}),
           });
+          // Dice dragged a few times: they can be rolled from where they're dragged to.
+          if (L.table?.pieces?.some((p) => pressed.group.includes(p.id) && p.kind === 'die')) offerTipAfterUses('tables-drag-roll', undefined, 900);
         } else if (pressed?.whole) {
           // A bag held a moment and let go without moving: its options, as any other piece's held.
           L.setMenu({ kind: 'piece', id: pressed.id });
@@ -3329,6 +3338,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (artCount + clip.pieces.filter((p) => p.kind === 'art').length * copies > ART_MAX) return artFull();
     const { table: next, stackIds, pieceIds } = pasteCopies(table, clip, copies, inMiddle ? middleOfView() : addSpot(), newId, size);
     commit(next);
+    // After a few pastes one at a time: Paste several's tip.
+    if (copies > 1) tipLearned('tables-paste-several');
+    else offerTipAfterUses('tables-paste-several', undefined, 900);
     setSelected(stackIds);
     setPickedPieces(pieceIds);
     haptics.drop();
@@ -3925,6 +3937,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                 onPress: () => {
                   commit(groupItems(table, chosen, pieceIds, newId()));
                   haptics.tick();
+                  offerTipSoon('tables-group', 900);
                 },
               },
             ]

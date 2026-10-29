@@ -23,6 +23,10 @@ export const TIPS = {
   'tables-tools-drag': 'Hold the tools tab to move it: up or down, or across to the other side.',
   'tables-drag-to-hand': 'You can also drag a card straight down into the hand to draw it.',
   'deck-scan-backs': 'Lots of cards with their own backs? Scan each front, then its back, and pair them up as you check the cards.',
+  'tables-group': 'Tap any part of a group to pick out all of it; drag one to move it all.',
+  'tables-paste-several': 'Need lots of copies? Paste several, in Add to Table, lays them out in a grid.',
+  'tables-lasso-locked': 'Double-tap, then hold, even on a locked board or deck, to lasso what’s on it.',
+  'tables-drag-roll': 'While dragging dice, tap the roll button with another finger to roll them where they are.',
 } as const;
 
 export type TipId = keyof typeof TIPS;
