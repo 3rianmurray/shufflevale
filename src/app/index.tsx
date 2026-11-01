@@ -28,7 +28,6 @@ import type { Row } from '../lib/groups';
 import { isExampleDeck, isExampleTable, resetExampleLabel, useExamples } from '../lib/examples';
 import { deleteSandbox, duplicateSandbox, moveSandbox, updateSandbox, useSandboxes } from '../lib/sandboxStore';
 import { loadSettings, saveSettings } from '../lib/storage';
-import { setSoundsOn, soundsOn } from '../lib/sounds';
 import { offerTipAfterUses, resetTips, setTipsOn, tipsOn } from '../lib/tips';
 import { startTour, tourEvent, useTourStep } from '../lib/tour';
 import { deckSize } from '../lib/types';
@@ -638,9 +637,6 @@ export default function HomeScreen() {
           tipsOn()
             ? { label: 'Turn tips off', onPress: () => setTipsOn(false) }
             : { label: 'Turn tips on', onPress: () => setTipsOn(true) },
-          soundsOn()
-            ? { label: 'Turn sounds off', onPress: () => setSoundsOn(false) }
-            : { label: 'Turn sounds on', onPress: () => setSoundsOn(true) },
           {
             label: 'Restore examples',
             opensModal: true,

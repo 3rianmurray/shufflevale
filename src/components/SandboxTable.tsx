@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDecks } from '../lib/DecksContext';
 import { askName, askNumber, askText } from '../lib/names';
 import * as haptics from '../lib/haptics';
-import { playSound } from '../lib/sounds';
+import { playSound, setSoundsOn, soundsOn } from '../lib/sounds';
 import { newId } from '../lib/id';
 import {
   addCards,
@@ -818,6 +818,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   /** How tall the tools are, together (measured): the panel is no taller than they need. */
   const [toolsContentH, setToolsContentH] = useState(0);
   const [toolsSpot, setToolsSpot] = useState<ToolsSpot>(() => loadSettings().toolsSpot ?? DEFAULT_TOOLS_SPOT);
+  const [soundOn, setSoundOn] = useState(soundsOn);
   // On an iPhone turned on its side the tools open from a tab in the top bar (beside the back button), with none on
   // the edge: a wider panel slides out on the left, clear of the notch, from below the back button to near the
   // bottom (over the hand, if it's there), and slides wholly off the screen again.
@@ -5199,6 +5200,22 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                   />
                 </View>
               ))}
+              {/* The app's sounds (for every table), so it's kept with the rest of the tools. */}
+              <View style={styles.toolRow}>
+                <SymbolView name={{ ios: 'speaker.wave.2', android: 'volume_up', web: 'volume_up' }} size={18} tintColor={colors.text} />
+                <Text style={styles.toolText}>Sounds</Text>
+                <Switch
+                  value={soundOn}
+                  onValueChange={(on) => {
+                    setSoundsOn(on);
+                    setSoundOn(on);
+                    haptics.tick();
+                  }}
+                  trackColor={{ true: colors.accent, false: undefined }}
+                  accessibilityLabel="Sounds"
+                  accessibilityHint="Card, dice, timer and counter sounds. The phone's silent switch also mutes them."
+                />
+              </View>
               {/* The grid's size: its spacing, for snapping and its lines (shown for a moment as it's chosen). */}
               <Text style={styles.toolLabel}>Grid size</Text>
               <View style={styles.toolSegment}>
