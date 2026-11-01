@@ -1128,9 +1128,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    */
   const rollDice = (ids: string[]) => {
     if (!table) return;
-    const rollingKind = table.pieces?.find((piece) => ids.includes(piece.id))?.kind;
-    if (rollingKind === 'coin') playSound('coinFlip');
-    else if (rollingKind === 'die') playSound(ids.length === 1 ? 'dieRoll' : 'diceRoll');
+    // Coins and dice thrown together are both heard.
+    const rolling = (table.pieces ?? []).filter((piece) => ids.includes(piece.id));
+    const dice = rolling.filter((piece) => piece.kind === 'die').length;
+    if (rolling.some((piece) => piece.kind === 'coin')) playSound('coinFlip');
+    if (dice) playSound(dice === 1 ? 'dieRoll' : 'diceRoll');
     const { table: next, from } = throwDice(table, ids);
     if (!Object.keys(from).length) return;
     tourEvent('dice-rolled');
