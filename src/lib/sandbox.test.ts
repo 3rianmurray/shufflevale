@@ -503,7 +503,7 @@ test('cleaning up: loose pieces go onto the grid too, but cloth zones, custom ar
   };
   const tidy = tidyTable(t, 40);
   const at = (id: string) => tidy.pieces!.find((p) => p.id === id)!;
-  assert.deepEqual([at('die').x, at('die').y, at('die').angle], [200, 200, 45]);
+  assert.deepEqual([at('die').x, at('die').y, at('die').angle], [200, 200, 0]);
   // The counter's spot is taken by the stack, so it goes to the nearest free one.
   assert.notDeepEqual([at('counter').x, at('counter').y], [100, 100]);
   assert.ok(Math.hypot(at('counter').x - 100, at('counter').y - 100) <= 40);

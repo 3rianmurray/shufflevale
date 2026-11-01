@@ -2661,7 +2661,7 @@ export const takeFromTrash = (t: SandboxTable, iids: string[]): SandboxTable => 
 
 /**
  * Tidies the table: every stack turned to the nearest 45° and moved onto the grid, and every loose piece moved onto
- * it too (dice straight, as cards; cloth zones, card spots and custom art stay where they are). Locked ones stay put. Two
+ * it too (dice back to 0, as cards are straight; cloth zones, card spots and custom art stay where they are). Locked ones stay put. Two
  * never share a spot (which would look like one thing): one whose spot is taken goes to the nearest free one.
  */
 export function tidyTable(t: SandboxTable, step = GRID_STEP): SandboxTable {
@@ -2696,7 +2696,7 @@ export function tidyTable(t: SandboxTable, step = GRID_STEP): SandboxTable {
     if (onCloth(p) || p.kind === 'art' || staysPut(t, p)) return p;
     const at = settle(p);
     if (p.kind !== 'die') return { ...p, x: at.x, y: at.y };
-    return { ...p, x: at.x, y: at.y, angle: normalizeAngle(Math.round((p.angle ?? 0) / SNAP_STEP) * SNAP_STEP) };
+    return { ...p, x: at.x, y: at.y, angle: 0 };
   });
   return { ...t, stacks, ...(t.pieces ? { pieces } : {}) };
 }
