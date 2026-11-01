@@ -818,7 +818,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   /** How tall the tools are, together (measured): the panel is no taller than they need. */
   const [toolsContentH, setToolsContentH] = useState(0);
   const [toolsSpot, setToolsSpot] = useState<ToolsSpot>(() => loadSettings().toolsSpot ?? DEFAULT_TOOLS_SPOT);
-  const [soundOn, setSoundOn] = useState(soundsOn);
+  // The sounds setting is kept app-wide (lib/sounds), so the switch reads it each time it's drawn; this just redraws it.
+  const [, setSoundsShown] = useState(0);
   // On an iPhone turned on its side the tools open from a tab in the top bar (beside the back button), with none on
   // the edge: a wider panel slides out on the left, clear of the notch, from below the back button to near the
   // bottom (over the hand, if it's there), and slides wholly off the screen again.
@@ -5205,10 +5206,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                 <SymbolView name={{ ios: 'speaker.wave.2', android: 'volume_up', web: 'volume_up' }} size={18} tintColor={colors.text} />
                 <Text style={styles.toolText}>Sounds</Text>
                 <Switch
-                  value={soundOn}
+                  value={soundsOn()}
                   onValueChange={(on) => {
                     setSoundsOn(on);
-                    setSoundOn(on);
+                    setSoundsShown((n) => n + 1);
                     haptics.tick();
                   }}
                   trackColor={{ true: colors.accent, false: undefined }}
