@@ -2660,17 +2660,16 @@ export const removeStacks = (t: SandboxTable, ids: string[]): SandboxTable =>
 export const takeFromTrash = (t: SandboxTable, iids: string[]): SandboxTable => ({ ...t, trash: (t.trash ?? []).filter((c) => !iids.includes(c.iid)) });
 
 /**
- * Tidies the table: every stack (but locked ones) turned to the nearest 45° and moved onto the grid. Two never
- * share a spot (which would look like one stack): a stack whose spot is taken goes to the nearest free one.
+ * Tidies the table: every stack turned to the nearest 45° and moved onto the grid, and every loose piece moved onto
+ * it too (its turn kept; cloth zones, card spots and custom art stay where they are). Locked ones stay put. Two
+ * never share a spot (which would look like one thing): one whose spot is taken goes to the nearest free one.
  */
 export function tidyTable(t: SandboxTable, step = GRID_STEP): SandboxTable {
   const key = (p: { x: number; y: number }) => `${Math.round(p.x)},${Math.round(p.y)}`;
-  // Locked ones stay where they are, and keep their spots.
-  const taken = new Set(t.stacks.filter((s) => s.locked).map(key));
-  const stacks = t.stacks.map((s) => {
-    if (s.locked) return s;
-    const angle = normalizeAngle(Math.round(s.angle / SNAP_STEP) * SNAP_STEP);
-    let at = snapToGrid({ x: s.x, y: s.y, angle }, step);
+  // Things that stay put keep their spots.
+  const taken = new Set([...t.stacks.filter((s) => staysPut(t, s)), ...(t.pieces ?? []).filter((p) => staysPut(t, p))].map(key));
+  const settle = (item: { x: number; y: number }) => {
+    let at = snapToGrid({ ...item, angle: 0 }, step);
     if (taken.has(key(at))) {
       // The nearest free grid spot: crossings and square middles round it, nearest first.
       const spots: { x: number; y: number }[] = [];
@@ -2682,13 +2681,23 @@ export function tidyTable(t: SandboxTable, step = GRID_STEP): SandboxTable {
       const inside = (p: { x: number; y: number }) => p.x >= 0 && p.y >= 0 && p.x <= TABLE_W && p.y <= TABLE_H;
       const free = spots
         .filter((p) => inside(p) && !taken.has(key(p)))
-        .sort((a, b) => Math.hypot(a.x - s.x, a.y - s.y) - Math.hypot(b.x - s.x, b.y - s.y))[0];
-      if (free) at = { ...free, angle };
+        .sort((a, b) => Math.hypot(a.x - item.x, a.y - item.y) - Math.hypot(b.x - item.x, b.y - item.y))[0];
+      if (free) at = { ...free, angle: 0 };
     }
     taken.add(key(at));
-    return { ...s, x: at.x, y: at.y, angle };
+    return at;
+  };
+  const stacks = t.stacks.map((s) => {
+    if (staysPut(t, s)) return s;
+    const angle = normalizeAngle(Math.round(s.angle / SNAP_STEP) * SNAP_STEP);
+    return { ...s, ...settle(s), angle };
   });
-  return { ...t, stacks };
+  const pieces = (t.pieces ?? []).map((p) => {
+    if (onCloth(p) || p.kind === 'art' || staysPut(t, p)) return p;
+    const at = settle(p);
+    return { ...p, x: at.x, y: at.y };
+  });
+  return { ...t, stacks, ...(t.pieces ? { pieces } : {}) };
 }
 
 /**

@@ -47,7 +47,7 @@ import {
   toTable,
   turnStack,
 } from './sandbox.ts';
-import type { Camera, SandboxCard, SandboxTable } from './sandbox.ts';
+import type { Camera, SandboxCard, SandboxTable, TablePiece } from './sandbox.ts';
 import type { Deck } from './types.ts';
 
 const near = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -487,6 +487,29 @@ test('cleaning up: straight, on the grid, never two stacks in one spot, locked o
   assert.notDeepEqual([b.x, b.y], [100, 100]);
   assert.ok(Math.hypot(b.x - 100, b.y - 100) <= 40);
   assert.deepEqual([l.x, l.y, l.angle], [333, 333, 7]);
+});
+
+test('cleaning up: loose pieces go onto the grid too, but cloth zones, custom art and locked pieces stay', () => {
+  const piece = (id: string, kind: TablePiece['kind'], x: number, y: number, extra: Partial<TablePiece> = {}): TablePiece => ({ id, kind, x, y, value: 1, ...extra });
+  const t = {
+    ...tableWith({ id: 'a', x: 101, y: 99, angle: 0, cards: [card('1')] }),
+    pieces: [
+      piece('die', 'die', 203, 197),
+      piece('counter', 'counter', 101, 99),
+      piece('zone', 'zone', 57, 61, { w: 200, h: 200 }),
+      piece('art', 'art', 333, 333, { w: 100, h: 100 }),
+      piece('locked', 'token', 500, 500, { locked: true }),
+    ],
+  };
+  const tidy = tidyTable(t, 40);
+  const at = (id: string) => tidy.pieces!.find((p) => p.id === id)!;
+  assert.deepEqual([at('die').x, at('die').y], [200, 200]);
+  // The counter's spot is taken by the stack, so it goes to the nearest free one.
+  assert.notDeepEqual([at('counter').x, at('counter').y], [100, 100]);
+  assert.ok(Math.hypot(at('counter').x - 100, at('counter').y - 100) <= 40);
+  assert.deepEqual([at('zone').x, at('zone').y], [57, 61]);
+  assert.deepEqual([at('art').x, at('art').y], [333, 333]);
+  assert.deepEqual([at('locked').x, at('locked').y], [500, 500]);
 });
 
 test('gathering up: each deck used anywhere comes back whole, shuffled and face down; hands and trash emptied', () => {

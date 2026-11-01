@@ -3448,7 +3448,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     // Just once, when the table's first laid out.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitFirst, view]);
-  /** The tools' Clean Up: every card straight and on the grid, none sharing a spot. */
+  /** The tools' Clean Up: every card straight and every piece on the grid, none sharing a spot. */
   const cleanUp = () => {
     if (!table) return;
     commit(tidyTable(table, gridStep));
