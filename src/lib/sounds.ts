@@ -13,7 +13,7 @@ const sources = {
   timerEnd: require('../../assets/sounds/timer-end.wav'),
   spinner: require('../../assets/sounds/spinner.wav'),
 };
-const VOLUME: Partial<Record<Sound, number>> = { cardFlip: 0.3, counterClick: 0.3, timerStart: 0.6, timerEnd: 0.6, spinner: 0.35 };
+const VOLUME: Partial<Record<Sound, number>> = { cardFlip: 0.3, counterClick: 0.3, timerStart: 0.6, timerEnd: 0.6, spinner: 0.5 };
 
 type Sound = keyof typeof sources;
 type Player = ReturnType<typeof createAudioPlayer>;
