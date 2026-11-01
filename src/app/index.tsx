@@ -789,9 +789,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 10,
-    backgroundColor: 'rgba(224,179,84,0.1)',
+    // A touch of gold over the page, made solid so the swipe's Delete button doesn't show through.
+    backgroundColor: '#282620',
     borderWidth: 1,
-    borderColor: 'rgba(224,179,84,0.35)',
+    borderColor: '#695732',
   },
   chevron: { color: colors.accent, fontSize: 16, width: 14 },
   groupName: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '700' },
