@@ -1562,9 +1562,15 @@ function Timer({ piece, color, size, selected, k }: { piece: TablePiece; color: 
   }, [running]);
   const left = running && now ? Math.max(0, (piece.endsAt! - now) / 1000) : (piece.left ?? piece.value);
   const done = running && now > 0 && left <= 0;
-  // A buzz (twice) as it runs out.
+  // A buzz (twice) and its beeps as it runs out: only seen running out (still going when the table was opened), not
+  // found already run out.
   const buzzed = useRef(false);
+  const ticking = useRef(false);
   useEffect(() => {
+    if (running && now > 0 && left > 0) ticking.current = true;
+  }, [running, now, left]);
+  useEffect(() => {
+    if (done && !ticking.current) buzzed.current = true;
     if (done && !buzzed.current) {
       buzzed.current = true;
       haptics.warn();
