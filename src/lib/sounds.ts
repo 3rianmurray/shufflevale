@@ -8,8 +8,12 @@ const sources = {
   dieRoll: require('../../assets/sounds/die-roll.mp3'),
   diceRoll: require('../../assets/sounds/dice-roll.mp3'),
   coinFlip: require('../../assets/sounds/coin-flip.mp3'),
+  counterClick: require('../../assets/sounds/counter-click.wav'),
+  timerStart: require('../../assets/sounds/timer-start.wav'),
+  timerEnd: require('../../assets/sounds/timer-end.wav'),
+  spinner: require('../../assets/sounds/spinner.wav'),
 };
-const VOLUME: Partial<Record<Sound, number>> = { cardFlip: 0.3 };
+const VOLUME: Partial<Record<Sound, number>> = { cardFlip: 0.3, counterClick: 0.5 };
 
 type Sound = keyof typeof sources;
 type Player = ReturnType<typeof createAudioPlayer>;

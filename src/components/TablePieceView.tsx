@@ -13,6 +13,7 @@ import { Animated, Easing, Platform, StyleSheet, Text, View } from 'react-native
 import { Image } from 'expo-image';
 
 import * as haptics from '../lib/haptics';
+import { playSound } from '../lib/sounds';
 import {
   bagItems,
   defaultPieceColor,
@@ -1567,6 +1568,7 @@ function Timer({ piece, color, size, selected, k }: { piece: TablePiece; color: 
     if (done && !buzzed.current) {
       buzzed.current = true;
       haptics.warn();
+      playSound('timerEnd');
       const again = setTimeout(haptics.warn, 450);
       return () => clearTimeout(again);
     }
