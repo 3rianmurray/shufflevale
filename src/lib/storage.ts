@@ -148,6 +148,8 @@ export interface Settings {
   solitaireTableId?: string;
   /** Tips (see lib/tips) are turned off. */
   tipsOff?: boolean;
+  /** The table's sound effects (see lib/sounds) are turned off. */
+  soundsOff?: boolean;
   /** The tips already shown (each shows once). */
   seenTips?: string[];
   /** Uses of buttons that have a quicker gesture, toward offering that gesture's tip (see lib/tips). */

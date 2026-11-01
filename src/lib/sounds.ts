@@ -1,4 +1,5 @@
 import { createAudioPlayer, preload, setAudioModeAsync } from 'expo-audio';
+import { loadSettings, saveSettings } from './storage';
 
 /** The table's sound effects (swap a file in assets/sounds, keeping its name, to change one). */
 const sources = {
@@ -79,8 +80,18 @@ async function playQueued(sound: Sound) {
   }
 }
 
+let off = loadSettings().soundsOff ?? false;
+
+export const soundsOn = () => !off;
+
+export function setSoundsOn(on: boolean) {
+  off = !on;
+  saveSettings({ ...loadSettings(), soundsOff: off });
+}
+
 /** Plays a short bundled effect. Fail quietly so audio never interrupts a table action. */
 export function playSound(sound: Sound) {
+  if (off) return;
   queued.set(sound, (queued.get(sound) ?? 0) + 1);
   void playQueued(sound);
 }
