@@ -30,6 +30,7 @@ import { leanAt, leanOffset } from './viewpoint';
 import type { Lean } from './viewpoint';
 import { useDecks } from '../lib/DecksContext';
 import * as haptics from '../lib/haptics';
+import { playSound } from '../lib/sounds';
 import * as T from '../lib/table';
 import { fitTilt, project, tiltTransform, unproject } from '../lib/tilt';
 import { countFor, offerTipSoon, tipLearned } from '../lib/tips';
@@ -742,6 +743,7 @@ function Table({
    * in) and plays a riffle over it. With motion turned down there's just a tap to feel it happen.
    */
   const shuffleDeck = (fn: (t: TableState) => TableState = (t) => T.shuffleZone(t, 'deck'), msg = 'Shuffled') => {
+    playSound('shuffle');
     // The riffle shows it happened, so there's no message, unless motion is turned down and it can't play.
     if (prefersReducedMotion()) {
       apply(fn, msg);
@@ -898,7 +900,10 @@ function Table({
       // Already there (except the deck, where it can still move to the top or bottom).
       disabled: zone === from && zone !== 'deck',
       destructive: zone === 'trash',
-      onPress: go(moveTo(zone, position), zone === 'trash' ? 'Moved to the trash' : undefined),
+      onPress: () => {
+        if (zone === 'hand' || (zone === 'deck' && from !== 'deck')) playSound('cardFlip');
+        go(moveTo(zone, position), zone === 'trash' ? 'Moved to the trash' : undefined)();
+      },
     });
     // A face-down card on the table or in the hand can't be looked at; in the search every card is face up.
     const found = T.findCard(table, iid);
@@ -922,7 +927,7 @@ function Table({
       ...(stack
         ? [{ label: 'Flip over', icon: FLIP_ICON, onPress: () => flipStack(iid) }]
         : !reveal && (from === 'hand' || (from === 'table' && !(group && group.length > 1)))
-          ? [{ label: 'Flip over', icon: FLIP_ICON, onPress: () => apply((t) => T.flip(t, iid)) }]
+          ? [{ label: 'Flip over', icon: FLIP_ICON, onPress: () => { playSound('cardFlip'); apply((t) => T.flip(t, iid)); } }]
           : []),
       ...(reveal
         ? []
@@ -951,8 +956,8 @@ function Table({
     const cards = `${n} ${n === 1 ? 'card' : 'cards'}`;
     const go = (fn: (t: TableState) => TableState, msg?: string) => () => moveCards(fn, msg, true);
     return [
-      { label: 'Top of the deck', onPress: go((t) => T.moveCards(t, iids, 'deck')) },
-      { label: 'Bottom of the deck', onPress: go((t) => iids.reduce((s, iid) => T.moveCard(s, iid, 'deck', 'bottom'), t)) },
+      { label: 'Top of the deck', onPress: () => { playSound('cardFlip'); go((t) => T.moveCards(t, iids, 'deck'))(); } },
+      { label: 'Bottom of the deck', onPress: () => { playSound('cardFlip'); go((t) => iids.reduce((s, iid) => T.moveCard(s, iid, 'deck', 'bottom'), t))(); } },
       ...(from === 'discard' ? [] : [{ label: 'Discard pile', onPress: go((t) => T.moveCards(t, iids, 'discard')) }]),
       ...(from === 'trash' ? [] : [{ label: `Trash ${cards}`, destructive: true, onPress: go((t) => T.moveCards(t, iids, 'trash'), 'Moved to the trash') }]),
     ];
@@ -1316,6 +1321,7 @@ function Table({
   const flipStack = (iid: string) => {
     const g = tableGroups.find((grp) => grp.some((c) => c.iid === iid));
     if (!g || g.length < 2) return;
+    playSound('cardFlip');
     const oldTop = g[g.length - 1];
     const newTop = g[0];
     const i = tableGroups.indexOf(g);
@@ -1425,6 +1431,7 @@ function Table({
     const t = touches.find((c) => c.identifier !== drag?.touchId);
     if (!t) return;
     if (onFlipButton(t)) {
+      playSound('cardFlip');
       haptics.tick();
       setDrag((d) => d && { ...d, faceUp: !d.faceUp, stack: d.stack.slice().reverse() });
       return;
@@ -1980,6 +1987,11 @@ function Table({
           const lift = !drag.verticalOnly || Math.abs(dy) > Math.abs(dx);
           if (lift) {
             liftedPress.set(drag.pressedAt);
+            if (
+              drag.from === 'table' &&
+              !drag.wholeStack &&
+              tableGroups.some((group) => group.length > 1 && group[group.length - 1].iid === drag.iid)
+            ) playSound('cardFlip');
             // Felt as it comes off the table: a whole stack a little heavier than one card.
             if (drag.wholeStack) haptics.liftHeavy();
             else haptics.lift();
@@ -2290,11 +2302,12 @@ function Table({
           actions: [
             ...(table.discard[0] ? [{ label: 'View top card full size', onPress: () => setZoomed(table.discard[0].iid) }] : []),
             ...(reveal
-              ? [{ label: 'Put top card back on the deck', onPress: () => moveCards((t) => T.takeTopOfDiscard(t, 'deck')) }]
+              ? [{ label: 'Put top card back on the deck', onPress: () => { playSound('cardFlip'); moveCards((t) => T.takeTopOfDiscard(t, 'deck')); } }]
               : [
                   {
                     label: 'Take top card into hand',
                     onPress: () => {
+                      playSound('cardFlip');
                       showHandStart();
                       moveCards((t) => (t.discard[0] ? T.insertCards(t, [t.discard[0].iid], 'hand', 0) : t));
                     },

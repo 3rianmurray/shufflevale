@@ -303,18 +303,18 @@ export function CropModal({ uris, ratio, roundness, onRoundness, onDone, onCance
 function ShapeOverlay({ area, frame, outline }: { area: Size; frame: Size; outline: [number, number][] }) {
   const left = (area.w - frame.w) / 2;
   const top = (area.h - frame.h) / 2;
-  const shape = Skia.Path.Make();
+  const shape = Skia.PathBuilder.Make();
   outline.forEach(([x, y], i) => (i ? shape.lineTo(left + x * frame.w, top + y * frame.h) : shape.moveTo(left + x * frame.w, top + y * frame.h)));
   shape.close();
   // The whole area, with the shape cut out of it.
-  const around = Skia.Path.Make();
+  const around = Skia.PathBuilder.Make();
   around.addRect(Skia.XYWHRect(0, 0, area.w, area.h));
-  around.addPath(shape);
+  around.addPath(shape.build());
   around.setFillType(FillType.EvenOdd);
   return (
     <Canvas style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
-      <Path path={around} color="rgba(0,0,0,0.6)" />
-      <Path path={shape} color={colors.accent} style="stroke" strokeWidth={2} />
+      <Path path={around.build()} color="rgba(0,0,0,0.6)" />
+      <Path path={shape.build()} color={colors.accent} style="stroke" strokeWidth={2} />
     </Canvas>
   );
 }
@@ -323,12 +323,12 @@ const SHAPE_ICON = 26;
 
 /** A shape to choose, drawn small as its outline (filled in gold, once it's chosen). */
 function ShapeIcon({ outline, on }: { outline: [number, number][]; on: boolean }) {
-  const path = Skia.Path.Make();
+  const path = Skia.PathBuilder.Make();
   outline.forEach(([x, y], i) => (i ? path.lineTo(1 + x * (SHAPE_ICON - 2), 1 + y * (SHAPE_ICON - 2)) : path.moveTo(1 + x * (SHAPE_ICON - 2), 1 + y * (SHAPE_ICON - 2))));
   path.close();
   return (
     <Canvas style={{ width: SHAPE_ICON, height: SHAPE_ICON, pointerEvents: 'none' }}>
-      <Path path={path} color={on ? colors.accent : colors.text} style={on ? 'fill' : 'stroke'} strokeWidth={2} strokeJoin="round" />
+      <Path path={path.build()} color={on ? colors.accent : colors.text} style={on ? 'fill' : 'stroke'} strokeWidth={2} strokeJoin="round" />
     </Canvas>
   );
 }

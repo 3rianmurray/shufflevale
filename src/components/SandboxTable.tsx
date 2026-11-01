@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDecks } from '../lib/DecksContext';
 import { askName, askNumber, askText } from '../lib/names';
 import * as haptics from '../lib/haptics';
+import { playSound } from '../lib/sounds';
 import { newId } from '../lib/id';
 import {
   addCards,
@@ -1076,6 +1077,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   /** A double tap: the card (or the whole stack) turned over where it lies. */
   const flipFromTap = (src: Source) => {
     if (!table || src.kind === 'bag') return;
+    playSound('cardFlip');
     if (src.kind === 'hand') commit(flipInHand(table, src.hand, src.iid));
     // Turned over to face the way the stack it lies on does, it joins it.
     else commit(settleOnto(flipStack(table, src.stackId), src.stackId));
@@ -1126,6 +1128,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    */
   const rollDice = (ids: string[]) => {
     if (!table) return;
+    const rollingKind = table.pieces?.find((piece) => ids.includes(piece.id))?.kind;
+    if (rollingKind === 'coin') playSound('coinFlip');
+    else if (rollingKind === 'die') playSound(ids.length === 1 ? 'dieRoll' : 'diceRoll');
     const { table: next, from } = throwDice(table, ids);
     if (!Object.keys(from).length) return;
     tourEvent('dice-rolled');
@@ -1621,6 +1626,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   /** The flip button, for the selection: each of its stacks turned over where it lies (one alone joins the stack it lies on, if it now faces the same way). */
   const flipGroup = () => {
     if (!table) return;
+    playSound('cardFlip');
     const flipped = chosen.reduce((t, id) => flipStack(t, id), table);
     commit(chosen.length === 1 && !groupMoving ? settleOnto(flipped, chosen[0]) : flipped);
     haptics.tick();
@@ -1694,6 +1700,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (!table) return;
     const stacks = ids.filter((id) => (table.stacks.find((s) => s.id === id)?.cards.length ?? 0) > 1);
     if (!stacks.length) return;
+    playSound('shuffle');
     commit(stacks.reduce((t, id) => shuffleStack(t, id), table));
     setRiffling((r) => ({ stackIds: stacks, key: (r?.key ?? 0) + 1, started: false }));
   };
@@ -2020,6 +2027,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (!cards.length) return;
     // A stack's top card, as that very card (so more can be taken from the same stack after it).
     const exact: Source = src.kind === 'top' ? { kind: 'card', stackId: src.stackId, iid: cards[0].iid } : src;
+    if (
+      exact.kind === 'card' &&
+      L.table.stacks.some((stack) => stack.id === exact.stackId && stack.cards.length > 1 && stack.cards[stack.cards.length - 1].iid === exact.iid)
+    ) playSound('cardFlip');
     const cam = readCamera();
     if (src.kind === 'hand') {
       // From the hand: upright on screen, under the finger (at its hand size while it's still over the hand).
@@ -2047,6 +2058,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const turnOver = () => {
     const touch = gestureState.get();
     const L = latest.get();
+    playSound('cardFlip');
     touch.cards = [...touch.cards].reverse().map((c) => ({ ...c, faceUp: !c.faceUp }));
     touch.turnedOver = !touch.turnedOver;
     L.setHeld({ sources: touch.sources, cards: touch.cards });
@@ -2083,6 +2095,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       haptics.warn();
       return;
     }
+    const addedCardSource = add.src.kind === 'card' ? add.src : null;
+    if (
+      addedCardSource &&
+      L.table.stacks.some((stack) => stack.id === addedCardSource.stackId && stack.cards.length > 1 && stack.cards[stack.cards.length - 1].iid === addedCardSource.iid)
+    ) playSound('cardFlip');
     touch.sources = [...touch.sources, add.src];
     touch.cards = [...touch.cards, add.card];
     L.setHeld({ sources: touch.sources, cards: touch.cards });
@@ -3519,7 +3536,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         : []),
       {
         label: `Into ${table.handNames[handIndex]}`,
-        onPress: () => commit(putInHand(take(table, src), [{ ...card, faceUp: true }], handIndex)),
+        onPress: () => {
+          playSound('cardFlip');
+          commit(putInHand(take(table, src), [{ ...card, faceUp: true }], handIndex));
+        },
       },
       {
         label: 'Onto the table, face up',
@@ -3563,7 +3583,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           endSearch();
         },
       },
-      { label: `Into ${table.handNames[handIndex]}`, onPress: () => commit(putInHand(rest, cards.map((c) => ({ ...c, faceUp: true })), handIndex)) },
+      { label: `Into ${table.handNames[handIndex]}`, onPress: () => { playSound('cardFlip'); commit(putInHand(rest, cards.map((c) => ({ ...c, faceUp: true })), handIndex)); } },
       { label: 'Top of this stack', onPress: () => commit(reorderStack(table, searchStack.id, places, 0)) },
       { label: 'Bottom of this stack', onPress: () => commit(reorderStack(table, searchStack.id, places, topFirst.length - n)) },
       { label: n === 1 ? 'Take it off the table' : `Take all ${n} off the table`, destructive: true, onPress: () => commit(trashCards(rest, cards)) },
@@ -3752,6 +3772,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           label: 'Flip over',
           icon: FLIP_ICON,
           onPress: () => {
+            playSound('cardFlip');
             commit(settleOnto(flipStack(table, menuStack.id), menuStack.id));
             offerTipAfterUses('tables-double-tap');
           },
@@ -3761,6 +3782,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           label: 'Draw',
           icon: { ios: 'arrow.down.to.line', android: 'download', web: 'download' },
           onPress: () => {
+            playSound('cardFlip');
             commit(dealToHand(table, menuStack.id, 1, handIndex));
             haptics.drop();
             // After a few times: dragging a card into the hand does this too.
@@ -3852,7 +3874,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (menu.kind === 'hand' && menuHandCard) {
       const src: Source = { kind: 'hand', hand: menu.hand, iid: menu.iid };
       const tiles: SheetTile[] = [
-        { label: 'Flip over', icon: FLIP_ICON, onPress: () => commit(flipInHand(table, menu.hand, menu.iid)) },
+        { label: 'Flip over', icon: FLIP_ICON, onPress: () => { playSound('cardFlip'); commit(flipInHand(table, menu.hand, menu.iid)); } },
         ...(menuHandCard.faceUp
           ? [{ label: 'Full size', icon: { ios: 'arrow.up.left.and.arrow.down.right', android: 'open_in_full', web: 'open_in_full' } as const, keepsOpen: true, onPress: () => setZoomed(menuHandCard) }]
           : []),
@@ -5504,6 +5526,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               max={menuStack.cards.length}
               players={table.handNames.map((name, i) => ({ name, holding: table.hands[i].length }))}
               onDeal={(count, player) => {
+                playSound('cardFlip');
                 commit(dealToHand(table, menuStack.id, count, player));
                 haptics.drop();
                 setMenu(null);

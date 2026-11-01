@@ -1,4 +1,4 @@
-import { Canvas, Circle, Group, Image as SkImage, matchFont, Path, Shadow, Skia, Text as SkText, useImage, vec } from '@shopify/react-native-skia';
+import { Canvas, Circle, Group, Image as SkImage, matchFont, Path, PathOp, Shadow, Skia, Text as SkText, useImage, vec } from '@shopify/react-native-skia';
 import type { SkFont, SkImage as SkiaImage, SkPath } from '@shopify/react-native-skia';
 import Reanimated, { Easing as ReEasing, interpolate, makeMutable, useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
@@ -136,8 +136,7 @@ let faceSquare: SkPath | null = null;
 function FACE_SQUARE_PATH() {
   if (!faceSquare) {
     const r = CUBE_ROUND / CUBE_FACE.size;
-    faceSquare = Skia.Path.Make();
-    faceSquare.addRRect(Skia.RRectXY(Skia.XYWHRect(0, 0, 1, 1), r, r));
+    faceSquare = Skia.PathBuilder.Make().addRRect(Skia.RRectXY(Skia.XYWHRect(0, 0, 1, 1), r, r)).build();
   }
   return faceSquare;
 }
@@ -603,14 +602,14 @@ function Die({
   const canvas = px * (1 + PAD * 2);
   const at = (p: Pt) => [(p[0] + PAD) * px, (p[1] + PAD) * px] as const;
   const path = (pts: Pt[]) => {
-    const p = Skia.Path.Make();
+    const p = Skia.PathBuilder.Make();
     pts.forEach((pt, i) => (i ? p.lineTo(...at(pt)) : p.moveTo(...at(pt))));
     p.close();
-    return p;
+    return p.build();
   };
   /** A shape with its corners rounded (each by up to `r`, in the 0–1 box), as a solid's edges are. */
   const rounded = (pts: Pt[], r: number) => {
-    const p = Skia.Path.Make();
+    const p = Skia.PathBuilder.Make();
     const last = pts[pts.length - 1];
     p.moveTo(...at([(last[0] + pts[0][0]) / 2, (last[1] + pts[0][1]) / 2]));
     pts.forEach((pt, i) => {
@@ -618,7 +617,7 @@ function Die({
       p.arcToTangent(...at(pt), ...at(next), r * px);
     });
     p.close();
-    return p;
+    return p.build();
   };
   const shadow = <Shadow dx={2 * OS} dy={4 * OS} blur={4 * OS} color="rgba(0,0,0,0.45)" shadowOnly />;
   const edge = shade(color, -0.45);
@@ -772,7 +771,7 @@ function SolidD6({
   const view = useDerivedValue(() => drawCubeSlots(tumblingTurn(rest, spin, spun.value)));
   const outline = useDerivedValue(() => {
     const pts = view.value.outline;
-    const p = Skia.Path.Make();
+    const p = Skia.PathBuilder.Make();
     const last = pts[pts.length - 1];
     p.moveTo(((last[0] + pts[0][0]) / 2 + PAD) * px, ((last[1] + pts[0][1]) / 2 + PAD) * px);
     pts.forEach((pt, i) => {
@@ -780,7 +779,7 @@ function SolidD6({
       p.arcToTangent((pt[0] + PAD) * px, (pt[1] + PAD) * px, (next[0] + PAD) * px, (next[1] + PAD) * px, CUBE_ROUND * px);
     });
     p.close();
-    return p;
+    return p.build();
   });
   // The side facing the viewer most (drawn biggest): it has the rounded face and the light along its edge.
   const front = useDerivedValue(() => {
@@ -858,10 +857,10 @@ function SolidPoly({
 }) {
   const view = useDerivedValue(() => drawPoly(model, tumblingTurn(rest, spin, spun.value)));
   const outline = useDerivedValue(() => {
-    const p = Skia.Path.Make();
+    const p = Skia.PathBuilder.Make();
     view.value.outline.forEach((c, k) => (k ? p.lineTo((c[0] + PAD) * px, (c[1] + PAD) * px) : p.moveTo((c[0] + PAD) * px, (c[1] + PAD) * px)));
     p.close();
-    return p;
+    return p.build();
   });
   return (
     <>
@@ -898,11 +897,11 @@ function SolidPolyFace({
 }) {
   const path = useDerivedValue(() => {
     const s = view.value.slots[i];
-    const p = Skia.Path.Make();
-    if (!s.seen) return p;
+    const p = Skia.PathBuilder.Make();
+    if (!s.seen) return p.build();
     s.corners.forEach((c, k) => (k ? p.lineTo((c[0] + PAD) * px, (c[1] + PAD) * px) : p.moveTo((c[0] + PAD) * px, (c[1] + PAD) * px)));
     p.close();
-    return p;
+    return p.build();
   });
   const fill = useDerivedValue(() => shade(color, view.value.slots[i].light));
   const matrix = useDerivedValue(() => {
@@ -963,11 +962,11 @@ type CubeView = SharedValue<{ slots: SideSlot[]; outline: Pt[] }>;
 function SolidSideFill({ view, i, color, px }: { view: CubeView; i: number; color: string; px: number }) {
   const path = useDerivedValue(() => {
     const s = view.value.slots[i];
-    const p = Skia.Path.Make();
-    if (!s.seen) return p;
+    const p = Skia.PathBuilder.Make();
+    if (!s.seen) return p.build();
     s.corners.forEach((c, k) => (k ? p.lineTo((c[0] + PAD) * px, (c[1] + PAD) * px) : p.moveTo((c[0] + PAD) * px, (c[1] + PAD) * px)));
     p.close();
-    return p;
+    return p.build();
   });
   const fill = useDerivedValue(() => shade(color, view.value.slots[i].light));
   return <Path path={path} color={fill} />;
@@ -1056,10 +1055,10 @@ function artFrame(w: number, h: number, OS: number) {
     /** A length across the piece (as a share of its width) in the drawing's own units. */
     len: (u: number) => u * w * OS,
     poly: (pts: Pt[]) => {
-      const p = Skia.Path.Make();
+      const p = Skia.PathBuilder.Make();
       pts.forEach((pt, i) => (i ? p.lineTo(...at(pt)) : p.moveTo(...at(pt))));
       p.close();
-      return p;
+      return p.build();
     },
   };
 }
@@ -1070,12 +1069,12 @@ const SHADOW_ROOM = 16;
 
 /** A shape with its corners rounded (by up to `r`, as a share of the piece's width), as a solid's edges are. */
 function roundedPath(art: ReturnType<typeof artFrame>, pts: Pt[], r: number) {
-  const p = Skia.Path.Make();
+  const p = Skia.PathBuilder.Make();
   const last = pts[pts.length - 1];
   p.moveTo(...art.at([(last[0] + pts[0][0]) / 2, (last[1] + pts[0][1]) / 2]));
   pts.forEach((pt, i) => p.arcToTangent(...art.at(pt), ...art.at(pts[(i + 1) % pts.length]), art.len(r)));
   p.close();
-  return p;
+  return p.build();
 }
 
 /**
@@ -1083,7 +1082,7 @@ function roundedPath(art: ReturnType<typeof artFrame>, pts: Pt[], r: number) {
  * to the bottom circle (the two circles joined along their sides), so it reads as a solid disc, not two circles.
  */
 function cylinderPath(c: readonly [number, number], r: number, d: readonly [number, number]) {
-  const p = Skia.Path.Make();
+  const p = Skia.PathBuilder.Make();
   const len = Math.hypot(d[0], d[1]) || 1;
   const n = [(-d[1] / len) * r, (d[0] / len) * r];
   p.addCircle(c[0], c[1], r);
@@ -1093,14 +1092,12 @@ function cylinderPath(c: readonly [number, number], r: number, d: readonly [numb
   p.lineTo(c[0] - n[0] + d[0], c[1] - n[1] + d[1]);
   p.lineTo(c[0] - n[0], c[1] - n[1]);
   p.close();
-  return p;
+  return p.build();
 }
 
 /** A shape made of overlapping parts as one outline, round its outside only (so a rim drawn on it skips the joins). */
 function outsideOf(path: SkPath) {
-  const one = path.copy();
-  one.simplify();
-  return one;
+  return Skia.Path.MakeFromOp(path, Skia.Path.Make(), PathOp.Union) ?? path;
 }
 
 /** Starts a tumble (or flip, or spin) each time `rollKey` changes, over ROLL_MS: 0 to 1, eased out. */
@@ -1325,7 +1322,7 @@ function PlayingPiece({ piece, color, w, h, selected }: { piece: TablePiece; col
   const sideColor = shade(color, -0.42);
   /** Its whole outline, its parts and its side as one (for its gold rim, picked out: only round the outside). */
   const silhouette = () => {
-    const all = Skia.Path.Make();
+    const all = Skia.PathBuilder.Make();
     for (const moved of [false, true]) {
       for (const o of outlines) all.addPath(art.poly(moved ? shift(o) : o));
       for (const ci of circles) {
@@ -1333,7 +1330,7 @@ function PlayingPiece({ piece, color, w, h, selected }: { piece: TablePiece; col
         all.addCircle(q[0], q[1], art.len(ci.r));
       }
     }
-    return outsideOf(all);
+    return outsideOf(all.build());
   };
   const draw = (fill: string, moved: boolean, extra?: object) => (
     <>
@@ -1579,7 +1576,7 @@ function Timer({ piece, color, size, selected, k }: { piece: TablePiece; color: 
   const c = art.at([0.5, 0.5]);
   const r = art.len(0.4);
   const share = piece.value ? Math.min(1, left / piece.value) : 0;
-  const runDown = Skia.Path.Make();
+  const runDown = Skia.PathBuilder.Make();
   runDown.addArc({ x: c[0] - r, y: c[1] - r, width: r * 2, height: r * 2 }, -90, 360 * share);
   const ink = isLight(color) ? '#2c2c2a' : '#ffffff';
   return (
@@ -1591,7 +1588,7 @@ function Timer({ piece, color, size, selected, k }: { piece: TablePiece; color: 
         <Path path={cylinderPath(c, art.len(0.5), [art.len(0.03), art.len(0.04)])} color={shade(color, isLight(color) ? -0.4 : 0.15)} />
         <Circle cx={c[0]} cy={c[1]} r={art.len(0.5)} color={color} />
         <Circle cx={c[0]} cy={c[1]} r={r} color={shade(color, isLight(color) ? -0.15 : 0.18)} style="stroke" strokeWidth={art.len(0.07)} />
-        <Path path={runDown} color={done ? '#e24b4a' : colors.accent} style="stroke" strokeWidth={art.len(0.07)} strokeCap="round" />
+        <Path path={runDown.build()} color={done ? '#e24b4a' : colors.accent} style="stroke" strokeWidth={art.len(0.07)} strokeCap="round" />
         {selected ? <Circle cx={c[0]} cy={c[1]} r={art.len(0.52)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
       </Canvas>
       <Text allowFontScaling={false} style={[styles.timerText, { color: done ? '#e24b4a' : ink, fontSize: size * 0.22, lineHeight: size, width: size }]}>

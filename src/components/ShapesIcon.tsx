@@ -6,14 +6,14 @@ import { Canvas, Circle, Path, Rect, Skia } from '@shopify/react-native-skia';
  */
 export function ShapesIcon({ size, color }: { size: number; color: string }) {
   const u = size / 24;
-  const triangle = Skia.Path.Make();
+  const triangle = Skia.PathBuilder.Make();
   triangle.moveTo(12 * u, 2 * u);
   triangle.lineTo(17.5 * u, 11 * u);
   triangle.lineTo(6.5 * u, 11 * u);
   triangle.close();
   return (
     <Canvas style={{ width: size, height: size, pointerEvents: 'none' }}>
-      <Path path={triangle} color={color} />
+      <Path path={triangle.build()} color={color} />
       <Circle cx={7 * u} cy={17.5 * u} r={4.5 * u} color={color} />
       <Rect x={13.5 * u} y={13 * u} width={9 * u} height={9 * u} color={color} />
     </Canvas>

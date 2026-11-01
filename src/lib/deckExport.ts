@@ -212,7 +212,7 @@ export async function readDeckFile(uri: string): Promise<OpenedFile> {
     const size = opened.size ?? file.size;
     const readAt: ReadAt = (offset, length) => {
       opened.offset = offset;
-      return opened.readBytes(Math.max(0, Math.min(length, size - offset)));
+      return opened.readBytesSync(Math.max(0, Math.min(length, size - offset)));
     };
     if (isZip(readAt(0, 4))) return { ...readZip(readAt, size), done };
     // An older file.
@@ -232,7 +232,7 @@ export async function readDeckFile(uri: string): Promise<OpenedFile> {
 function headOf(uri: string): string {
   const handle = new File(uri).open(FileMode.ReadOnly);
   try {
-    return String.fromCharCode(...handle.readBytes(Math.min(256, handle.size ?? 256)));
+    return String.fromCharCode(...handle.readBytesSync(Math.min(256, handle.size ?? 256)));
   } finally {
     handle.close();
   }
