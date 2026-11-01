@@ -32,7 +32,8 @@ function voicesOf(sound: Sound): Player[] {
     list = [];
     for (let i = 0; i < VOICES; i++) {
       try {
-        const player = createAudioPlayer(sources[sound]);
+        // Audio stays on between sounds: switched off as one ended, the next one started that moment went unheard.
+        const player = createAudioPlayer(sources[sound], { keepAudioSessionActive: true });
         player.volume = VOLUME[sound] ?? 1;
         list.push(player);
       } catch {
