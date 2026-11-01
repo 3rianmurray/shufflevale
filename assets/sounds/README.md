@@ -10,6 +10,4 @@ Short MP3s; to change one, replace the file and keep its name:
 - `counter-click.wav`: tapping a counter's + or −
 - `timer-start.wav`: a timer starts (one beep)
 - `timer-end.wav`: a timer runs out (three beeps)
-- `spinner.wav`: spinning a spinner (a ratchet)
-
 They're quiet while the phone's silent switch is on.
