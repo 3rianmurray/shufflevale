@@ -21,7 +21,7 @@ const REASONS: Record<Reason, string> = {
 
 const PERKS: [string, string][] = [
   ['Unlimited cards', `No ${FREE_CARD_LIMIT}-card limit: every deck for every game, and every prototype.`],
-  ['Your own art', 'Make custom art, custom tokens, and your own faces on dice and coins.'],
+  ['Custom pieces', 'Upload custom art for game boards, player dashboards, score tracks, and more. Plus custom tokens and your own faces on dice and coins.'],
   ['Share decks and tables', 'Send a deck, a group or a whole table to a friend as one file. Opening it is free for them.'],
   ['Back up', 'Keep everything safe in Files, and bring it to a new phone.'],
   ['Support Shufflevale', 'Made by one person. Every Pro keeps it growing.'],
