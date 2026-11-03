@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput
 import { answerName, MAX_NAME_LENGTH, titleCase, useNameRequest } from '../lib/names';
 import { colors } from '../theme';
 import { Button } from './Button';
+import { NumberKeys, typeKey } from './NumberKeys';
 import { MAX_TEXT_SCALE, Text } from './Text';
 import { ALL_ORIENTATIONS } from '../lib/orientations';
 
@@ -45,14 +46,9 @@ export function NamePrompt() {
   const top = shown?.at === undefined ? DEFAULT_TOP : Math.max(MIN_TOP, Math.min(shown.at - fieldMid, height - below - boxH - 8));
   /** A key pressed: typed after what's there, or (still all selected, as it opens) in place of it. */
   const press = (key: string) => {
-    const from = selectAll ? '' : draft;
+    setDraft(typeKey(draft, key, selectAll, MAX_NAME_LENGTH));
     setSelectAll(false);
-    if (key === DELETE) return setDraft(from.slice(0, -1));
-    // A minus sign only goes first: pressed again, it comes off.
-    if (key === '-') return setDraft(from.startsWith('-') ? from.slice(1) : `-${from}`);
-    if (from.length < MAX_NAME_LENGTH) setDraft(from + key);
   };
-  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', kind === 'signed' ? '-' : kind === 'time' ? ':' : '', '0', DELETE];
 
   return (
     <Modal visible={!!request} transparent animationType="fade" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={() => answerName(null)}>
@@ -60,10 +56,17 @@ export function NamePrompt() {
         <Pressable style={StyleSheet.absoluteFill} onPress={() => answerName(null)} accessibilityLabel="Cancel" />
         <View style={styles.box} onLayout={(e) => setBoxH(e.nativeEvent.layout.height)}>
           <Text style={styles.title}>{shown?.title}</Text>
+          {ownKeys ? (
+            // On iPad a number is shown, not typed in a field (so Apple's keyboard never comes): the keys below change
+            // it. Still all selected as it opens, it's highlighted (the first key replaces it).
+            <View style={styles.input} onLayout={(e) => setFieldMid(e.nativeEvent.layout.y + e.nativeEvent.layout.height / 2)}>
+              <Text style={[styles.shownNumber, selectAll && !!draft && styles.selectedNumber]} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
+                {draft || ' '}
+              </Text>
+            </View>
+          ) : (
           <TextInput
             onLayout={(e) => setFieldMid(e.nativeEvent.layout.y + e.nativeEvent.layout.height / 2)}
-            // On iPad, a number's keys are the app's own (below): iPad's keyboard stays away, the cursor still shows.
-            showSoftInputOnFocus={!ownKeys}
             autoFocus
             selectTextOnFocus
             maxFontSizeMultiplier={MAX_TEXT_SCALE}
@@ -83,6 +86,7 @@ export function NamePrompt() {
             placeholderTextColor={colors.textMuted}
             placeholder={kind === 'name' ? (plain ? 'Text' : 'Name') : kind === 'time' ? '1:30' : '0'}
           />
+          )}
           <View style={styles.buttons}>
             <Button label="Cancel" onPress={() => answerName(null)} style={{ flex: 1 }} />
             <Button label={shown?.confirm ?? 'Save'} variant="primary" onPress={save} disabled={!draft.trim()} style={{ flex: 1 }} />
@@ -90,22 +94,7 @@ export function NamePrompt() {
         </View>
         {ownKeys ? (
           <View style={styles.keys} onLayout={(e) => setKeysH(e.nativeEvent.layout.height)}>
-            {keys.map((key, i) =>
-              key ? (
-                <Pressable
-                  key={i}
-                  onPress={() => press(key)}
-                  accessibilityRole="button"
-                  accessibilityLabel={key === DELETE ? 'Delete' : key === '-' ? 'Minus' : key}
-                  style={({ pressed }) => [styles.key, pressed && styles.keyPressed]}>
-                  <Text style={styles.keyText} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
-                    {key}
-                  </Text>
-                </Pressable>
-              ) : (
-                <View key={i} style={styles.keySpace} />
-              ),
-            )}
+            <NumberKeys onKey={press} extra={kind === 'signed' ? '-' : kind === 'time' ? ':' : ''} />
           </View>
         ) : null}
       </KeyboardAvoidingView>
@@ -118,9 +107,8 @@ const DEFAULT_TOP = 140;
 const MIN_TOP = 60;
 const IS_PAD = Platform.OS === 'ios' && Platform.isPad;
 const KEYBOARD_ROOM = IS_PAD ? 420 : 330;
-/** The app's own number keys (iPad): the gap above them, and the delete key. */
+/** The gap above the app's own number keys (iPad). */
 const KEYS_GAP = 10;
-const DELETE = '⌫';
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', backgroundColor: 'rgba(0,0,0,0.45)', padding: 24 },
@@ -135,21 +123,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   buttons: { flexDirection: 'row', gap: 10 },
-  // Three keys to a row, under the box and as wide as it.
-  keys: {
-    width: '100%',
-    maxWidth: 340,
-    marginTop: KEYS_GAP,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 8,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 10,
-  },
-  key: { width: '31.5%', height: 52, borderRadius: 10, backgroundColor: colors.surfaceRaised, alignItems: 'center', justifyContent: 'center' },
-  keyPressed: { opacity: 0.6 },
-  keySpace: { width: '31.5%', height: 52 },
-  keyText: { color: colors.text, fontSize: 22, fontWeight: '600' },
+  // A number shown (iPad), in the field's place; highlighted while it's all selected.
+  shownNumber: { color: colors.text, fontSize: 16, alignSelf: 'flex-start', borderRadius: 4, overflow: 'hidden' },
+  selectedNumber: { backgroundColor: 'rgba(224,179,84,0.45)' },
+  // The keys' panel, under the box and as wide as it.
+  keys: { width: '100%', maxWidth: 340, marginTop: KEYS_GAP, backgroundColor: colors.surface, borderRadius: 16, padding: 10 },
 });
