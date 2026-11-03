@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '../components/AppIcon';
@@ -41,8 +41,8 @@ export default function ProScreen() {
     wasOn.current = on;
   }, [on]);
 
-  return (
-    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
+  const body = (
+    <>
       <AppIcon size={96} />
       <Text style={styles.title}>Shufflevale Pro</Text>
       {reason && REASONS[reason] && !on ? <Text style={styles.reason}>{REASONS[reason]}</Text> : null}
@@ -79,13 +79,25 @@ export default function ProScreen() {
       <Pressable onPress={restorePro} disabled={pro.busy} hitSlop={10} accessibilityRole="button" style={({ pressed }) => [styles.restore, pressed && { opacity: 0.6 }]}>
         <Text style={styles.restoreText}>Restore Purchases</Text>
       </Pressable>
+    </>
+  );
+
+  // On iPad, a window sized to what's in it (see the layout), so no scrolling; on iPhone, the whole screen.
+  return IS_PAD ? (
+    <View style={[styles.content, styles.padContent]}>{body}</View>
+  ) : (
+    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
+      {body}
     </ScrollView>
   );
 }
 
+const IS_PAD = Platform.OS === 'ios' && Platform.isPad;
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   content: { alignItems: 'center', padding: 24, paddingTop: 32 },
+  padContent: { backgroundColor: colors.bg, paddingBottom: 28 },
   title: { color: colors.text, fontSize: 26, fontWeight: '700', marginTop: 14 },
   reason: { color: colors.accent, fontSize: 15, textAlign: 'center', marginTop: 10, lineHeight: 21 },
   perks: { alignSelf: 'stretch', backgroundColor: colors.surface, borderRadius: 14, padding: 16, gap: 14, marginTop: 22 },

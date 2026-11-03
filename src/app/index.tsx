@@ -102,6 +102,8 @@ export default function HomeScreen() {
   const [tableMenu, setTableMenu] = useState<string | null>(null);
   /** The app's menu (••• at the top): files and the examples. */
   const [appMenuOpen, setAppMenuOpen] = useState(false);
+  /** The menu is closing for Pro to come up. */
+  const [toPro, setToPro] = useState(false);
   /**
    * The row swiped open (`deck:…`, `group:…` or `session:…`) and which of its buttons is showing: Delete on
    * the right, or a deck's Duplicate on the left. One at a time.
@@ -604,13 +606,19 @@ export default function HomeScreen() {
         // On iPad it drops from the top right corner, under the three lines; on iPhone, a sheet from the bottom.
         place={Platform.OS === 'ios' && Platform.isPad ? { kind: 'drop', corner: 'right' } : undefined}
         onClose={() => setAppMenuOpen(false)}
+        // For Pro: the menu goes at once, and Pro comes up once it has gone (iOS shows one modal at a time).
+        closeInstantly={toPro}
+        afterClose={() => {
+          if (!toPro) return;
+          setToPro(false);
+          openPro();
+        }}
         // Shufflevale Pro, set apart at the top: gold-edged, with what's left of the free version's cards.
         banner={
           <Pressable
             onPress={() => {
+              setToPro(true);
               setAppMenuOpen(false);
-              // Once the menu has slid away (iOS shows one modal at a time).
-              setTimeout(() => openPro(), 260);
             }}
             accessibilityRole="button"
             accessibilityLabel={pro ? 'Shufflevale Pro, unlocked' : `Shufflevale Pro, ${used} of ${FREE_CARD_LIMIT} free cards used`}

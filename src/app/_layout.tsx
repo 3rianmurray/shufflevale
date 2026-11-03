@@ -1,6 +1,7 @@
 import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { BusyOverlay } from '../components/BusyOverlay';
@@ -20,6 +21,8 @@ const NAV_THEME = {
   ...DarkTheme,
   colors: { ...DarkTheme.colors, background: colors.bg, card: colors.bg, text: colors.text, primary: colors.accent, border: colors.bg },
 };
+
+const IS_PAD = Platform.OS === 'ios' && Platform.isPad;
 
 export default function RootLayout() {
   // The App Store, for Shufflevale Pro: its price, and whether it's owned (see lib/pro).
@@ -64,8 +67,11 @@ export default function RootLayout() {
           <Stack.Screen name="sandbox/new" options={{ title: 'New Table' }} />
           <Stack.Screen name="help" options={{ title: 'Help' }} />
           <Stack.Screen name="about" options={{ title: 'About' }} />
-          {/* A half-height sheet, centered on iPad (see the docs' formSheet); it can be dragged up to the full height. */}
-          <Stack.Screen name="pro" options={{ title: 'Pro', presentation: 'formSheet', sheetAllowedDetents: [0.5, 1], sheetGrabberVisible: true }} />
+          {/* On iPad a window in the middle, just as tall as what's in it; on iPhone, the whole screen. */}
+          <Stack.Screen
+            name="pro"
+            options={IS_PAD ? { title: 'Pro', presentation: 'formSheet', sheetAllowedDetents: 'fitToContents' } : { title: 'Pro', presentation: 'modal' }}
+          />
           {/* A Shufflevale file opened in the app from elsewhere (see +native-intent). */}
           <Stack.Screen name="open" options={{ title: 'Open File', presentation: 'modal' }} />
           {/* Its own top bar, and sideways swipes there move cards and the camera, not the screen. */}

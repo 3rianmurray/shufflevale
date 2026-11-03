@@ -74,6 +74,10 @@ interface Props {
   place?: { kind: 'window'; at?: Point; from?: Rect; avoid?: Rect } | { kind: 'drop'; corner?: 'right' };
   /** A window says where it is (its corner and size) as it opens and wherever it's let go, for a follow-up to open there. */
   onPlace?: (rect: Rect) => void;
+  /** Goes at once when closed, with no slide (e.g. for another screen to come up straight after: see `afterClose`). */
+  closeInstantly?: boolean;
+  /** Once it has fully gone (on iOS, after its modal has been dismissed): another screen can come up now. */
+  afterClose?: () => void;
 }
 
 /** How long the sheet takes to come up, and to go. */
@@ -94,9 +98,15 @@ const PAD_LIFT = 16;
  * over the screen while the sheet itself slides up from the bottom (and back down).
  */
 export function ActionSheet(props: Props) {
-  const { visible, onClose } = props;
+  const { visible, onClose, closeInstantly } = props;
   const insets = useSafeAreaInsets();
   const pending = useRef<(() => void) | null>(null);
+  // The caller's latest `afterClose` (not the one kept from when it was last open: see `shown`).
+  const [after] = useState(() => {
+    const box = { fn: undefined as (() => void) | undefined };
+    return { set: (fn: (() => void) | undefined) => Object.assign(box, { fn }), run: () => box.fn?.() };
+  });
+  after.set(props.afterClose);
   // 0 is closed, 1 open: the backdrop's opacity, and how far up the sheet has slid.
   const [progress] = useState(() => new Animated.Value(0));
   // Starts below the screen, until the sheet has been measured (it slides in only once it has).
@@ -150,6 +160,8 @@ export function ActionSheet(props: Props) {
   // The modal stays up after `visible` goes false until the sheet has slid away.
   const [mounted, setMounted] = useState(visible);
   if (visible && !mounted) setMounted(true);
+  // Or, closed instantly, it goes now.
+  if (!visible && mounted && closeInstantly) setMounted(false);
 
   // The walkthrough, when its step is about one of this menu's choices: the tip shows here, by that choice.
   const tour = useTourStep();
@@ -209,12 +221,15 @@ export function ActionSheet(props: Props) {
     if (visible && !measured) return;
     if (visible) {
       Animated.timing(progress, { toValue: 1, duration: IN_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    } else if (closeInstantly) {
+      // (Already gone: see `mounted`.)
+      progress.setValue(0);
     } else {
       Animated.timing(progress, { toValue: 0, duration: OUT_MS, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(
         ({ finished }) => finished && setMounted(false),
       );
     }
-  }, [visible, measured, progress]);
+  }, [visible, measured, progress, closeInstantly]);
 
   const run = (a: SheetAction) => {
     if (isGuided(a)) Object.assign(guide.box, { chosen: true });
@@ -345,6 +360,7 @@ export function ActionSheet(props: Props) {
         const next = pending.current;
         pending.current = null;
         next?.();
+        after.run();
       }}>
       {children}
       {overlay}
