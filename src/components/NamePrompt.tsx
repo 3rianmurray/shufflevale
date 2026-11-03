@@ -32,7 +32,8 @@ export function NamePrompt() {
 
   return (
     <Modal visible={!!request} transparent animationType="fade" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={() => answerName(null)}>
-      <KeyboardAvoidingView behavior="padding" style={styles.backdrop}>
+      {/* Up the screen, above where the keyboard comes, so the box stays put when it shows (no lifting). */}
+      <KeyboardAvoidingView style={styles.backdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => answerName(null)} accessibilityLabel="Cancel" />
         <View style={styles.box}>
           <Text style={styles.title}>{shown?.title}</Text>
@@ -67,7 +68,7 @@ export function NamePrompt() {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)', padding: 24 },
+  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', backgroundColor: 'rgba(0,0,0,0.45)', padding: 24, paddingTop: 140 },
   box: { width: '100%', maxWidth: 340, backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 14 },
   title: { color: colors.text, fontSize: 17, fontWeight: '700', textAlign: 'center' },
   input: {
