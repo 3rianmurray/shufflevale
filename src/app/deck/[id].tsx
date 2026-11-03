@@ -449,10 +449,15 @@ export default function DeckEditorScreen() {
   // Done button away on iPhone).
   const askCopies = () => {
     if (!selected) return;
-    askNumber('Copies in deck', String(copiesOf(selected)), (text) => {
-      const n = parseInt(text, 10);
-      if (n >= 1) decks.setCopies(deck.id, selected.id, n);
-    }, 'number', 'Save');
+    const card = selected;
+    // The sheet closes first: iOS shows one modal at a time, so the prompt waits for it to slide away.
+    setSheetOpen(false);
+    setTimeout(() => {
+      askNumber('Copies in deck', String(copiesOf(card)), (text) => {
+        const n = parseInt(text, 10);
+        if (n >= 1) decks.setCopies(deck.id, card.id, n);
+      }, 'number', 'Save');
+    }, 300);
   };
 
   return (
