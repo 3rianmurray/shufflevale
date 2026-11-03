@@ -329,7 +329,7 @@ export default function HomeScreen() {
     if (!deck) return null;
     const deckRow = (
       <Pressable
-        style={({ pressed }) => [styles.row, lifted && styles.liftedRow, pressed && { opacity: 0.75 }]}
+        style={({ pressed }) => [styles.row, lifted && styles.liftedRow, pressed && styles.rowPressed]}
         onPress={() => router.push({ pathname: '/deck/[id]', params: { id: deck.id } })}
         // Matches the list's hold-to-lift, so letting go after lifting doesn't also open the deck.
         onLongPress={() => {}}
@@ -395,7 +395,7 @@ export default function HomeScreen() {
     const open = () => router.push({ pathname: '/sandbox/[id]', params: { id: t.id } });
     const tableRow = (
             <Pressable
-              style={({ pressed }) => [styles.row, lifted && styles.liftedRow, pressed && { opacity: 0.75 }]}
+              style={({ pressed }) => [styles.row, lifted && styles.liftedRow, pressed && styles.rowPressed]}
               // As every row: tapping it shows its options (a table has no settings screen); Play goes straight in.
               onPress={() => setTableMenu(t.id)}
               // Matches the list's hold-to-lift, so letting go after lifting doesn't also show the options.
@@ -448,7 +448,7 @@ export default function HomeScreen() {
     const names = s.deckIds.flatMap((d) => getDeck(d)?.name ?? []);
     const sessionRow = (
             <Pressable
-              style={({ pressed }) => [styles.row, lifted && styles.liftedRow, pressed && { opacity: 0.75 }]}
+              style={({ pressed }) => [styles.row, lifted && styles.liftedRow, pressed && styles.rowPressed]}
               onPress={() => router.push({ pathname: '/session/edit', params: { id: s.id } })}
               // Matches the list's hold-to-lift, so letting go after lifting doesn't also open the session.
               onLongPress={() => {}}
@@ -786,6 +786,8 @@ const styles = StyleSheet.create({
   inGroup: { marginLeft: 14 },
   groupEnd: { marginLeft: 14, height: 2, borderRadius: 1, backgroundColor: colors.border },
   liftedRow: { backgroundColor: colors.surfaceRaised },
+  // Pressed: a lighter tint, not a fade (a faded row lets the swipe buttons behind it show through).
+  rowPressed: { backgroundColor: colors.surfaceRaised },
   // Outside the row itself, so a swiped-open group's Delete button is only as tall as the group row.
   groupGap: { marginTop: 6 },
   groupRow: {
