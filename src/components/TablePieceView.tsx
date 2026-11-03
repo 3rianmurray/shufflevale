@@ -1671,8 +1671,8 @@ function ScorePad({ piece, color, selected, k }: { piece: TablePiece; color: str
     <View
       style={[
         styles.scorePad,
-        // A little see-through, as it's always on top (so the cards under it still show).
-        { backgroundColor: color, borderRadius: 8 * k, borderWidth: k, borderColor: shade(color, isLight(color) ? -0.2 : 0.3), padding: (SCORE_PAD - 1) * k, opacity: 0.9 },
+        // A little see-through, as it's always on top (so the cards under it still show, faintly).
+        { backgroundColor: color, borderRadius: 8 * k, borderWidth: k, borderColor: shade(color, isLight(color) ? -0.2 : 0.3), padding: (SCORE_PAD - 1) * k, opacity: 0.95 },
         // (Its edge is inside its room: the columns fill the rest exactly.)
         selected && { borderColor: colors.accent, borderWidth: 3 * k, padding: (SCORE_PAD - 3) * k },
       ]}>
