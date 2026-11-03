@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -85,6 +85,9 @@ export default function DeckEditorScreen() {
   const [deckMenuOpen, setDeckMenuOpen] = useState(false);
   // Set while the card sheet is closing to make way for the copies prompt (iOS shows one modal at a time).
   const [copiesAsk, setCopiesAsk] = useState(false);
+  // The copies number in the sheet, and where it was on screen when tapped: the prompt's field opens right there.
+  const copiesSpot = useRef<View>(null);
+  const [copiesAt, setCopiesAt] = useState<number | undefined>(undefined);
   /**
    * The open picture menu: where new card art (`cards`) or the card back (`back`) comes from, or, after
    * choosing a sprite sheet, where that sheet comes from (`sheet-…`).
@@ -451,8 +454,13 @@ export default function DeckEditorScreen() {
   // Done button away on iPhone).
   const askCopies = () => {
     if (!selected) return;
-    setCopiesAsk(true);
-    setSheetOpen(false);
+    const close = (at?: number) => {
+      setCopiesAt(at);
+      setCopiesAsk(true);
+      setSheetOpen(false);
+    };
+    if (copiesSpot.current) copiesSpot.current.measureInWindow((_x, y, _w, h) => close(y + h / 2));
+    else close();
   };
   // Once the sheet has gone, the prompt opens with the card's copies selected.
   const openCopiesPrompt = () => {
@@ -461,7 +469,7 @@ export default function DeckEditorScreen() {
     askNumber('Copies in deck', String(copiesOf(card)), (text) => {
       const n = parseInt(text, 10);
       if (n >= 1) decks.setCopies(deck.id, card.id, n);
-    }, 'number', 'Save');
+    }, 'number', 'Save', copiesAt);
   };
 
   return (
@@ -696,7 +704,7 @@ export default function DeckEditorScreen() {
               <CardView deck={deck} card={selected} width={Math.min(200, width * 0.5)} />
               <View style={styles.copiesRow}>
                 <Text style={styles.copiesLabel}>Copies in deck</Text>
-                <Pressable onPress={askCopies} accessibilityRole="button" accessibilityLabel="Copies in deck" style={({ pressed }) => [styles.copiesInput, pressed && { opacity: 0.7 }]}>
+                <Pressable ref={copiesSpot} onPress={askCopies} accessibilityRole="button" accessibilityLabel="Copies in deck" style={({ pressed }) => [styles.copiesInput, pressed && { opacity: 0.7 }]}>
                   <Text style={styles.copiesValue} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
                     {copiesOf(selected)}
                   </Text>

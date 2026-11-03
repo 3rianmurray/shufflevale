@@ -32,6 +32,11 @@ export interface NameRequest {
   plain?: boolean;
   /** What the yellow button says, if not Save (say, Paste for how many copies to paste). */
   confirm?: string;
+  /**
+   * Where on screen (its middle, down from the top) the thing being changed was, so the prompt's field opens right
+   * there and the eye doesn't have to go looking for it. Otherwise the prompt sits at its usual place.
+   */
+  at?: number;
 }
 
 let request: NameRequest | null = null;
@@ -55,9 +60,12 @@ export function askText(title: string, current: string, done: (text: string) => 
   set({ title, current, done, plain: true });
 }
 
-/** Asks for a number (or a time) the same way, with the number keyboard (see AskKind), and the button's words (see NameRequest). */
-export function askNumber(title: string, current: string, done: (text: string) => void, kind: Exclude<AskKind, 'name'> = 'number', confirm?: string) {
-  set({ title, current, done, kind, confirm });
+/**
+ * Asks for a number (or a time) the same way, with the number keyboard (see AskKind), the button's words, and where
+ * the field opens (see NameRequest).
+ */
+export function askNumber(title: string, current: string, done: (text: string) => void, kind: Exclude<AskKind, 'name'> = 'number', confirm?: string, at?: number) {
+  set({ title, current, done, kind, confirm, at });
 }
 
 /** Closes the prompt (with the name it gives, if any). */

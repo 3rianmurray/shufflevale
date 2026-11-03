@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 
 import { answerName, MAX_NAME_LENGTH, titleCase, useNameRequest } from '../lib/names';
 import { colors } from '../theme';
@@ -30,14 +30,24 @@ export function NamePrompt() {
   }
   const save = () => answerName(draft);
 
+  // Where the box goes: by default up the screen, above where the keyboard comes, so it stays put when it shows (no
+  // lifting); or, asked for at a place (see NameRequest's `at`), with its field right there, as long as the box
+  // still clears the keyboard.
+  const { height } = useWindowDimensions();
+  // The field's middle, down from the box's top, and the box's height (measured; till then, about what they are).
+  const [fieldMid, setFieldMid] = useState(72);
+  const [boxH, setBoxH] = useState(160);
+  const top =
+    shown?.at === undefined ? DEFAULT_TOP : Math.max(MIN_TOP, Math.min(shown.at - fieldMid, height - KEYBOARD_ROOM - boxH - 8));
+
   return (
     <Modal visible={!!request} transparent animationType="fade" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={() => answerName(null)}>
-      {/* Up the screen, above where the keyboard comes, so the box stays put when it shows (no lifting). */}
-      <KeyboardAvoidingView style={styles.backdrop}>
+      <KeyboardAvoidingView style={[styles.backdrop, { paddingTop: top }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => answerName(null)} accessibilityLabel="Cancel" />
-        <View style={styles.box}>
+        <View style={styles.box} onLayout={(e) => setBoxH(e.nativeEvent.layout.height)}>
           <Text style={styles.title}>{shown?.title}</Text>
           <TextInput
+            onLayout={(e) => setFieldMid(e.nativeEvent.layout.y + e.nativeEvent.layout.height / 2)}
             autoFocus
             selectTextOnFocus
             maxFontSizeMultiplier={MAX_TEXT_SCALE}
@@ -67,8 +77,13 @@ export function NamePrompt() {
   );
 }
 
+/** The box's usual top; the highest it goes (clear of the status bar); and the room kept for the keyboard below it. */
+const DEFAULT_TOP = 140;
+const MIN_TOP = 60;
+const KEYBOARD_ROOM = Platform.OS === 'ios' && Platform.isPad ? 420 : 330;
+
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', backgroundColor: 'rgba(0,0,0,0.45)', padding: 24, paddingTop: 140 },
+  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', backgroundColor: 'rgba(0,0,0,0.45)', padding: 24 },
   box: { width: '100%', maxWidth: 340, backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 14 },
   title: { color: colors.text, fontSize: 17, fontWeight: '700', textAlign: 'center' },
   input: {
