@@ -17,7 +17,7 @@ import type { ImportPicture } from '../../components/ImportReview';
 import { ReorderableGrid } from '../../components/ReorderableGrid';
 import { SpriteSheetModal } from '../../components/SpriteSheetModal';
 import { useDecks } from '../../lib/DecksContext';
-import { askName, MAX_NAME_LENGTH, titleCase } from '../../lib/names';
+import { askName, askNumber, MAX_NAME_LENGTH, titleCase } from '../../lib/names';
 import { backUpWithNotice, shareWithNotice } from '../../lib/fileActions';
 import { deleteDeckWarning } from '../../lib/deckInUse';
 import { cardRoom, FREE_CARD_LIMIT } from '../../lib/limits';
@@ -83,7 +83,6 @@ export default function DeckEditorScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   /** The deck's own menu (•••, top right): share or delete it. */
   const [deckMenuOpen, setDeckMenuOpen] = useState(false);
-  const [copiesDraft, setCopiesDraft] = useState('1');
   /**
    * The open picture menu: where new card art (`cards`) or the card back (`back`) comes from, or, after
    * choosing a sprite sheet, where that sheet comes from (`sheet-…`).
@@ -446,17 +445,14 @@ export default function DeckEditorScreen() {
     ]);
   };
 
-  // Saved as soon as the field holds a valid number, so closing the sheet never loses an edit.
-  const changeCopies = (text: string) => {
-    const digits = text.replace(/\D/g, '');
-    setCopiesDraft(digits);
-    const n = parseInt(digits, 10);
-    if (selected && n >= 1) decks.setCopies(deck.id, selected.id, n);
-  };
-
-  const resetCopiesDraft = () => {
-    const live = deck.cards.find((c) => c.id === selected?.id);
-    if (live) setCopiesDraft(String(copiesOf(live)));
+  // The copies are asked for in the app's own number prompt (not typed in the sheet: the keyboard pushed the sheet's
+  // Done button away on iPhone).
+  const askCopies = () => {
+    if (!selected) return;
+    askNumber('Copies in deck', String(copiesOf(selected)), (text) => {
+      const n = parseInt(text, 10);
+      if (n >= 1) decks.setCopies(deck.id, selected.id, n);
+    }, 'number', 'Save');
   };
 
   return (
@@ -495,7 +491,6 @@ export default function DeckEditorScreen() {
           // Choosing cards (to delete several): a tap ticks or unticks it.
           if (choosing) return toggleChosen(item.id);
           setSelected(item);
-          setCopiesDraft(String(copiesOf(item)));
           setSheetOpen(true);
         }}
         renderLifted={(item) => <CardView deck={deck} card={item} width={cardWidth} />}
@@ -692,18 +687,11 @@ export default function DeckEditorScreen() {
               <CardView deck={deck} card={selected} width={Math.min(200, width * 0.5)} />
               <View style={styles.copiesRow}>
                 <Text style={styles.copiesLabel}>Copies in deck</Text>
-                <TextInput
-                  maxFontSizeMultiplier={MAX_TEXT_SCALE}
-                  value={copiesDraft}
-                  onChangeText={changeCopies}
-                  onBlur={resetCopiesDraft}
-                  keyboardType="number-pad"
-                  returnKeyType="done"
-                  maxLength={2}
-                  selectTextOnFocus
-                  style={styles.copiesInput}
-                  accessibilityLabel="Copies in deck"
-                />
+                <Pressable onPress={askCopies} accessibilityRole="button" accessibilityLabel="Copies in deck" style={({ pressed }) => [styles.copiesInput, pressed && { opacity: 0.7 }]}>
+                  <Text style={styles.copiesValue} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
+                    {copiesOf(selected)}
+                  </Text>
+                </Pressable>
               </View>
             </View>
           ) : null
@@ -889,6 +877,7 @@ const styles = StyleSheet.create({
   },
   copiesRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
   copiesLabel: { color: colors.text, fontSize: 16 },
+  copiesValue: { color: colors.text, fontSize: 18, fontWeight: '600', textAlign: 'center' },
   copiesInput: {
     backgroundColor: colors.surfaceRaised,
     color: colors.text,
