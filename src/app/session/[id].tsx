@@ -34,7 +34,7 @@ export default function SessionScreen() {
       attach: (view: ScrollView | null) => {
         Object.assign(box, { view });
       },
-      scrollTo: (x: number) => box.view?.scrollTo({ x, animated: true }),
+      scrollTo: (x: number, animated = true) => box.view?.scrollTo({ x, animated }),
     };
   });
   const [index, setIndex] = useState(0);
@@ -102,6 +102,11 @@ export default function SessionScreen() {
     if (!currentTab) return;
     tabsRef.current?.scrollTo({ x: Math.max(0, currentTab.x + currentTab.w / 2 - width / 2), animated: true });
   }, [currentTab, width]);
+
+  // Turning the screen changes each deck's page width: the pager goes back to the deck on screen, with no slide.
+  useEffect(() => {
+    pager.scrollTo(swipeTo.get().at * width, false);
+  }, [width, pager, swipeTo]);
 
   if (!session || decks.length === 0) {
     return (
@@ -217,7 +222,8 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center', gap: 12 },
   muted: { color: colors.textMuted },
   link: { color: colors.accent, fontSize: 16, fontWeight: '600' },
-  tabs: { paddingHorizontal: 12, paddingBottom: TABS_BOTTOM, gap: 8, alignItems: 'center' },
+  // Centered when the decks fit across the screen; scrolls when they don't.
+  tabs: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 12, paddingBottom: TABS_BOTTOM, gap: 8, alignItems: 'center' },
   tab: {
     paddingHorizontal: 14,
     justifyContent: 'center',
