@@ -64,7 +64,8 @@ export default function RootLayout() {
           <Stack.Screen name="sandbox/new" options={{ title: 'New Table' }} />
           <Stack.Screen name="help" options={{ title: 'Help' }} />
           <Stack.Screen name="about" options={{ title: 'About' }} />
-          <Stack.Screen name="pro" options={{ title: 'Pro', presentation: 'modal' }} />
+          {/* A half-height sheet, centered on iPad (see the docs' formSheet); it can be dragged up to the full height. */}
+          <Stack.Screen name="pro" options={{ title: 'Pro', presentation: 'formSheet', sheetAllowedDetents: [0.5, 1], sheetGrabberVisible: true }} />
           {/* A Shufflevale file opened in the app from elsewhere (see +native-intent). */}
           <Stack.Screen name="open" options={{ title: 'Open File', presentation: 'modal' }} />
           {/* Its own top bar, and sideways swipes there move cards and the camera, not the screen. */}
