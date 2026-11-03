@@ -37,8 +37,22 @@ export function NamePrompt() {
   // The field's middle, down from the box's top, and the box's height (measured; till then, about what they are).
   const [fieldMid, setFieldMid] = useState(72);
   const [boxH, setBoxH] = useState(160);
-  const top =
-    shown?.at === undefined ? DEFAULT_TOP : Math.max(MIN_TOP, Math.min(shown.at - fieldMid, height - KEYBOARD_ROOM - boxH - 8));
+  // On iPad a number has the app's own keys, just under the box (iPad's own number pad floats by the field, pointing
+  // at it). What's below the box is then those keys, not the keyboard.
+  const ownKeys = IS_PAD && kind !== 'name';
+  const [keysH, setKeysH] = useState(250);
+  const below = ownKeys ? keysH + KEYS_GAP + 16 : KEYBOARD_ROOM;
+  const top = shown?.at === undefined ? DEFAULT_TOP : Math.max(MIN_TOP, Math.min(shown.at - fieldMid, height - below - boxH - 8));
+  /** A key pressed: typed after what's there, or (still all selected, as it opens) in place of it. */
+  const press = (key: string) => {
+    const from = selectAll ? '' : draft;
+    setSelectAll(false);
+    if (key === DELETE) return setDraft(from.slice(0, -1));
+    // A minus sign only goes first: pressed again, it comes off.
+    if (key === '-') return setDraft(from.startsWith('-') ? from.slice(1) : `-${from}`);
+    if (from.length < MAX_NAME_LENGTH) setDraft(from + key);
+  };
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', kind === 'signed' ? '-' : kind === 'time' ? ':' : '', '0', DELETE];
 
   return (
     <Modal visible={!!request} transparent animationType="fade" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={() => answerName(null)}>
@@ -48,6 +62,8 @@ export function NamePrompt() {
           <Text style={styles.title}>{shown?.title}</Text>
           <TextInput
             onLayout={(e) => setFieldMid(e.nativeEvent.layout.y + e.nativeEvent.layout.height / 2)}
+            // On iPad, a number's keys are the app's own (below): iPad's keyboard stays away, the cursor still shows.
+            showSoftInputOnFocus={!ownKeys}
             autoFocus
             selectTextOnFocus
             maxFontSizeMultiplier={MAX_TEXT_SCALE}
@@ -72,6 +88,26 @@ export function NamePrompt() {
             <Button label={shown?.confirm ?? 'Save'} variant="primary" onPress={save} disabled={!draft.trim()} style={{ flex: 1 }} />
           </View>
         </View>
+        {ownKeys ? (
+          <View style={styles.keys} onLayout={(e) => setKeysH(e.nativeEvent.layout.height)}>
+            {keys.map((key, i) =>
+              key ? (
+                <Pressable
+                  key={i}
+                  onPress={() => press(key)}
+                  accessibilityRole="button"
+                  accessibilityLabel={key === DELETE ? 'Delete' : key === '-' ? 'Minus' : key}
+                  style={({ pressed }) => [styles.key, pressed && styles.keyPressed]}>
+                  <Text style={styles.keyText} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
+                    {key}
+                  </Text>
+                </Pressable>
+              ) : (
+                <View key={i} style={styles.keySpace} />
+              ),
+            )}
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -80,7 +116,11 @@ export function NamePrompt() {
 /** The box's usual top; the highest it goes (clear of the status bar); and the room kept for the keyboard below it. */
 const DEFAULT_TOP = 140;
 const MIN_TOP = 60;
-const KEYBOARD_ROOM = Platform.OS === 'ios' && Platform.isPad ? 420 : 330;
+const IS_PAD = Platform.OS === 'ios' && Platform.isPad;
+const KEYBOARD_ROOM = IS_PAD ? 420 : 330;
+/** The app's own number keys (iPad): the gap above them, and the delete key. */
+const KEYS_GAP = 10;
+const DELETE = '⌫';
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', backgroundColor: 'rgba(0,0,0,0.45)', padding: 24 },
@@ -95,4 +135,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   buttons: { flexDirection: 'row', gap: 10 },
+  // Three keys to a row, under the box and as wide as it.
+  keys: {
+    width: '100%',
+    maxWidth: 340,
+    marginTop: KEYS_GAP,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 8,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 10,
+  },
+  key: { width: '31.5%', height: 52, borderRadius: 10, backgroundColor: colors.surfaceRaised, alignItems: 'center', justifyContent: 'center' },
+  keyPressed: { opacity: 0.6 },
+  keySpace: { width: '31.5%', height: 52 },
+  keyText: { color: colors.text, fontSize: 22, fontWeight: '600' },
 });
