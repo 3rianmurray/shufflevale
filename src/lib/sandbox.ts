@@ -162,6 +162,8 @@ export interface TablePiece {
   color?: string;
   /** Drawn this much bigger (or smaller) than PIECE_SIZE; none is its own size. */
   scale?: number;
+  /** Custom art with its drop shadow turned off (none, the default, has one). */
+  shadow?: boolean;
   /** A die that rolls where it lies (spinning and bouncing), rather than tumbling across the table. */
   rollInPlace?: boolean;
   /**
@@ -453,7 +455,7 @@ export type CardSize = (deckId: string) => { w: number; h: number };
 
 /** How small and how big anything on the table can be made, against its own size. */
 export const SCALE_MIN = 0.1;
-export const SCALE_MAX = 4;
+export const SCALE_MAX = 10;
 export const clampScale = (k: number) => Math.min(SCALE_MAX, Math.max(SCALE_MIN, k));
 /** A scale as kept: none for its own size (or near enough), and rounded so it doesn't drift. */
 const keptScale = (k: number) => (Math.abs(k - 1) < 0.005 ? undefined : Math.round(clampScale(k) * 1e6) / 1e6);
@@ -1138,7 +1140,7 @@ export const bagItems = (p: TablePiece): BagItem[] => p.items ?? (p.cards ?? [])
 export function itemLook(i: BagItem): string {
   if (i.card) return `card:${i.card.deckId}:${i.card.cardId}`;
   const p = i.piece!;
-  return JSON.stringify([p.kind, p.sides, p.color, p.shape, p.image, p.square, p.tokenShape, p.label, p.scale ?? 1, p.spaces, p.first, p.look, p.w, p.h, p.faces ?? null]);
+  return JSON.stringify([p.kind, p.sides, p.color, p.shape, p.image, p.square, p.tokenShape, p.label, p.scale ?? 1, p.spaces, p.first, p.look, p.w, p.h, p.faces ?? null, p.shadow]);
 }
 
 /** Whether things are one or more of the very same thing (what a supply can be made of). */

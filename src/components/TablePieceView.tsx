@@ -1824,18 +1824,19 @@ function Track({ piece, color, selected, k }: { piece: TablePiece; color: string
 function Art({ piece, w, h, selected, k }: { piece: TablePiece; w: number; h: number; selected: boolean; k: number }) {
   if (!piece.image) return <View style={[styles.artMissing, selected && styles.artSelected]} />;
   const uri = imageUri(piece.image);
+  const shadow = piece.shadow !== false;
   if (isSeeThrough(piece.image)) {
     return (
       <View style={StyleSheet.absoluteFill}>
-        {/* Its shadow: the same picture, darkened to a silhouette, a little down and right. */}
-        <Image source={{ uri }} style={[StyleSheet.absoluteFill, styles.artShadow, { transform: [{ translateX: 2 * k }, { translateY: 4 * k }] }]} contentFit="contain" tintColor="#000" cachePolicy="memory-disk" allowDownscaling={false} />
+        {/* Its shadow (if it has one): the same picture, darkened to a silhouette, a little down and right. */}
+        {shadow ? <Image source={{ uri }} style={[StyleSheet.absoluteFill, styles.artShadow, { transform: [{ translateX: 2 * k }, { translateY: 4 * k }] }]} contentFit="contain" tintColor="#000" cachePolicy="memory-disk" allowDownscaling={false} /> : null}
         <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" allowDownscaling={false} />
         {selected ? <View style={[StyleSheet.absoluteFill, styles.artSelected]} /> : null}
       </View>
     );
   }
   return (
-    <View style={[styles.artPrint, { width: w, height: h, borderRadius: 6 * k }, selected && styles.artSelected]}>
+    <View style={[styles.artPrint, { width: w, height: h, borderRadius: 6 * k }, !shadow && styles.artNoShadow, selected && styles.artSelected]}>
       <Image source={{ uri }} style={[StyleSheet.absoluteFill, styles.artPrintImage, { borderRadius: 6 * k }]} contentFit="cover" cachePolicy="memory-disk" allowDownscaling={false} />
     </View>
   );
@@ -1906,6 +1907,7 @@ const styles = StyleSheet.create({
   scoreBar: { position: 'absolute' },
   artShadow: { opacity: 0.4, transform: [{ translateX: 2 }, { translateY: 4 }] },
   artPrint: { borderRadius: 6, boxShadow: '1px 3px 8px rgba(0, 0, 0, 0.45)' },
+  artNoShadow: { boxShadow: 'none' },
   artPrintImage: { borderRadius: 6 },
   artSelected: { borderWidth: 3, borderColor: colors.accent, borderRadius: 8, borderStyle: 'dashed' },
   artMissing: { flex: 1, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.12)' },

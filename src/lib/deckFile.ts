@@ -511,7 +511,7 @@ const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFi
 
 /** How much bigger or smaller a card or piece can be drawn (as SCALE_MIN and SCALE_MAX in sandbox.ts). */
 const SCALE_MIN = 0.1;
-const SCALE_MAX = 4;
+const SCALE_MAX = 10;
 /** A scale from a file, kept to what the app allows; none for its own size. */
 const scaleFrom = (v: unknown) => (finite(v) && v > 0 && Math.abs(v - 1) >= 0.005 ? { scale: Math.min(SCALE_MAX, Math.max(SCALE_MIN, v)) } : {});
 
@@ -593,6 +593,7 @@ function pieceFrom(
     }
   }
   for (const flag of ['square', 'grid', 'labelBelow', 'hideLabel', 'hideNumbers', 'locked', 'vertical', 'reversed', 'rollInPlace'] as const) if (v[flag] === true) p[flag] = true;
+  if (v.shadow === false) p.shadow = false;
   if (finite(v.opacity) && v.opacity < 1) p.opacity = Math.max(ZONE_OPACITY_MIN, v.opacity);
   if (v.labelAlign === 'left' || v.labelAlign === 'center' || v.labelAlign === 'right') p.labelAlign = v.labelAlign;
   if (kind === 'score') {

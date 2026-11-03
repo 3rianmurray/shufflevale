@@ -4068,6 +4068,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           onPress: () => commit(layerFlat(table, id, to, size)),
         })),
       };
+      // Custom art's drop shadow, on (the default) or off, for a picture that should lie flat on the cloth.
+      const shadowRow: FocusRow = { kind: 'toggle', label: 'Shadow', value: piece.shadow !== false, onChange: (on) => commit(setPiece(table, id, { shadow: on ? undefined : false })) };
       // It, big: as it lies on the table, fitted to the middle of the screen.
       const own = pieceSizeOf({ ...piece, scale: 1 });
       const fit = Math.min(3, 220 / own.w, 220 / own.h);
@@ -4368,6 +4370,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             ],
             [
               layerRow,
+              shadowRow,
               // A board or a map lies still; a figure is moved about.
               lockRow,
               takeOffRow,

@@ -233,7 +233,7 @@ test('a table’s pieces are checked: unknown kinds, nonsense values and missing
   const [t] = unpackFile(JSON.stringify(raw)).tables;
   assert.equal(t.pieces!.length, 2);
   assert.deepEqual([t.pieces![0].sides, t.pieces![0].value], [6, 6]);
-  assert.deepEqual([t.pieces![1].image, t.pieces![1].scale, t.pieces![1].color], [undefined, 4, undefined]);
+  assert.deepEqual([t.pieces![1].image, t.pieces![1].scale, t.pieces![1].color], [undefined, 10, undefined]);
 });
 
 test('a table of just components, with no decks, still opens', () => {
