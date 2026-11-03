@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Platform, Pressable, StyleSheet, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { imageUri, isSeeThrough } from '../lib/storage';
@@ -229,13 +229,17 @@ function DefaultBack({ radius }: { radius: number }) {
 }
 
 /** A pile at least this big shows its full thickness; smaller piles thin out toward a single flat card. */
-const FULL_PILE = 20;
+const FULL_PILE = 40;
 /** Gap between drawn card edges, in points. */
 const EDGE_STEP = 1.5;
 
-/** Full thickness of a pile of cards this wide: thicker for bigger cards, within reason. */
+/**
+ * Full thickness of a pile of cards this wide: thicker for bigger cards, within reason. On iPad the cards are big
+ * and the pile is allowed to be thicker too, so a deck of 40 or more doesn't read as flat.
+ */
 export function pileThickness(width: number): number {
-  return Math.min(14, Math.max(4, width * 0.08));
+  const most = Platform.OS === 'ios' && Platform.isPad ? 24 : 14;
+  return Math.min(most, Math.max(4, width * 0.08));
 }
 
 /**
