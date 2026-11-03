@@ -35,12 +35,20 @@ interface Props {
 }
 
 /**
- * A button's place behind the row: it's only as wide as the row has slid, so it appears from the edge line by line
- * as the row moves. At rest it's gone, so nothing (not even a rounded corner) shows past the row.
+ * A button's place behind the row. It keeps its full size (the swipe measures it), but it's slid in from the row's
+ * edge as the row moves, clipped to what's shown. At rest it's clipped away, so nothing (not even a rounded corner)
+ * shows past the row.
  */
 function Reveal({ drag, side, children }: { drag: SharedValue<number>; side: SwipeSide; children: ReactNode }) {
-  const width = useAnimatedStyle(() => ({ width: Math.min(ACTION_WIDTH + GAP, Math.abs(drag.value)) }));
-  return <Animated.View style={[styles.reveal, side === 'left' ? styles.revealLeft : styles.revealRight, width]}>{children}</Animated.View>;
+  const slide = useAnimatedStyle(() => {
+    const shown = Math.min(ACTION_WIDTH + GAP, Math.abs(drag.value));
+    return { transform: [{ translateX: side === 'right' ? ACTION_WIDTH + GAP - shown : shown - (ACTION_WIDTH + GAP) }] };
+  });
+  return (
+    <View style={styles.reveal}>
+      <Animated.View style={[styles.slide, slide]}>{children}</Animated.View>
+    </View>
+  );
 }
 
 /** The side whose button a swipe shows: swiping right shows the left one, swiping left the right one. */
@@ -125,10 +133,8 @@ export function SwipeRow({ open, onOpenChange, onDelete, onDuplicate, radius = 1
 }
 
 const styles = StyleSheet.create({
-  reveal: { overflow: 'hidden', flexDirection: 'row', alignSelf: 'stretch' },
-  // The button is kept to the outer edge: its outer part shows first.
-  revealLeft: { justifyContent: 'flex-start' },
-  revealRight: { justifyContent: 'flex-end' },
+  reveal: { width: ACTION_WIDTH + GAP, overflow: 'hidden', alignSelf: 'stretch' },
+  slide: { width: ACTION_WIDTH + GAP, alignSelf: 'stretch' },
   actionWrap: { width: ACTION_WIDTH + GAP },
   action: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });
