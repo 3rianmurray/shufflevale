@@ -36,11 +36,38 @@ interface Props {
 
 /**
  * A button behind the row: invisible until the row has moved (so no corner shows at rest), then fully shown as
- * the row slides.
+ * the row slides. Its outer view is the swipe's own actions row's direct child (as it always was), so it stretches
+ * to the row's height and the button fills it.
  */
-function Reveal({ drag, children }: { drag: SharedValue<number>; children: ReactNode }) {
+function SwipeAction({
+  drag,
+  label,
+  icon,
+  color,
+  radius,
+  gap,
+  onPress,
+}: {
+  drag: SharedValue<number>;
+  label: string;
+  icon: SymbolViewProps['name'];
+  color: string;
+  radius: number;
+  gap: ViewStyle;
+  onPress: () => void;
+}) {
   const fade = useAnimatedStyle(() => ({ opacity: Math.min(1, Math.abs(drag.value) / 4) }));
-  return <Animated.View style={[styles.reveal, fade]}>{children}</Animated.View>;
+  return (
+    <Animated.View style={[styles.actionWrap, gap, fade]}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        style={({ pressed }) => [styles.action, { borderRadius: radius, backgroundColor: color }, pressed && { opacity: 0.75 }]}>
+        <SymbolView name={icon} size={24} tintColor="#fff" />
+      </Pressable>
+    </Animated.View>
+  );
 }
 
 /** The side whose button a swipe shows: swiping right shows the left one, swiping left the right one. */
@@ -63,18 +90,6 @@ export function SwipeRow({ open, onOpenChange, onDelete, onDuplicate, radius = 1
     else if (open === 'left') ref.current?.openLeft();
     else ref.current?.openRight();
   }, [open]);
-
-  const action = (label: string, icon: SymbolViewProps['name'], color: string, onPress: () => void, gap: ViewStyle) => (
-    <View style={[styles.actionWrap, gap]}>
-      <Pressable
-        onPress={onPress}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        style={({ pressed }) => [styles.action, { borderRadius: radius, backgroundColor: color }, pressed && { opacity: 0.75 }]}>
-        <SymbolView name={icon} size={24} tintColor="#fff" />
-      </Pressable>
-    </View>
-  );
 
   return (
     <View style={style}>
@@ -102,16 +117,28 @@ export function SwipeRow({ open, onOpenChange, onDelete, onDuplicate, radius = 1
         renderLeftActions={
           onDuplicate
             ? (_progress, drag) => (
-                <Reveal drag={drag}>
-                  {action('Duplicate', { ios: 'plus.square.on.square', android: 'content_copy', web: 'content_copy' }, colors.accent, onDuplicate, {
-                    paddingRight: GAP,
-                  })}
-                </Reveal>
+                <SwipeAction
+                  drag={drag}
+                  label="Duplicate"
+                  icon={{ ios: 'plus.square.on.square', android: 'content_copy', web: 'content_copy' }}
+                  color={colors.accent}
+                  radius={radius}
+                  gap={{ paddingRight: GAP }}
+                  onPress={onDuplicate}
+                />
               )
             : undefined
         }
         renderRightActions={(_progress, drag) => (
-          <Reveal drag={drag}>{action('Delete', { ios: 'trash', android: 'delete', web: 'delete' }, colors.danger, onDelete, { paddingLeft: GAP })}</Reveal>
+          <SwipeAction
+            drag={drag}
+            label="Delete"
+            icon={{ ios: 'trash', android: 'delete', web: 'delete' }}
+            color={colors.danger}
+            radius={radius}
+            gap={{ paddingLeft: GAP }}
+            onPress={onDelete}
+          />
         )}>
         <View>
           {children}
@@ -123,7 +150,6 @@ export function SwipeRow({ open, onOpenChange, onDelete, onDuplicate, radius = 1
 }
 
 const styles = StyleSheet.create({
-  reveal: { alignSelf: 'stretch' },
   actionWrap: { width: ACTION_WIDTH + GAP },
   action: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });
