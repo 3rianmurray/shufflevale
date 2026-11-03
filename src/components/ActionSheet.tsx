@@ -71,7 +71,7 @@ interface Props {
    * panel dropped from the top, in the middle, that stays put. Either closes with a tap anywhere else, so has no
    * Cancel (only a `closeLabel` of its own, e.g. Done).
    */
-  place?: { kind: 'window'; at?: Point; from?: Rect; avoid?: Rect } | { kind: 'drop' };
+  place?: { kind: 'window'; at?: Point; from?: Rect; avoid?: Rect } | { kind: 'drop'; corner?: 'right' };
   /** A window says where it is (its corner and size) as it opens and wherever it's let go, for a follow-up to open there. */
   onPlace?: (rect: Rect) => void;
 }
@@ -395,6 +395,8 @@ export function ActionSheet(props: Props) {
   if (place?.kind === 'drop') {
     // From the top, in the middle, staying where it is.
     const w = Math.min(DROP_W, screenWidth - 32);
+    // Under the top right corner (where the menu's three lines are), or in the middle.
+    const left = place.corner === 'right' ? screenWidth - w - 16 : (screenWidth - w) / 2;
     return modal(
       <>
         <Animated.View style={[StyleSheet.absoluteFill, styles.backdropLight, { opacity: progress }]}>
@@ -404,7 +406,7 @@ export function ActionSheet(props: Props) {
           onLayout={(e) => measure(e.nativeEvent.layout.height)}
           style={[
             styles.drop,
-            { top: insets.top + 8, left: (screenWidth - w) / 2, width: w, maxHeight: room },
+            { top: insets.top + 8, left, width: w, maxHeight: room },
             { transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [-(sheetHeight + insets.top + 16), 0] }) }] },
           ]}>
           <ScrollView bounces={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} scrollIndicatorInsets={{ top: SHEET_RADIUS, bottom: SHEET_RADIUS }}>

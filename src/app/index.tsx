@@ -601,6 +601,8 @@ export default function HomeScreen() {
       <ActionSheet
         visible={appMenuOpen}
         title="Shufflevale"
+        // On iPad it drops from the top right corner, under the three lines; on iPhone, a sheet from the bottom.
+        place={Platform.OS === 'ios' && Platform.isPad ? { kind: 'drop', corner: 'right' } : undefined}
         onClose={() => setAppMenuOpen(false)}
         // Shufflevale Pro, set apart at the top: gold-edged, with what's left of the free version's cards.
         banner={
