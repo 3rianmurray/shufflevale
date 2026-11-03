@@ -285,8 +285,8 @@ export function PileDepth({
   height?: Animated.Value;
   children: ReactNode;
 }) {
-  // See-through cards (die-cut shapes) have no paper edges to show, so they lie flat.
-  const rise = isSeeThrough(deck.backImage) ? 0 : pileRise(width, count);
+  // Die-cut (see-through) cards stack like any other, so a deck of them shows its depth too.
+  const rise = pileRise(width, count);
   // Enough edges to look solid however far the pile leans.
   const edges = Math.round((rise * MAX_LEAN) / EDGE_STEP);
   const height = width / cardRatio(deck);
