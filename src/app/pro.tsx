@@ -97,7 +97,8 @@ const IS_PAD = Platform.OS === 'ios' && Platform.isPad;
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   content: { alignItems: 'center', padding: 24, paddingTop: 32 },
-  padContent: { backgroundColor: colors.bg, paddingBottom: 28 },
+  // (Room above the icon too: the window's top edge cut it off with the usual padding.)
+  padContent: { backgroundColor: colors.bg, paddingTop: 56, paddingBottom: 28 },
   title: { color: colors.text, fontSize: 26, fontWeight: '700', marginTop: 14 },
   reason: { color: colors.accent, fontSize: 15, textAlign: 'center', marginTop: 10, lineHeight: 21 },
   perks: { alignSelf: 'stretch', backgroundColor: colors.surface, borderRadius: 14, padding: 16, gap: 14, marginTop: 22 },
