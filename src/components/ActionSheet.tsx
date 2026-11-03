@@ -86,6 +86,8 @@ const SIDEWAYS_W = 480;
 /** The corners' rounding: a sheet's (or dropped panel's), and a window's. */
 const SHEET_RADIUS = 16;
 const WINDOW_RADIUS = 18;
+/** On iPad the bottom sheet floats this far up from the bottom edge, like the dropped panel floats from the top. */
+const PAD_LIFT = 16;
 
 /**
  * A bottom sheet of actions. Each action closes the sheet when pressed. The dimmed backdrop fades in and out
@@ -99,7 +101,8 @@ export function ActionSheet(props: Props) {
   const [progress] = useState(() => new Animated.Value(0));
   // Starts below the screen, until the sheet has been measured (it slides in only once it has).
   const { height: screenHeight, width: screenWidth } = useWindowDimensions();
-  const sideways = !(Platform.OS === 'ios' && Platform.isPad) && screenWidth > screenHeight && screenWidth > SIDEWAYS_W;
+  const pad = Platform.OS === 'ios' && Platform.isPad;
+  const sideways = !pad && screenWidth > screenHeight && screenWidth > SIDEWAYS_W;
   const [sheetHeight, setSheetHeight] = useState(screenHeight);
   const [measured, setMeasured] = useState(false);
   // A window, dragged by its title or its grip: it stays where it's let go (back to its place, each time it opens).
@@ -414,19 +417,21 @@ export function ActionSheet(props: Props) {
 
   return modal(
     // Lifts the sheet above the keyboard when the header contains a text field.
-    <KeyboardAvoidingView style={styles.screen} behavior="padding">
-      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, { opacity: progress }]}>
+    <KeyboardAvoidingView style={[styles.screen, pad && styles.padScreen]} behavior="padding">
+      <Animated.View style={[StyleSheet.absoluteFill, pad ? styles.backdropLight : styles.backdrop, { opacity: progress }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
       </Animated.View>
       <Animated.View
         onLayout={(e) => measure(e.nativeEvent.layout.height)}
         style={[
-          styles.sheet,
+          pad ? styles.padSheet : styles.sheet,
           { paddingBottom: insets.bottom + 8 },
           // An iPhone on its side (at a table): a sheet the whole width of it would stretch every row, so it's kept
           // to a phone's width, in the middle.
           sideways && { width: SIDEWAYS_W, alignSelf: 'center' },
-          { transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [sheetHeight, 0] }) }] },
+          // An iPad's: the same width as the dropped panel (the table's settings), in the middle.
+          pad && { width: Math.min(DROP_W, screenWidth - 32), alignSelf: 'center' },
+          { transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [sheetHeight + (pad ? PAD_LIFT : 0), 0] }) }] },
         ]}>
         {/* Its scroll bar kept below the rounded corners, so it never shows outside them. */}
         <ScrollView bounces={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} scrollIndicatorInsets={{ top: SHEET_RADIUS }}>
@@ -475,6 +480,17 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: SHEET_RADIUS,
     borderTopRightRadius: SHEET_RADIUS,
     maxHeight: '85%',
+  },
+  // On iPad: lifted off the bottom edge, with the dropped panel's corners, shadow and backdrop.
+  padScreen: { paddingBottom: PAD_LIFT },
+  padSheet: {
+    backgroundColor: colors.surface,
+    borderRadius: SHEET_RADIUS,
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
   },
   content: { padding: 12, gap: 6 },
   title: { color: colors.textMuted, textAlign: 'center', fontSize: 13, marginVertical: 6 },
