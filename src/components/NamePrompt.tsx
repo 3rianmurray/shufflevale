@@ -16,6 +16,8 @@ export function NamePrompt() {
   const [draft, setDraft] = useState('');
   // A new request starts from its own name.
   const [shown, setShown] = useState<typeof request>(null);
+  // What's there is selected as it opens (so typing replaces it), until the first change.
+  const [selectAll, setSelectAll] = useState(true);
   // A name is title-cased as it's typed; words on a table (plain), a number or a time are kept as typed (a number
   // or time with the number keyboard).
   const kind = shown?.kind ?? 'name';
@@ -23,6 +25,7 @@ export function NamePrompt() {
   const asTyped = (t: string) => (kind === 'name' && !plain ? titleCase(t) : t);
   if (request !== shown) {
     setShown(request);
+    setSelectAll(true);
     setDraft(request ? ((request.kind ?? 'name') === 'name' && !request.plain ? titleCase(request.current) : request.current) : '');
   }
   const save = () => answerName(draft);
@@ -39,7 +42,11 @@ export function NamePrompt() {
             maxFontSizeMultiplier={MAX_TEXT_SCALE}
             value={draft}
             maxLength={MAX_NAME_LENGTH}
-            onChangeText={(t) => setDraft(asTyped(t))}
+            onChangeText={(t) => {
+              setSelectAll(false);
+              setDraft(asTyped(t));
+            }}
+            selection={selectAll ? { start: 0, end: draft.length } : undefined}
             autoCapitalize={kind !== 'name' ? 'none' : plain ? 'sentences' : 'words'}
             // Digits only for a count; with a minus sign, or a colon for a time, the keyboard that has them.
             keyboardType={kind === 'number' ? 'number-pad' : kind === 'name' ? 'default' : 'numbers-and-punctuation'}

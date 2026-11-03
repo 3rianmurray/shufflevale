@@ -4,6 +4,8 @@ import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import type { SharedValue } from 'react-native-reanimated';
 import ReanimatedSwipeable, { SwipeDirection } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
@@ -30,6 +32,15 @@ interface Props {
   /** For the row's outer spacing (margins), so the buttons line up with the row itself. */
   style?: StyleProp<ViewStyle>;
   children: ReactNode;
+}
+
+/**
+ * A button's place behind the row: it's only as wide as the row has slid, so it appears from the edge line by line
+ * as the row moves. At rest it's gone, so nothing (not even a rounded corner) shows past the row.
+ */
+function Reveal({ drag, side, children }: { drag: SharedValue<number>; side: SwipeSide; children: ReactNode }) {
+  const width = useAnimatedStyle(() => ({ width: Math.min(ACTION_WIDTH + GAP, Math.abs(drag.value)) }));
+  return <Animated.View style={[styles.reveal, side === 'left' ? styles.revealLeft : styles.revealRight, width]}>{children}</Animated.View>;
 }
 
 /** The side whose button a swipe shows: swiping right shows the left one, swiping left the right one. */
@@ -90,13 +101,20 @@ export function SwipeRow({ open, onOpenChange, onDelete, onDuplicate, radius = 1
         }}
         renderLeftActions={
           onDuplicate
-            ? () =>
-                action('Duplicate', { ios: 'plus.square.on.square', android: 'content_copy', web: 'content_copy' }, colors.accent, onDuplicate, {
-                  paddingRight: GAP,
-                })
+            ? (_progress, drag) => (
+                <Reveal drag={drag} side="left">
+                  {action('Duplicate', { ios: 'plus.square.on.square', android: 'content_copy', web: 'content_copy' }, colors.accent, onDuplicate, {
+                    paddingRight: GAP,
+                  })}
+                </Reveal>
+              )
             : undefined
         }
-        renderRightActions={() => action('Delete', { ios: 'trash', android: 'delete', web: 'delete' }, colors.danger, onDelete, { paddingLeft: GAP })}>
+        renderRightActions={(_progress, drag) => (
+          <Reveal drag={drag} side="right">
+            {action('Delete', { ios: 'trash', android: 'delete', web: 'delete' }, colors.danger, onDelete, { paddingLeft: GAP })}
+          </Reveal>
+        )}>
         <View>
           {children}
           {open ? <Pressable style={StyleSheet.absoluteFill} onPress={() => ref.current?.close()} accessibilityRole="button" accessibilityLabel="Close" /> : null}
@@ -107,6 +125,10 @@ export function SwipeRow({ open, onOpenChange, onDelete, onDuplicate, radius = 1
 }
 
 const styles = StyleSheet.create({
+  reveal: { overflow: 'hidden', flexDirection: 'row', alignSelf: 'stretch' },
+  // The button is kept to the outer edge: its outer part shows first.
+  revealLeft: { justifyContent: 'flex-start' },
+  revealRight: { justifyContent: 'flex-end' },
   actionWrap: { width: ACTION_WIDTH + GAP },
   action: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

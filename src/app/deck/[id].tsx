@@ -83,6 +83,8 @@ export default function DeckEditorScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   /** The deck's own menu (•••, top right): share or delete it. */
   const [deckMenuOpen, setDeckMenuOpen] = useState(false);
+  // Set while the card sheet is closing to make way for the copies prompt (iOS shows one modal at a time).
+  const [copiesAsk, setCopiesAsk] = useState(false);
   /**
    * The open picture menu: where new card art (`cards`) or the card back (`back`) comes from, or, after
    * choosing a sprite sheet, where that sheet comes from (`sheet-…`).
@@ -449,15 +451,17 @@ export default function DeckEditorScreen() {
   // Done button away on iPhone).
   const askCopies = () => {
     if (!selected) return;
-    const card = selected;
-    // The sheet closes first: iOS shows one modal at a time, so the prompt waits for it to slide away.
+    setCopiesAsk(true);
     setSheetOpen(false);
-    setTimeout(() => {
-      askNumber('Copies in deck', String(copiesOf(card)), (text) => {
-        const n = parseInt(text, 10);
-        if (n >= 1) decks.setCopies(deck.id, card.id, n);
-      }, 'number', 'Save');
-    }, 300);
+  };
+  // Once the sheet has gone, the prompt opens with the card's copies selected.
+  const openCopiesPrompt = () => {
+    if (!selected) return;
+    const card = selected;
+    askNumber('Copies in deck', String(copiesOf(card)), (text) => {
+      const n = parseInt(text, 10);
+      if (n >= 1) decks.setCopies(deck.id, card.id, n);
+    }, 'number', 'Save');
   };
 
   return (
@@ -705,6 +709,13 @@ export default function DeckEditorScreen() {
         // Its copies are kept as they're typed: closing it is being done, not cancelling.
         closeLabel="Done"
         onClose={() => setSheetOpen(false)}
+        // For the copies prompt: the sheet goes at once, and the prompt comes up when it has gone.
+        closeInstantly={copiesAsk}
+        afterClose={() => {
+          if (!copiesAsk) return;
+          setCopiesAsk(false);
+          openCopiesPrompt();
+        }}
       />
 
       <ActionSheet visible={menu !== null} {...menuProps} onClose={() => setMenu(null)} />
