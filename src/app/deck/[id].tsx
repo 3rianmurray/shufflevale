@@ -642,6 +642,8 @@ export default function DeckEditorScreen() {
               router.push({ pathname: '/play/[id]', params: { id: deck.id } });
               tourEvent('table-opened');
             }}
+            // On iPad, not stretched across the whole screen: a phone's width, in the middle.
+            style={Platform.OS === 'ios' && Platform.isPad ? { width: '100%', maxWidth: 420, alignSelf: 'center' } : undefined}
           />
         </TourSpot>
         )}
