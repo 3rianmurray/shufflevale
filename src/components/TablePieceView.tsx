@@ -636,7 +636,8 @@ function Die({
         {solid ? (
           <SolidD6 rest={rest} spin={spin} spun={spun} color={color} ink={ink} arts={faceArts} px={px} size={size} OS={OS} rimmed={selected && !rolling} shadow={shadow} />
         ) : model ? (
-          <SolidPoly model={model} rest={rest} spin={spin} spun={spun} color={color} ink={ink} px={px} OS={OS} rimmed={selected && !rolling} shadow={shadow} />
+          // Keyed by its kind: changed from a d10 to a d12, it starts fresh rather than keeping the d10's drawing state.
+          <SolidPoly key={sides} model={model} rest={rest} spin={spin} spun={spun} color={color} ink={ink} px={px} OS={OS} rimmed={selected && !rolling} shadow={shadow} />
         ) : sides === 6 ? (
           <>
             {/*
