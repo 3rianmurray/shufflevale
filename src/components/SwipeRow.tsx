@@ -35,20 +35,12 @@ interface Props {
 }
 
 /**
- * A button's place behind the row. It keeps its full size (the swipe measures it), but it's slid in from the row's
- * edge as the row moves, clipped to what's shown. At rest it's clipped away, so nothing (not even a rounded corner)
- * shows past the row.
+ * A button behind the row: invisible until the row has moved (so no corner shows at rest), then fully shown as
+ * the row slides.
  */
-function Reveal({ drag, side, children }: { drag: SharedValue<number>; side: SwipeSide; children: ReactNode }) {
-  const slide = useAnimatedStyle(() => {
-    const shown = Math.min(ACTION_WIDTH + GAP, Math.abs(drag.value));
-    return { transform: [{ translateX: side === 'right' ? ACTION_WIDTH + GAP - shown : shown - (ACTION_WIDTH + GAP) }] };
-  });
-  return (
-    <View style={styles.reveal}>
-      <Animated.View style={[styles.slide, slide]}>{children}</Animated.View>
-    </View>
-  );
+function Reveal({ drag, children }: { drag: SharedValue<number>; children: ReactNode }) {
+  const fade = useAnimatedStyle(() => ({ opacity: Math.min(1, Math.abs(drag.value) / 4) }));
+  return <Animated.View style={[styles.reveal, fade]}>{children}</Animated.View>;
 }
 
 /** The side whose button a swipe shows: swiping right shows the left one, swiping left the right one. */
@@ -110,7 +102,7 @@ export function SwipeRow({ open, onOpenChange, onDelete, onDuplicate, radius = 1
         renderLeftActions={
           onDuplicate
             ? (_progress, drag) => (
-                <Reveal drag={drag} side="left">
+                <Reveal drag={drag}>
                   {action('Duplicate', { ios: 'plus.square.on.square', android: 'content_copy', web: 'content_copy' }, colors.accent, onDuplicate, {
                     paddingRight: GAP,
                   })}
@@ -119,9 +111,7 @@ export function SwipeRow({ open, onOpenChange, onDelete, onDuplicate, radius = 1
             : undefined
         }
         renderRightActions={(_progress, drag) => (
-          <Reveal drag={drag} side="right">
-            {action('Delete', { ios: 'trash', android: 'delete', web: 'delete' }, colors.danger, onDelete, { paddingLeft: GAP })}
-          </Reveal>
+          <Reveal drag={drag}>{action('Delete', { ios: 'trash', android: 'delete', web: 'delete' }, colors.danger, onDelete, { paddingLeft: GAP })}</Reveal>
         )}>
         <View>
           {children}
@@ -133,8 +123,7 @@ export function SwipeRow({ open, onOpenChange, onDelete, onDuplicate, radius = 1
 }
 
 const styles = StyleSheet.create({
-  reveal: { width: ACTION_WIDTH + GAP, overflow: 'hidden', alignSelf: 'stretch' },
-  slide: { width: ACTION_WIDTH + GAP, alignSelf: 'stretch' },
+  reveal: { alignSelf: 'stretch' },
   actionWrap: { width: ACTION_WIDTH + GAP },
   action: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });
