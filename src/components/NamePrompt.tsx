@@ -51,7 +51,7 @@ export function NamePrompt() {
           />
           <View style={styles.buttons}>
             <Button label="Cancel" onPress={() => answerName(null)} style={{ flex: 1 }} />
-            <Button label="Save" variant="primary" onPress={save} disabled={!draft.trim()} style={{ flex: 1 }} />
+            <Button label={shown?.confirm ?? 'Save'} variant="primary" onPress={save} disabled={!draft.trim()} style={{ flex: 1 }} />
           </View>
         </View>
       </KeyboardAvoidingView>

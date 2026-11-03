@@ -4586,10 +4586,16 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             onPress: () =>
               setTimeout(
                 () =>
-                  askNumber('How many copies', '2', (text) => {
-                    const n = parseInt(text.replace(/\D/g, ''), 10);
-                    if (n > 0) pasteClip(false, Math.min(PASTE_MAX, n));
-                  }),
+                  askNumber(
+                    'How many copies',
+                    '2',
+                    (text) => {
+                      const n = parseInt(text.replace(/\D/g, ''), 10);
+                      if (n > 0) pasteClip(false, Math.min(PASTE_MAX, n));
+                    },
+                    'number',
+                    'Paste',
+                  ),
                 350,
               ),
           },

@@ -30,6 +30,8 @@ export interface NameRequest {
   kind?: AskKind;
   /** Words to be kept just as typed (the words on a table: a zone's name, a text label), not title-cased like names. */
   plain?: boolean;
+  /** What the yellow button says, if not Save (say, Paste for how many copies to paste). */
+  confirm?: string;
 }
 
 let request: NameRequest | null = null;
@@ -53,9 +55,9 @@ export function askText(title: string, current: string, done: (text: string) => 
   set({ title, current, done, plain: true });
 }
 
-/** Asks for a number (or a time) the same way, with the number keyboard (see AskKind). */
-export function askNumber(title: string, current: string, done: (text: string) => void, kind: Exclude<AskKind, 'name'> = 'number') {
-  set({ title, current, done, kind });
+/** Asks for a number (or a time) the same way, with the number keyboard (see AskKind), and the button's words (see NameRequest). */
+export function askNumber(title: string, current: string, done: (text: string) => void, kind: Exclude<AskKind, 'name'> = 'number', confirm?: string) {
+  set({ title, current, done, kind, confirm });
 }
 
 /** Closes the prompt (with the name it gives, if any). */
