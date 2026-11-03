@@ -23,7 +23,7 @@ import type { FilePicture, UnpackedDeck, UnpackedGroup } from './deckFile';
 import { withoutDeck } from './groups';
 import type { DeckGroup } from './groups';
 import { moveItems } from './order';
-import { createTable, pruneTable } from './table';
+import { createTable, pruneTable, topUpTable } from './table';
 import { copiesOf } from './types';
 import type { Card, CardShape, Deck, PlayMode, Session, TableState } from './types';
 
@@ -457,7 +457,8 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         const deck = getDeck(deckId);
         if (!deck) return undefined;
         const saved = tables.get(tableKey(deckId, sessionId));
-        return saved ? pruneTable(saved, deck) : createTable(deck);
+        // A saved table gets any copies raised since it was saved, so the deck shows every copy it has.
+        return saved ? topUpTable(pruneTable(saved, deck), deck) : createTable(deck);
       },
       setTable(deckId, sessionId, table) {
         tables.set(tableKey(deckId, sessionId), table);

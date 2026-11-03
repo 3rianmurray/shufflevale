@@ -71,6 +71,16 @@ export function missingCards(state: TableState, deck: Deck): string[] {
   return deck.cards.flatMap((c) => Array(Math.max(0, copiesOf(c) - (present.get(c.id) ?? 0))).fill(c.id));
 }
 
+/**
+ * Adds the copies missing from a saved table (e.g. copies raised since it was saved) to the bottom of the deck, in
+ * the deck's order, leaving the deck's order as it is.
+ */
+export function topUpTable(state: TableState, deck: Deck): TableState {
+  const added = missingCards(state, deck).map((cardId) => ({ iid: newId(), cardId, faceUp: false }));
+  if (added.length === 0) return state;
+  return { ...state, deck: [...state.deck, ...added] };
+}
+
 /** Shuffles cards that are missing from the table into the deck. */
 export function addMissingCards(state: TableState, deck: Deck, rng: Rng = Math.random): TableState {
   const added = missingCards(state, deck).map((cardId) => ({ iid: newId(), cardId, faceUp: false }));
