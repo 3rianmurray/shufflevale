@@ -48,7 +48,7 @@ const cross = (a: Vec, b: Vec): Vec => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] -
 const signs = [1, -1];
 
 /** How big each die's drawn (its corners' reach from its middle, in the die's box), to sit as its flat drawing did. */
-const SIZE: Record<number, number> = { 4: 0.52, 8: 0.56, 10: 0.5, 12: 0.52, 20: 0.5 };
+const SIZE: Record<number, number> = { 4: 0.52, 8: 0.56, 10: 0.5, 12: 0.52, 20: 0.65 };
 /** How tall its numbers are (as a share of a face's middle-to-corner). */
 const TEXT: Record<number, number> = { 4: 0.36, 8: 0.62, 10: 0.5, 12: 0.62, 20: 0.62 };
 
