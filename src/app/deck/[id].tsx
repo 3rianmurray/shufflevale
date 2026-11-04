@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -18,7 +18,7 @@ import type { ImportPicture } from '../../components/ImportReview';
 import { ReorderableGrid } from '../../components/ReorderableGrid';
 import { SpriteSheetModal } from '../../components/SpriteSheetModal';
 import { useDecks } from '../../lib/DecksContext';
-import { askName, askNumber, MAX_NAME_LENGTH, titleCase } from '../../lib/names';
+import { askName, MAX_NAME_LENGTH, titleCase } from '../../lib/names';
 import { backUpWithNotice, shareWithNotice } from '../../lib/fileActions';
 import { deleteDeckWarning } from '../../lib/deckInUse';
 import { cardRoom, FREE_CARD_LIMIT } from '../../lib/limits';
@@ -86,12 +86,7 @@ export default function DeckEditorScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   /** The deck's own menu (•••, top right): share or delete it. */
   const [deckMenuOpen, setDeckMenuOpen] = useState(false);
-  // Set while the card sheet is closing to make way for the copies prompt (iOS shows one modal at a time).
-  const [copiesAsk, setCopiesAsk] = useState(false);
-  // The copies number in the sheet, and where it was on screen when tapped: the prompt's field opens right there.
-  const copiesSpot = useRef<View>(null);
-  const [copiesAt, setCopiesAt] = useState<number | undefined>(undefined);
-  // iPad: the number keys showing in the card's menu, the copies as typed, and whether it's still all selected (the
+  // The number keys showing in the card's menu, the copies as typed, and whether it's still all selected (the
   // first key replaces it).
   const [copiesKeys, setCopiesKeys] = useState(false);
   const [copiesTyped, setCopiesTyped] = useState('');
@@ -458,34 +453,15 @@ export default function DeckEditorScreen() {
     ]);
   };
 
-  // On iPhone the copies are asked for in the app's own number prompt (not typed in the sheet: the keyboard pushed the
-  // sheet's Done button away). On iPad the menu's buttons make way for the app's own number keys, right there.
+  // The menu's buttons make way for the app's own number keys, right there (no field, so no keyboard to push the menu
+  // about or float beside it).
   const askCopies = () => {
     if (!selected) return;
-    if (IS_PAD) {
-      setCopiesKeys(true);
-      setCopiesTyped(String(copiesOf(selected)));
-      setCopiesFresh(true);
-      return;
-    }
-    const close = (at?: number) => {
-      setCopiesAt(at);
-      setCopiesAsk(true);
-      setSheetOpen(false);
-    };
-    if (copiesSpot.current) copiesSpot.current.measureInWindow((_x, y, _w, h) => close(y + h / 2));
-    else close();
+    setCopiesKeys(true);
+    setCopiesTyped(String(copiesOf(selected)));
+    setCopiesFresh(true);
   };
-  // Once the sheet has gone, the prompt opens with the card's copies selected.
-  const openCopiesPrompt = () => {
-    if (!selected) return;
-    const card = selected;
-    askNumber('Copies in deck', String(copiesOf(card)), (text) => {
-      const n = parseInt(text, 10);
-      if (n >= 1) decks.setCopies(deck.id, card.id, n);
-    }, 'number', 'Save', copiesAt);
-  };
-  /** A number key pressed on iPad: the copies kept as they're typed (as they were in the old field); Done puts the buttons back. */
+  /** A number key pressed: the copies kept as they're typed (as they were in the old field); Done puts the buttons back. */
   const typeCopies = (key: string) => {
     if (key === 'Done') return setCopiesKeys(false);
     const next = typeKey(copiesTyped, key, copiesFresh, 2);
@@ -728,13 +704,13 @@ export default function DeckEditorScreen() {
               <CardView deck={deck} card={selected} width={Math.min(200, width * 0.5)} />
               <View style={styles.copiesRow}>
                 <Text style={styles.copiesLabel}>Copies in deck</Text>
-                <Pressable ref={copiesSpot} onPress={askCopies} accessibilityRole="button" accessibilityLabel="Copies in deck" style={({ pressed }) => [styles.copiesInput, pressed && { opacity: 0.7 }]}>
+                <Pressable onPress={askCopies} accessibilityRole="button" accessibilityLabel="Copies in deck" style={({ pressed }) => [styles.copiesInput, pressed && { opacity: 0.7 }]}>
                   <Text style={[styles.copiesValue, copiesKeys && copiesFresh && styles.copiesSelected]} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
                     {copiesKeys ? copiesTyped || ' ' : copiesOf(selected)}
                   </Text>
                 </Pressable>
               </View>
-              {/* iPad: the number keys, where the menu's buttons were. */}
+              {/* The number keys, where the menu's buttons were. */}
               {copiesKeys ? (
                 <View style={styles.copiesKeys}>
                   <NumberKeys onKey={typeCopies} extra="Done" />
@@ -752,13 +728,6 @@ export default function DeckEditorScreen() {
         }}
         // On iPad, in the middle of the screen.
         place={IS_PAD ? { kind: 'center' } : undefined}
-        // For the copies prompt: the sheet goes at once, and the prompt comes up when it has gone.
-        closeInstantly={copiesAsk}
-        afterClose={() => {
-          if (!copiesAsk) return;
-          setCopiesAsk(false);
-          openCopiesPrompt();
-        }}
       />
 
       <ActionSheet visible={menu !== null} {...menuProps} onClose={() => setMenu(null)} />
@@ -937,7 +906,7 @@ const styles = StyleSheet.create({
   copiesRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
   copiesLabel: { color: colors.text, fontSize: 16 },
   copiesValue: { color: colors.text, fontSize: 18, fontWeight: '600', textAlign: 'center' },
-  // iPad: the number still all selected (the first key replaces it), and the keys under it.
+  // The number still all selected (the first key replaces it), and the keys under it.
   copiesSelected: { backgroundColor: 'rgba(224,179,84,0.45)', borderRadius: 4, overflow: 'hidden', paddingHorizontal: 4 },
   copiesKeys: { alignSelf: 'stretch', marginTop: 14 },
   copiesInput: {
