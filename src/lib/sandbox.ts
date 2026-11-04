@@ -480,7 +480,9 @@ export function pieceSizeOf(p: TablePiece): { w: number; h: number } {
             ? { w: p.w ?? PIECE_SIZE.art.w, h: p.h ?? PIECE_SIZE.art.h }
             : p.kind === 'score'
               ? scoreSize(p.names?.length ?? SCORE_PLAYERS, scoreRowsOf(p))
-              : PIECE_SIZE[p.kind];
+              : p.kind === 'counter'
+                ? counterSize(p.value)
+                : PIECE_SIZE[p.kind];
   const k = p.scale ?? 1;
   return k === 1 ? base : { w: base.w * k, h: base.h * k };
 }
@@ -766,6 +768,15 @@ export const textSize = (label: string) => ({
 
 /** How far into a counter, from each end, its − and + reach (the middle, its number, is neither). */
 export const COUNTER_BUTTON = 50;
+/** How many characters of a counter's number fit at its usual width, and how much wider it gets for each one more. */
+const COUNTER_FITS = 2;
+const COUNTER_PER_CHAR = 18;
+
+/** A counter's size: its usual width, wider for a number longer than fits (a minus sign counts), so it isn't squeezed. */
+export function counterSize(value: number): { w: number; h: number } {
+  const extra = Math.max(0, String(value).length - COUNTER_FITS);
+  return { w: PIECE_SIZE.counter.w + extra * COUNTER_PER_CHAR, h: PIECE_SIZE.counter.h };
+}
 
 /** The part of a piece a point is on: a counter's − or +, or anywhere else on it. */
 export type PiecePart = 'minus' | 'plus' | 'body';

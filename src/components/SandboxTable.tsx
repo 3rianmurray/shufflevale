@@ -4161,17 +4161,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           return focus(pieceName(piece), [tile('Shape', 'square.on.circle', 'category', next({ kind: 'pieceShape', id })), colorTile, scaleTile], [takeOffRow]);
         case 'token':
           return focus(
-            piece.value > 1 ? `Token × ${piece.value}` : 'Token',
+            'Token',
             [
-              tile(
-                'How many',
-                'number',
-                'pin',
-                askNum('How many', String(piece.value), (text) => {
-                  const n = parseInt(text.replace(/\D/g, ''), 10);
-                  if (n > 0) commit(setPiece(table, id, { value: Math.min(999, n) }));
-                }),
-              ),
               // The system's menu, once this has gone (see choosePicture).
               tile('Picture', 'photo', 'image', () => setTimeout(() => choosePicture({ kind: 'token', id }), 450)),
               tile('Shape', 'square.on.circle', 'category', next({ kind: 'tokenShape', id })),
