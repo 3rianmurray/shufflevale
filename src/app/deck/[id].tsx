@@ -461,9 +461,8 @@ export default function DeckEditorScreen() {
     setCopiesTyped(String(copiesOf(selected)));
     setCopiesFresh(true);
   };
-  /** A number key pressed: the copies kept as they're typed (as they were in the old field); Done puts the buttons back. */
+  /** A number key pressed: the copies kept as they're typed (as they were in the old field). */
   const typeCopies = (key: string) => {
-    if (key === 'Done') return setCopiesKeys(false);
     const next = typeKey(copiesTyped, key, copiesFresh, 2);
     setCopiesTyped(next);
     setCopiesFresh(false);
@@ -713,7 +712,7 @@ export default function DeckEditorScreen() {
               {/* The number keys, where the menu's buttons were. */}
               {copiesKeys ? (
                 <View style={styles.copiesKeys}>
-                  <NumberKeys onKey={typeCopies} extra="Done" />
+                  <NumberKeys onKey={typeCopies} />
                 </View>
               ) : null}
             </View>
@@ -722,10 +721,8 @@ export default function DeckEditorScreen() {
         actions={copiesKeys ? [] : cardActions}
         // Its copies are kept as they're typed: closing it is being done, not cancelling.
         closeLabel="Done"
-        onClose={() => {
-          setCopiesKeys(false);
-          setSheetOpen(false);
-        }}
+        // Done (the one button) puts the menu's buttons back while the number keys show, and closes it otherwise.
+        onClose={() => (copiesKeys ? setCopiesKeys(false) : setSheetOpen(false))}
         // On iPad, in the middle of the screen.
         place={IS_PAD ? { kind: 'center' } : undefined}
       />

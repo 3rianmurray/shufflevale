@@ -11,7 +11,8 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDecks } from '../lib/DecksContext';
-import { askName, askNumber, askText } from '../lib/names';
+import { askName, askText } from '../lib/names';
+import { NumberKeys, typeKey } from './NumberKeys';
 import * as haptics from '../lib/haptics';
 import { playSound, setSoundsOn, soundsOn } from '../lib/sounds';
 import { newId } from '../lib/id';
@@ -401,7 +402,12 @@ type Menu =
   /** All the points written down on a score pad, newest first, to change or cross off. */
   | { kind: 'scoreList'; id: string }
   /** Points written down on a score pad (where they are in its `scores`): changed, or crossed off. */
-  | { kind: 'scoreEntry'; id: string; entry: number };
+  | { kind: 'scoreEntry'; id: string; entry: number }
+  /**
+   * A number (or a time) typed with the app's own keys, in a menu where the last one was (no field, so no keyboard):
+   * `done` gets it on Save (or the `confirm` button's words, e.g. Paste).
+   */
+  | { kind: 'number'; title: string; numKind: 'number' | 'signed' | 'time'; done: (text: string) => void; confirm?: string };
 
 /** Counters and dice being dragged: the one under the finger, all of them, and how far they've gone (table units). */
 interface PieceDrag {
@@ -590,6 +596,15 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       setMenuSpot(last.follow && last.rect ? { from: last.rect } : t.known ? { at: { x: t.x, y: t.y } } : null);
     }
   }
+  /** A number being typed in its menu (see Menu's `number`), and whether it's still all selected (a key replaces it). */
+  const [numberTyped, setNumberTyped] = useState('');
+  const [numberFresh, setNumberFresh] = useState(true);
+  /** Opens the number menu, starting from `current`, once whatever menu is open has gone. */
+  const askHere = (title: string, current: string, done: (text: string) => void, numKind: 'number' | 'signed' | 'time' = 'number', confirm?: string) => {
+    setNumberTyped(current);
+    setNumberFresh(true);
+    setTimeout(() => setMenu({ kind: 'number', title, numKind, done, confirm }), 250);
+  };
   /** Dealing from this stack: its menu shows how many to deal and to whom, instead of its options. */
   const [dealingFrom, setDealingFrom] = useState<string | null>(null);
   /** Looking through this stack: its menu shows its cards, to take one into the hand. */
@@ -1204,7 +1219,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         askName('Player’s name', who, (named) => commit(setPiece(table, id, { names: scoreNames(piece).map((n, i) => (i === player ? named : n)) })));
         return;
       }
-      askNumber(
+      askHere(
         `Points for ${who}`,
         '',
         (text) => {
@@ -4044,9 +4059,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const next = (m: Menu) => () => setTimeout(() => setMenu(m), 250);
       // (The words on the table are kept as typed, not title-cased like names: see askText.)
       const ask = (title: string, current: string, done: (text: string) => void) => () => setTimeout(() => askText(title, current, done), 350);
-      // A number (or a time), with the number keyboard.
+      // A number (or a time), with the app's own keys in its menu.
       const askNum = (title: string, current: string, done: (text: string) => void, kind: 'number' | 'signed' | 'time' = 'number') => () =>
-        setTimeout(() => askNumber(title, current, done, kind), 350);
+        askHere(title, current, done, kind);
       const colorTile = tile('Color', 'paintpalette', 'palette', next({ kind: 'pieceColor', id }));
       // Not for what's locked in place (it's meant to stay as it is).
       const scaleTile = tile('Scale', 'arrow.up.left.and.arrow.down.right', 'open_in_full', () => openScale([], [id]), !!piece.locked);
@@ -4584,19 +4599,15 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             icon: icon('square.on.square', 'library_add'),
             disabled: !clip,
             onPress: () =>
-              setTimeout(
-                () =>
-                  askNumber(
-                    'How many copies',
-                    '2',
-                    (text) => {
-                      const n = parseInt(text.replace(/\D/g, ''), 10);
-                      if (n > 0) pasteClip(false, Math.min(PASTE_MAX, n));
-                    },
-                    'number',
-                    'Paste',
-                  ),
-                350,
+              askHere(
+                'How many copies',
+                '2',
+                (text) => {
+                  const n = parseInt(text.replace(/\D/g, ''), 10);
+                  if (n > 0) pasteClip(false, Math.min(PASTE_MAX, n));
+                },
+                'number',
+                'Paste',
               ),
           },
         ],
@@ -4641,21 +4652,48 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           {
             label: 'Change',
             onPress: () =>
-              setTimeout(
-                () =>
-                  askNumber(
-                    `Points for ${names[scores[entry].player] ?? 'Player'}`,
-                    String(scores[entry].points),
-                    (text) => {
-                      const n = parseInt(text.replace(/[^\d-]/g, ''), 10);
-                      if (Number.isFinite(n)) commit(setScore(table, menu.id, entry, n));
-                    },
-                    'signed',
-                  ),
-                350,
+              askHere(
+                `Points for ${names[scores[entry].player] ?? 'Player'}`,
+                String(scores[entry].points),
+                (text) => {
+                  const n = parseInt(text.replace(/[^\d-]/g, ''), 10);
+                  if (Number.isFinite(n)) commit(setScore(table, menu.id, entry, n));
+                },
+                'signed',
               ),
           },
           { label: 'Delete', destructive: true, onPress: () => commit(setScore(table, menu.id, entry, null)) },
+        ],
+      };
+    }
+    if (menu.kind === 'number') {
+      // The number shown (highlighted while it's all selected: the first key replaces it), the app's own keys under
+      // it, and Save.
+      return {
+        title: menu.title,
+        tiles: [],
+        banner: (
+          <View style={styles.numberEntry}>
+            <View style={styles.numberShown}>
+              <Text style={[styles.numberText, numberFresh && !!numberTyped && styles.numberSelected]}>{numberTyped || ' '}</Text>
+            </View>
+            <NumberKeys
+              onKey={(key) => {
+                setNumberTyped(typeKey(numberTyped, key, numberFresh, 12));
+                setNumberFresh(false);
+              }}
+              extra={menu.numKind === 'signed' ? '-' : menu.numKind === 'time' ? ':' : ''}
+            />
+          </View>
+        ),
+        actions: [
+          {
+            label: menu.confirm ?? 'Save',
+            onPress: () => {
+              const text = numberTyped.trim();
+              if (text) menu.done(text);
+            },
+          },
         ],
       };
     }
@@ -5672,7 +5710,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       />
       {/* The table's menu, and choosing a deck to add. */}
       <ActionSheet
-        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'tokenShape' || menu?.kind === 'zoneOpacity' ||menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry')}
+        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'tokenShape' || menu?.kind === 'zoneOpacity' ||menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry' || menu?.kind === 'number')}
         title={sheet?.title}
         banner={sheet && 'banner' in sheet ? sheet.banner : undefined}
         wideTile={sheet && 'wideTile' in sheet ? sheet.wideTile : undefined}
@@ -6083,6 +6121,11 @@ const styles = StyleSheet.create({
   swatches: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 14, paddingVertical: 8, paddingHorizontal: 12 },
   // The dice to choose from, drawn as they'll look on the table.
   dicePicks: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 18, paddingVertical: 12, paddingHorizontal: 12 },
+  // A number typed with the app's own keys (see Menu's `number`): it, highlighted while all selected, then the keys.
+  numberEntry: { gap: 12, paddingVertical: 6 },
+  numberShown: { backgroundColor: colors.surfaceRaised, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  numberText: { color: colors.text, fontSize: 22, fontWeight: '600', borderRadius: 4, overflow: 'hidden', paddingHorizontal: 4 },
+  numberSelected: { backgroundColor: 'rgba(224,179,84,0.45)' },
   dicePick: { width: 72, alignItems: 'center', gap: 6 },
   dicePickArt: { width: 60, height: 60 },
   dicePickText: { color: colors.text, fontSize: 14, fontWeight: '700' },
