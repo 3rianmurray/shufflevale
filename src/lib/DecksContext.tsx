@@ -35,6 +35,8 @@ interface DecksApi {
   decks: Deck[];
   getDeck: (id: string) => Deck | undefined;
   createDeck: (name: string) => Deck;
+  /** Deletes a deck if it's empty (no cards, no back: see `isEmptyDeck`), as its editor's left. The same function always. */
+  dropIfEmpty: (id: string) => void;
   /** Makes a deck from ready card-shaped pictures (each its own original) and a back, at the top of the list. */
   createReadyDeck: (name: string, cards: { uri: string; name: string }[], back: string) => Deck;
   /** Copies a deck, art and all, placing the copy right after it. Returns the copy. */
@@ -152,8 +154,30 @@ function withoutTables(all: Record<string, TableState>, drop: (key: string) => b
   return Object.fromEntries(Object.entries(all).filter(([key]) => !drop(key)));
 }
 
+/** A deck with nothing in it: no cards and no back of its own. It isn't kept (see `dropIfEmpty`). */
+export const isEmptyDeck = (d: Deck) => !d.cards.length && !d.backImage;
+
+/**
+ * What's saved, as it opens, less any empty decks (from before they stopped being kept): out of the list, their
+ * sessions and the groups lying above them too.
+ */
+function loadAll() {
+  const saved = loadDecks();
+  const empty = saved.filter(isEmptyDeck).map((d) => d.id);
+  let decks = saved;
+  let groups = loadGroups();
+  for (const id of empty) {
+    groups = withoutDeck(groups, decks, id);
+    decks = decks.filter((d) => d.id !== id);
+  }
+  const gone = new Set(empty);
+  const sessions = loadSessions().map((s) => (s.deckIds.some((id) => gone.has(id)) ? { ...s, deckIds: s.deckIds.filter((id) => !gone.has(id)) } : s));
+  return { decks, groups, sessions, empty };
+}
+
 export function DecksProvider({ children }: { children: ReactNode }) {
-  const [decks, setDecks] = useState<Deck[]>(() => loadDecks());
+  const [start] = useState(loadAll);
+  const [decks, setDecks] = useState<Deck[]>(start.decks);
   // Saved tables are kept outside React state: a table changes with every move, and if they were state, every
   // screen using the decks (the deck editor's grid of cards, say, still open under the table) would redraw with
   // each one. Nothing but the table itself shows them, so they're just kept here and saved soon after changing.
@@ -190,9 +214,17 @@ export function DecksProvider({ children }: { children: ReactNode }) {
     const sub = AppState.addEventListener('change', (state) => state !== 'active' && tables.flush());
     return () => sub.remove();
   }, [tables]);
-  const [sessions, setSessions] = useState<Session[]>(() => loadSessions());
-  const [groups, setGroups] = useState<DeckGroup[]>(() => loadGroups());
+  const [sessions, setSessions] = useState<Session[]>(start.sessions);
+  const [groups, setGroups] = useState<DeckGroup[]>(start.groups);
   const loaded = useRef(false);
+  // Empty decks left out as it opened: saved without them, their folders gone.
+  useEffect(() => {
+    if (!start.empty.length) return;
+    saveDecks(start.decks);
+    saveGroups(start.groups);
+    saveSessions(start.sessions);
+    for (const id of start.empty) deleteDeckFiles(id);
+  }, [start]);
 
   useEffect(() => {
     if (loaded.current) saveDecks(decks);
@@ -215,6 +247,12 @@ export function DecksProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     latest.current = decks;
   }, [decks]);
+  // The API as it is now, for `dropIfEmpty` (which stays the same function, so leaving a screen can use it).
+  const apiNow = useRef<DecksApi | null>(null);
+  const dropIfEmpty = useCallback((id: string) => {
+    const d = latest.current.find((x) => x.id === id);
+    if (d && isEmptyDeck(d)) apiNow.current?.deleteDeck(id);
+  }, []);
 
   const api = useMemo<DecksApi>(() => {
     const getDeck = (id: string) => decks.find((d) => d.id === id);
@@ -242,6 +280,7 @@ export function DecksProvider({ children }: { children: ReactNode }) {
     return {
       decks,
       getDeck,
+      dropIfEmpty,
       createDeck(name) {
         const now = Date.now();
         // New decks' card size is worked out from their first art (see CardShape).
@@ -687,7 +726,10 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         tables.drop((key) => key.startsWith(`${id}:`));
       },
     };
-  }, [decks, tables, sessions, groups, updateDeck]);
+  }, [decks, tables, sessions, groups, updateDeck, dropIfEmpty]);
+  useEffect(() => {
+    apiNow.current = api;
+  }, [api]);
 
   return <DecksContext.Provider value={api}>{children}</DecksContext.Provider>;
 }

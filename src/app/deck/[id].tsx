@@ -105,6 +105,9 @@ export default function DeckEditorScreen() {
   // A tip, the first time a deck has a few cards: reordering them.
   const reorderable = (decks.getDeck(id)?.cards.length ?? 0) > 1;
   useEffect(() => (reorderable ? offerTipSoon('deck-hold-reorder') : undefined), [reorderable]);
+  // Left with nothing in it (no cards, no back), the deck isn't kept.
+  const { dropIfEmpty } = decks;
+  useEffect(() => () => dropIfEmpty(id), [id, dropIfEmpty]);
   /** The deck's name as it's being typed (in title case), until it's done. */
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   /** The card being given its own back (a two-sided card), while its back's picture is chosen; else the deck's. */
