@@ -77,8 +77,24 @@ test('a damaged or cut short zip is turned away', () => {
   changed[30 + 'a.txt'.length] ^= 0xff;
   const entries = zipEntries(changed.length, readerOf(changed));
   assert.throws(() => entryBytes(entries[0], readerOf(changed)), ZipError);
-  // Its end gone.
-  const cut = bytes.subarray(0, bytes.length - 10);
-  assert.throws(() => zipEntries(cut.length, readerOf(cut)), ZipError);
+  // Nothing whole in it.
+  const stub = bytes.subarray(0, 20);
+  assert.throws(() => zipEntries(stub.length, readerOf(stub)), ZipError);
   assert.equal(isZip(strToU8('{"kind"')), false);
+});
+
+test('a zip that lost its end still gives every entry that was written whole', () => {
+  const bytes = written([
+    ['shufflevale.json', strToU8('{"kind":"x"}')],
+    ['pictures/i1.jpg', Uint8Array.from({ length: 3000 }, (_, i) => i % 256)],
+    ['pictures/i2.jpg', Uint8Array.from({ length: 3000 }, (_, i) => (i * 3) % 256)],
+  ]);
+  // Its directory gone, and the last picture cut off part way.
+  const firstTwo = 30 + 16 + 12 + 30 + 15 + 3000;
+  const cut = bytes.subarray(0, firstTwo + 30 + 15 + 1000);
+  const read = readerOf(cut);
+  const entries = zipEntries(cut.length, read);
+  assert.deepEqual(entries.map((e) => e.name), ['shufflevale.json', 'pictures/i1.jpg']);
+  assert.equal(strFromU8(entryBytes(entries[0], read)), '{"kind":"x"}');
+  assert.equal(entryBytes(entries[1], read).length, 3000);
 });

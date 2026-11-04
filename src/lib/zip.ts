@@ -140,7 +140,8 @@ export function zipEntries(size: number, readAt: ReadAt): ZipEntry[] {
       break;
     }
   }
-  if (end === -1) throw new ZipError('No zip directory.');
+  // No directory (a file that lost its end as it was written): its entries are found from the start instead.
+  if (end === -1) return entriesFromStart(size, readAt);
   const e = view(tail.subarray(end));
   const count = e.getUint16(10, true);
   const dirSize = e.getUint32(12, true);
@@ -164,6 +165,38 @@ export function zipEntries(size: number, readAt: ReadAt): ZipEntry[] {
     });
     at += 46 + nameLength + extra + comment;
   }
+  return entries;
+}
+
+/**
+ * A zip's entries found by walking its own headers from the start, for one with no directory (cut short): every
+ * whole entry, up to the first that isn't (each is still checked as it's read, see `entryBytes`). Throws a
+ * ZipError if there are none.
+ */
+function entriesFromStart(size: number, readAt: ReadAt): ZipEntry[] {
+  const entries: ZipEntry[] = [];
+  for (let at = 0; at + 30 <= size && entries.length < MAX_ENTRIES; ) {
+    const header = readAt(at, 30);
+    const h = view(header);
+    if (header.length < 30 || h.getUint32(0, true) !== LOCAL) break;
+    const flags = h.getUint16(6, true);
+    const packed = h.getUint32(18, true);
+    const nameLength = h.getUint16(26, true);
+    const extra = h.getUint16(28, true);
+    const dataStart = at + 30 + nameLength + extra;
+    // Sizes kept after the data instead (not written by the app), or the entry cut off: no further.
+    if (flags & 0x08 || dataStart + packed > size) break;
+    entries.push({
+      name: strFromU8(readAt(at + 30, nameLength)),
+      method: h.getUint16(8, true),
+      crc: h.getUint32(14, true),
+      packed,
+      size: h.getUint32(22, true),
+      at,
+    });
+    at = dataStart + packed;
+  }
+  if (!entries.length) throw new ZipError('No zip directory.');
   return entries;
 }
 

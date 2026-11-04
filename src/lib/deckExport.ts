@@ -53,7 +53,9 @@ function writeFile(target: File, { decks, tables, groups }: FileContents) {
   target.create();
   const handle = target.open(FileMode.WriteOnly);
   try {
-    const zip = new ZipWriter((bytes) => handle.writeBytes(bytes));
+    // Written as it goes, each piece before the next (`writeBytes` only starts writing, and the handle's closed
+    // straight after: files written that way lost their end).
+    const zip = new ZipWriter((bytes) => handle.writeBytesSync(bytes));
     zip.add(MANIFEST, strToU8(JSON.stringify(file)));
     for (const p of pictures) zip.add(p.name, readImageBytes(p.path));
     zip.finish();
