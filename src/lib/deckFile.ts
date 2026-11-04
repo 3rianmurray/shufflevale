@@ -48,11 +48,15 @@ interface FileCard {
   image: string;
   /** Its own back, for a two-sided card (key into `images`). */
   back?: string;
+  /** The card it is, where it was first made (see `Card.origin`; older files have none, and it's the id). */
+  origin?: string;
 }
 
 interface FileDeck {
   /** The deck's id, for a table's cards to point at (files from before tables had none). */
   id?: string;
+  /** The deck it is, where it was first made (see `Deck.origin`; older files have none, and it's the id). */
+  origin?: string;
   name: string;
   cardShape?: CardShape;
   roundness?: number;
@@ -121,12 +125,14 @@ export interface UnpackedGroup {
 export interface UnpackedDeck {
   /** Its id in the file, which a table's cards point at. */
   fileId?: string;
+  /** The deck it is, where it was first made (see `Deck.origin`). */
+  origin?: string;
   name: string;
   cardShape?: CardShape;
   roundness?: number;
   playMode?: PlayMode;
   back: FilePicture | null;
-  cards: { fileId?: string; name: string; copies?: number; image: FilePicture; back?: FilePicture }[];
+  cards: { fileId?: string; origin?: string; name: string; copies?: number; image: FilePicture; back?: FilePicture }[];
   /** The group it's in (its `fileId`, among the file's groups). */
   fileGroup?: string;
 }
@@ -179,6 +185,7 @@ export function packManifest(decks: Deck[], tables: SandboxTable[] = [], groups:
     version: VERSION,
     decks: decks.map((d) => ({
       id: d.id,
+      origin: d.origin ?? d.id,
       name: d.name,
       ...(d.cardShape ? { cardShape: d.cardShape } : {}),
       ...(d.roundness !== undefined ? { roundness: d.roundness } : {}),
@@ -186,6 +193,7 @@ export function packManifest(decks: Deck[], tables: SandboxTable[] = [], groups:
       back: d.backImage ? keyOf(d.backImage) : null,
       cards: d.cards.map((c) => ({
         id: c.id,
+        origin: c.origin ?? c.id,
         name: c.name,
         ...(c.copies ? { copies: c.copies } : {}),
         image: keyOf(c.image),
@@ -195,7 +203,12 @@ export function packManifest(decks: Deck[], tables: SandboxTable[] = [], groups:
     })),
     images,
     ...(tables.length
-      ? { tables: tables.map(({ id: _id, createdAt: _c, updatedAt: _u, ...t }) => (t.pieces ? { ...t, pieces: t.pieces.map(packPiece) } : t)) }
+      ? {
+          tables: tables.map(({ id, createdAt: _c, updatedAt: _u, ...t }) => {
+            const own = { ...t, origin: t.origin ?? id };
+            return t.pieces ? { ...own, pieces: t.pieces.map(packPiece) } : own;
+          }),
+        }
       : {}),
     ...(used.length
       ? {
@@ -455,6 +468,7 @@ function unpackWith(file: Record<string, unknown>, picture: (key: string) => Fil
     const group = idFrom(d.group);
     return {
       ...(idFrom(d.id) ? { fileId: idFrom(d.id) } : {}),
+      ...(idFrom(d.origin) ? { origin: idFrom(d.origin) } : {}),
       name: nameFrom(d.name, 'Imported deck'),
       ...(shapeFrom(d.cardShape) ? { cardShape: shapeFrom(d.cardShape) } : {}),
       ...(typeof d.roundness === 'number' && Number.isFinite(d.roundness)
@@ -467,6 +481,7 @@ function unpackWith(file: Record<string, unknown>, picture: (key: string) => Fil
         const copies = typeof c.copies === 'number' && c.copies >= 2 ? Math.min(MAX_COPIES, Math.floor(c.copies)) : undefined;
         return {
           ...(idFrom(c.id) ? { fileId: idFrom(c.id) } : {}),
+          ...(idFrom(c.origin) ? { origin: idFrom(c.origin) } : {}),
           name: nameFrom(c.name, `Card ${i + 1}`),
           ...(copies ? { copies } : {}),
           image: image(c.image),
@@ -682,6 +697,7 @@ function tableFrom(v: unknown, known: Map<string, Set<string>>, pictureKey: (key
   return [
     {
       name: nameFrom(v.name, 'Imported table'),
+      ...(idFrom(v.origin) ? { origin: idFrom(v.origin) } : {}),
       stacks,
       hands,
       handNames,

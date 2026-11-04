@@ -24,6 +24,8 @@ import { deleteDeckWarning } from '../../lib/deckInUse';
 import { cardRoom, FREE_CARD_LIMIT } from '../../lib/limits';
 import { exampleAllowances, usePro } from '../../lib/pro';
 import { sandboxes } from '../../lib/sandboxStore';
+import { usePrevious, versionDate } from '../../lib/previousVersions';
+import { whenText } from '../../lib/when';
 import * as haptics from '../../lib/haptics';
 import { sampleBack, sampleCards } from '../../lib/sampleDeck';
 import { fitToCard } from '../../lib/cardFit';
@@ -79,6 +81,8 @@ export default function DeckEditorScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const decks = useDecks();
   const deck = decks.getDeck(id);
+  // Its version from before an update or a merge, if one's kept (Restore previous version, in its menu).
+  const previous = usePrevious(id);
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
@@ -679,6 +683,27 @@ export default function DeckEditorScreen() {
             ? [
                 { label: 'Share deck', pro: !pro, opensModal: pro, onPress: pro ? () => shareWithNotice({ name: deck.name, decks: [deck] }) : () => openPro('files') },
                 { label: 'Back up deck', pro: !pro, opensModal: pro, onPress: pro ? () => backUpWithNotice({ name: deck.name, decks: [deck] }) : () => openPro('files') },
+              ]
+            : []),
+          // Updated from a file, or another deck merged into it: as it was before, back (asked first).
+          ...(previous
+            ? [
+                {
+                  label: 'Restore previous version',
+                  opensModal: true,
+                  groupStart: true,
+                  onPress: () =>
+                    Alert.alert(`Restore version from ${whenText(versionDate(previous))}?`, undefined, [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Restore',
+                        onPress: () => {
+                          decks.restorePrevious(deck.id);
+                          haptics.success();
+                        },
+                      },
+                    ]),
+                },
               ]
             : []),
           // Apart from the deck files section above it.

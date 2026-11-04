@@ -257,6 +257,8 @@ export interface SandboxTable {
   camera?: Camera;
   /** The part of the table a ready-made layout lies in: the camera starts on it (and goes back to it on reset). */
   focus?: Area;
+  /** The table it is (from a file): that table's own id where it was made, as a deck's `origin`. */
+  origin?: string;
   createdAt: number;
   updatedAt: number;
 }

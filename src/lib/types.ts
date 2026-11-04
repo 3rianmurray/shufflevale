@@ -14,6 +14,11 @@ export interface Card {
   back?: string;
   /** The picture its own back was cut from, to cut again if the card size changes. */
   backOriginal?: string;
+  /**
+   * The card it is (from a file): that card's own id where it was made, carried through files, so an updated deck's
+   * cards line up with the ones here (see deckMatch). None for a card made here (it's its own id).
+   */
+  origin?: string;
 }
 
 /** The most copies of one card a deck can have: plenty for any game, and a table stays quick. */
@@ -186,6 +191,12 @@ export interface Deck {
    */
   backOriginal?: string | null;
   cards: Card[];
+  /**
+   * The deck it is (from a file): that deck's own id where it was made, carried through files, so opening an
+   * updated version finds this one (see deckMatch). None for a deck made here (it's its own id); a copy is a deck
+   * of its own.
+   */
+  origin?: string;
   createdAt: number;
   updatedAt: number;
 }

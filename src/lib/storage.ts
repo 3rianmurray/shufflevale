@@ -14,6 +14,7 @@ const SESSIONS_FILE = 'sessions.json';
 const GROUPS_FILE = 'groups.json';
 const SETTINGS_FILE = 'settings.json';
 const SANDBOXES_FILE = 'sandboxes.json';
+const PREVIOUS_FILE = 'previous.json';
 
 /** A file's contents, parsed, or undefined if it's missing or can't be read. */
 function parseFile<T>(file: File): T | undefined {
@@ -64,7 +65,7 @@ function writeJson(name: string, value: unknown) {
 }
 
 /** Everything the app keeps: its saved files (by name), and the folder of each deck's pictures. */
-const ALL_FILES = [DECKS_FILE, TABLES_FILE, SESSIONS_FILE, GROUPS_FILE, SETTINGS_FILE, SANDBOXES_FILE];
+const ALL_FILES = [DECKS_FILE, TABLES_FILE, SESSIONS_FILE, GROUPS_FILE, SETTINGS_FILE, SANDBOXES_FILE, PREVIOUS_FILE];
 let erasing = false;
 
 /**
@@ -127,6 +128,10 @@ export const saveGroups = (groups: DeckGroup[]) => writeJson(GROUPS_FILE, groups
 export const loadSandboxes = () => readJson<SandboxTable[]>(SANDBOXES_FILE, []);
 export const saveSandboxes = (tables: SandboxTable[]) => writeJson(SANDBOXES_FILE, tables);
 
+/** Decks' and tables' versions from before they were updated, replaced or merged into (see previousVersions). */
+export const loadPrevious = <T,>() => readJson<Record<string, T>>(PREVIOUS_FILE, {});
+export const savePrevious = (all: Record<string, unknown>) => writeJson(PREVIOUS_FILE, all);
+
 /** App-wide settings, kept apart from the player's decks and tables. */
 export interface Settings {
   /** The welcome has been shown (it's shown by itself only on the first launch). */
@@ -162,6 +167,8 @@ export interface Settings {
   toolsSpot?: { side: 'left' | 'right'; at: number };
   /** What the card camera was last told the cards are (see CardKind in lib/cardCapture): none for rectangles. */
   cameraKind?: 'cutOut';
+  /** Duplicate decks the player chose to keep both of (see `pairKey` in deckMatch), so they aren't offered again. */
+  keptDuplicates?: string[];
 }
 export const loadSettings = () => readJson<Settings>(SETTINGS_FILE, {});
 export const saveSettings = (settings: Settings) => writeJson(SETTINGS_FILE, settings);

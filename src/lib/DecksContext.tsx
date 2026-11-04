@@ -20,7 +20,11 @@ import {
 } from './storage';
 import { pictureData, pictureId } from './deckFile';
 import type { FilePicture, UnpackedDeck, UnpackedGroup } from './deckFile';
+import { cardPartners, fileLineage, lineage } from './deckMatch';
+import type { SameAsFile } from './deckMatch';
 import { withoutDeck } from './groups';
+import { previousOf, setPrevious } from './previousVersions';
+import { repointSandboxes } from './sandboxStore';
 import type { DeckGroup } from './groups';
 import { moveItems } from './order';
 import { createTable, pruneTable, topUpTable } from './table';
@@ -110,7 +114,29 @@ interface DecksApi {
   setGroupOrder: (groups: DeckGroup[]) => void;
   /** Puts the decks in this order (any not listed keep their place at the end) and files each under a group. */
   arrangeDecks: (order: string[], groupOf: Record<string, string | undefined>) => void;
+  /**
+   * Updates a deck to a newer version of it from a file (its place, group and tables kept; cards that were here
+   * keep their ids, and their pictures where they're the same), keeping the deck as it was to put back (see
+   * previousVersions). Returns it as it now is, its cards in the file's order.
+   */
+  updateFromFile: (deckId: string, from: UnpackedDeck, same: SameAsFile) => Deck | undefined;
+  /**
+   * Puts back a deck's previous version: the two swap (so it can be put back again), or a deck merged into it
+   * comes back, just after it.
+   */
+  restorePrevious: (deckId: string) => void;
+  /** Undoes an update from a file just made: the previous version back, and the newer one gone. */
+  undoUpdate: (deckId: string) => void;
+  /**
+   * Merges a deck into another: its sessions and tables use `keepId` instead, and it goes (kept to bring back, see
+   * `restorePrevious`).
+   */
+  mergeDecks: (keepId: string, goneId: string) => void;
 }
+
+/** Every picture a deck uses. */
+const filesOf = (d: Deck | undefined): Set<string> =>
+  new Set(d ? [d.backImage, d.backOriginal, ...d.cards.flatMap((c) => [c.image, c.original, c.back, c.backOriginal])].filter((f): f is string => !!f) : []);
 
 const DecksContext = createContext<DecksApi | null>(null);
 
@@ -184,9 +210,34 @@ export function DecksProvider({ children }: { children: ReactNode }) {
   const updateDeck = useCallback((id: string, fn: (d: Deck) => Deck) => {
     setDecks((all) => all.map((d) => (d.id === id ? { ...fn(d), updatedAt: Date.now() } : d)));
   }, []);
+  // The decks as they are now, for what's done a while after a screen last drew (an Undo a few seconds later).
+  const latest = useRef(decks);
+  useEffect(() => {
+    latest.current = decks;
+  }, [decks]);
 
   const api = useMemo<DecksApi>(() => {
     const getDeck = (id: string) => decks.find((d) => d.id === id);
+    /** A picture of a deck's that's gone, deleted unless its previous version (kept to put back) still uses it. */
+    const deleteImageOf = (deckId: string, path: string) => {
+      if (!filesOf(previousOf(deckId)?.deck).has(path)) deleteImage(path);
+    };
+    /**
+     * Lets a deck's previous version go, with the pictures only it used (and a deck merged in, with its folder and
+     * games, unless it's back among the decks). Pictures `keeping` decks use stay.
+     */
+    const dropPrevious = (deckId: string, ...keeping: (Deck | undefined)[]) => {
+      const prev = previousOf(deckId);
+      if (!prev) return;
+      setPrevious(deckId, undefined);
+      const used = new Set(keeping.flatMap((d) => [...filesOf(d)]));
+      for (const f of filesOf(prev.deck)) if (!used.has(f)) deleteImage(f);
+      const merged = prev.merged;
+      if (merged && !latest.current.some((d) => d.id === merged.id)) {
+        deleteDeckFiles(merged.id);
+        tables.drop((key) => key === merged.id || key.endsWith(`:${merged.id}`));
+      }
+    };
 
     return {
       decks,
@@ -233,21 +284,27 @@ export function DecksProvider({ children }: { children: ReactNode }) {
             return saved.get(same)!;
           };
           const groupId = group?.id ?? (u.fileGroup ? made.get(u.fileGroup)?.id : undefined);
+          const from = fileLineage(u);
           return {
             id,
+            ...(from ? { origin: from } : {}),
             name: u.name,
             ...(u.cardShape ? { cardShape: u.cardShape } : {}),
             ...(u.roundness !== undefined ? { roundness: u.roundness } : {}),
             ...(u.playMode ? { playMode: u.playMode } : {}),
             ...(groupId ? { groupId } : {}),
             backImage: u.back ? save(u.back) : null,
-            cards: u.cards.map((c) => ({
-              id: newId(),
-              name: c.name,
-              ...(c.copies ? { copies: c.copies } : {}),
-              image: save(c.image),
-              ...(c.back ? { back: save(c.back) } : {}),
-            })),
+            cards: u.cards.map((c) => {
+              const card = fileLineage(c);
+              return {
+                id: newId(),
+                ...(card ? { origin: card } : {}),
+                name: c.name,
+                ...(c.copies ? { copies: c.copies } : {}),
+                image: save(c.image),
+                ...(c.back ? { back: save(c.back) } : {}),
+              };
+            }),
             createdAt: now,
             updatedAt: now,
           };
@@ -277,11 +334,13 @@ export function DecksProvider({ children }: { children: ReactNode }) {
           if (!copied.has(path)) copied.set(path, importImage(copyId, imageUri(path)));
           return copied.get(path)!;
         };
+        // A copy is a deck of its own: not the one it was copied from, as far as files go (see Deck.origin).
+        const { origin: _from, ...source } = original;
         const deck: Deck = {
-          ...original,
+          ...source,
           id: copyId,
           name: `${original.name} copy`,
-          cards: original.cards.map((c) => ({
+          cards: original.cards.map(({ origin: _card, ...c }) => ({
             ...c,
             id: newId(),
             image: copyImage(c.image),
@@ -305,6 +364,7 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         updateDeck(id, (d) => ({ ...d, name }));
       },
       deleteDeck(id) {
+        dropPrevious(id);
         // A group lying just above it stays where it was.
         setGroups((all) => withoutDeck(all, decks, id));
         setDecks((all) => all.filter((d) => d.id !== id));
@@ -313,6 +373,7 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         deleteDeckFiles(id);
       },
       resetDeck(id, name) {
+        dropPrevious(id);
         tables.drop((key) => key === id || key.endsWith(`:${id}`));
         deleteDeckFiles(id);
         updateDeck(id, (d) => ({ id: d.id, name, backImage: null, cards: [], groupId: d.groupId, createdAt: d.createdAt, updatedAt: Date.now() }));
@@ -320,6 +381,7 @@ export function DecksProvider({ children }: { children: ReactNode }) {
       refillDeck(id, name, cards, back) {
         const old = getDeck(id);
         if (!old) return undefined;
+        dropPrevious(id, old);
         // The new pictures in first, then the old ones out (so nothing is lost if copying fails part way).
         const ids = new Map(old.cards.map((c) => [c.name, c.id]));
         const deck: Deck = {
@@ -374,10 +436,10 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         // Cards duplicated by older app versions share one image file, so only delete it once nothing uses it.
         const stillUsed =
           deck.backImage === card.image || deck.cards.some((c) => c.id !== cardId && c.image === card.image);
-        if (!stillUsed) deleteImage(card.image);
-        if (card.original) deleteImage(card.original);
-        if (card.back) deleteImage(card.back);
-        if (card.backOriginal) deleteImage(card.backOriginal);
+        if (!stillUsed) deleteImageOf(deckId, card.image);
+        if (card.original) deleteImageOf(deckId, card.original);
+        if (card.back) deleteImageOf(deckId, card.back);
+        if (card.backOriginal) deleteImageOf(deckId, card.backOriginal);
         updateDeck(deckId, (d) => ({ ...d, cards: d.cards.filter((c) => c.id !== cardId) }));
       },
       removeCards(deckId, cardIds) {
@@ -388,7 +450,7 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         // A picture still used by a card that's kept (or the deck's back) stays, as in `removeCard`.
         const used = new Set([deck.backImage, deck.backOriginal, ...kept.flatMap((c) => [c.image, c.original, c.back, c.backOriginal])]);
         const files = new Set(gone.flatMap((c) => [c.image, c.original, c.back, c.backOriginal]));
-        for (const f of files) if (f && !used.has(f)) deleteImage(f);
+        for (const f of files) if (f && !used.has(f)) deleteImageOf(deckId, f);
         updateDeck(deckId, (d) => ({ ...d, cards: d.cards.filter((c) => !cardIds.includes(c.id)) }));
       },
       reorderCards(deckId, picked, to) {
@@ -401,10 +463,10 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         const image = importImage(deckId, uri);
         const stillUsed =
           deck.backImage === card.image || deck.cards.some((c) => c.id !== cardId && c.image === card.image);
-        if (!stillUsed) deleteImage(card.image);
+        if (!stillUsed) deleteImageOf(deckId, card.image);
         // A new original replaces the old one; without one, the card is just cut again from the one it has.
         const kept = original === undefined ? card.original : importImage(deckId, original);
-        if (original !== undefined && card.original) deleteImage(card.original);
+        if (original !== undefined && card.original) deleteImageOf(deckId, card.original);
         updateDeck(deckId, (d) => ({
           ...d,
           cards: d.cards.map((c) => (c.id === cardId ? { ...c, image, ...(kept ? { original: kept } : {}) } : c)),
@@ -414,12 +476,12 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         const deck = getDeck(deckId);
         if (!deck) return;
         const inUse = (path: string) => deck.cards.some((c) => c.image === path);
-        if (deck.backImage && !inUse(deck.backImage)) deleteImage(deck.backImage);
+        if (deck.backImage && !inUse(deck.backImage)) deleteImageOf(deckId, deck.backImage);
         const backImage = uri ? importImage(deckId, uri) : null;
         // The uncropped picture: replaced when a new one is given, kept when the same one is just cut again, and
         // gone with the back.
         const replacing = original !== undefined || !uri;
-        if (replacing && deck.backOriginal && !inUse(deck.backOriginal)) deleteImage(deck.backOriginal);
+        if (replacing && deck.backOriginal && !inUse(deck.backOriginal)) deleteImageOf(deckId, deck.backOriginal);
         const backOriginal = replacing ? (uri && original ? importImage(deckId, original) : null) : (deck.backOriginal ?? null);
         updateDeck(deckId, (d) => ({ ...d, backImage, backOriginal }));
       },
@@ -427,9 +489,9 @@ export function DecksProvider({ children }: { children: ReactNode }) {
         const card = getDeck(deckId)?.cards.find((c) => c.id === cardId);
         if (!card) return;
         // Its own back's files are its alone, so the old ones simply go (the original only when it's replaced).
-        if (card.back) deleteImage(card.back);
+        if (card.back) deleteImageOf(deckId, card.back);
         const replacing = original !== undefined || !uri;
-        if (replacing && card.backOriginal) deleteImage(card.backOriginal);
+        if (replacing && card.backOriginal) deleteImageOf(deckId, card.backOriginal);
         const back = uri ? importImage(deckId, uri) : undefined;
         const backOriginal = replacing ? (uri && original ? importImage(deckId, original) : undefined) : card.backOriginal;
         updateDeck(deckId, (d) => ({
@@ -513,6 +575,112 @@ export function DecksProvider({ children }: { children: ReactNode }) {
           const listed = new Set(order);
           return [...placed, ...all.filter((d) => !listed.has(d.id))];
         });
+      },
+      updateFromFile(deckId, u, same) {
+        const old = latest.current.find((d) => d.id === deckId);
+        if (!old) return undefined;
+        const now = Date.now();
+        // A picture several cards share is saved once (as in `importDecks`).
+        const saved = new Map<string, string>();
+        const save = (img: FilePicture) => {
+          const key = pictureId(img);
+          if (!saved.has(key)) saved.set(key, saveImageData(deckId, img.ext, pictureData(img)));
+          return saved.get(key)!;
+        };
+        const byLine = new Map(old.cards.map((c) => [lineage(c), c]));
+        const taken = new Set<string>();
+        const cards: Card[] = u.cards.map((c) => {
+          const line = fileLineage(c);
+          const found = line ? byLine.get(line) : undefined;
+          const mine = found && !taken.has(found.id) ? found : undefined;
+          if (mine) taken.add(mine.id);
+          // The same picture as here: that one's kept (and what it was cut from); otherwise the file's.
+          const keptImage = !!mine && same(mine.image, c.image);
+          const keptBack = !!c.back && !!mine?.back && same(mine.back, c.back);
+          return {
+            id: mine?.id ?? newId(),
+            ...(line ? { origin: line } : {}),
+            name: c.name,
+            ...(c.copies ? { copies: c.copies } : {}),
+            image: keptImage ? mine!.image : save(c.image),
+            ...(keptImage && mine!.original ? { original: mine!.original } : {}),
+            ...(c.back ? { back: keptBack ? mine!.back! : save(c.back) } : {}),
+            ...(keptBack && mine!.backOriginal ? { backOriginal: mine!.backOriginal } : {}),
+          };
+        });
+        const sameBack = !!old.backImage && !!u.back && same(old.backImage, u.back);
+        const from = fileLineage(u);
+        // Its place, group, games and how it's played kept; the rest as the file has it.
+        const deck: Deck = {
+          ...old,
+          ...(from ? { origin: from } : {}),
+          name: u.name,
+          cardShape: u.cardShape,
+          roundness: u.roundness,
+          ...(u.playMode ? { playMode: u.playMode } : {}),
+          backImage: u.back ? (sameBack ? old.backImage : save(u.back)) : null,
+          backOriginal: sameBack ? (old.backOriginal ?? null) : null,
+          cards,
+          updatedAt: now,
+        };
+        // The version before (if any) gives way to this one: one is kept.
+        dropPrevious(deckId, old, deck);
+        setPrevious(deckId, { at: now, deck: old });
+        setDecks((all) => all.map((d) => (d.id === deckId ? deck : d)));
+        latest.current = latest.current.map((d) => (d.id === deckId ? deck : d));
+        return deck;
+      },
+      restorePrevious(deckId) {
+        const cur = latest.current.find((d) => d.id === deckId);
+        const prev = previousOf(deckId);
+        if (!cur || !prev) return;
+        const now = Date.now();
+        const merged = prev.merged;
+        if (merged) {
+          // Back just after the deck it was merged into, in its group if that's still here (else that deck's).
+          setPrevious(deckId, undefined);
+          const back: Deck = { ...merged, groupId: merged.groupId && groups.some((g) => g.id === merged.groupId) ? merged.groupId : cur.groupId };
+          setDecks((all) => {
+            if (all.some((d) => d.id === back.id)) return all;
+            const at = all.findIndex((d) => d.id === deckId);
+            return [...all.slice(0, at + 1), back, ...all.slice(at + 1)];
+          });
+          return;
+        }
+        if (!prev.deck) return;
+        // The two swap: the one now showing is kept in turn, to put back again.
+        setPrevious(deckId, { at: now, deck: cur });
+        const back: Deck = { ...prev.deck, id: deckId, groupId: cur.groupId, updatedAt: now };
+        setDecks((all) => all.map((d) => (d.id === deckId ? back : d)));
+      },
+      undoUpdate(deckId) {
+        const cur = latest.current.find((d) => d.id === deckId);
+        const prev = previousOf(deckId)?.deck;
+        if (!cur || !prev) return;
+        const back: Deck = { ...prev, id: deckId, groupId: cur.groupId };
+        setPrevious(deckId, undefined);
+        const used = filesOf(back);
+        for (const f of filesOf(cur)) if (!used.has(f)) deleteImage(f);
+        setDecks((all) => all.map((d) => (d.id === deckId ? back : d)));
+      },
+      mergeDecks(keepId, goneId) {
+        const all = latest.current;
+        const keep = all.find((d) => d.id === keepId);
+        const gone = all.find((d) => d.id === goneId);
+        if (!keep || !gone || keepId === goneId) return;
+        // Tables' cards from it are now the kept deck's (those with no partner there stay as they were, and come
+        // back if it does).
+        repointSandboxes(goneId, keepId, cardPartners(gone, keep));
+        setSessions((list) =>
+          list.map((s) => (s.deckIds.includes(goneId) ? { ...s, deckIds: [...new Set(s.deckIds.map((d) => (d === goneId ? keepId : d)))] } : s)),
+        );
+        // Each one's version from before goes; the merged deck is kept (pictures, games and all) to bring back.
+        dropPrevious(keepId, keep);
+        dropPrevious(goneId, gone);
+        setPrevious(keepId, { at: Date.now(), merged: gone });
+        setGroups((list) => withoutDeck(list, all, goneId));
+        setDecks((list) => list.filter((d) => d.id !== goneId));
+        latest.current = latest.current.filter((d) => d.id !== goneId);
       },
       deleteSession(id) {
         setSessions((all) => all.filter((s) => s.id !== id));

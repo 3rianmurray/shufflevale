@@ -8,6 +8,7 @@ import { BusyOverlay } from '../components/BusyOverlay';
 import { NamePrompt } from '../components/NamePrompt';
 import { TipToast } from '../components/TipToast';
 import { TourOverlay } from '../components/TourOverlay';
+import { UndoBar } from '../components/UndoBar';
 import { DecksProvider } from '../lib/DecksContext';
 import { lockPhonePortrait } from '../lib/phoneOrientation';
 import { startPro } from '../lib/pro';
@@ -74,6 +75,7 @@ export default function RootLayout() {
           />
           {/* A Shufflevale file opened in the app from elsewhere (see +native-intent). */}
           <Stack.Screen name="open" options={{ title: 'Open File', presentation: 'modal' }} />
+          <Stack.Screen name="duplicates" options={{ title: 'Duplicate Decks' }} />
           {/* Its own top bar, and sideways swipes there move cards and the camera, not the screen. */}
           <Stack.Screen name="sandbox/[id]" options={{ headerShown: false, gestureEnabled: false }} />
         </Stack>
@@ -83,6 +85,8 @@ export default function RootLayout() {
         <NamePrompt />
         {/* Now-and-then tips, over every screen. */}
         <TipToast />
+        {/* Undo, for a moment after an import changed something or decks were merged, over every screen. */}
+        <UndoBar />
         {/* Backing up or opening a big file, over every screen. */}
         <BusyOverlay />
       </DecksProvider>

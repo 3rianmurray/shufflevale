@@ -18,7 +18,11 @@ import { everythingFile, pickDeckFiles, readDeckFile, tableFile } from '../lib/d
 import type { FileContents } from '../lib/deckExport';
 import { whileBusy } from '../lib/busy';
 import { backUpWithNotice, shareWithNotice } from '../lib/fileActions';
-import { useFileImport } from '../lib/useFileImport';
+import { anyMatches, holdFile, useFileImport } from '../lib/useFileImport';
+import { findDuplicates } from '../lib/deckMatch';
+import { pictureComparer } from '../lib/pictureCompare';
+import { previousOf, tableSlot, versionDate } from '../lib/previousVersions';
+import { whenText } from '../lib/when';
 import { deleteDeckWarning } from '../lib/deckInUse';
 import { cardRoom, cardsUsed, FREE_CARD_LIMIT } from '../lib/limits';
 import { exampleAllowances, isPlayground, usePro } from '../lib/pro';
@@ -26,7 +30,7 @@ import * as haptics from '../lib/haptics';
 import { buildRows, dropDeck, dropGroup } from '../lib/groups';
 import type { Row } from '../lib/groups';
 import { isExampleDeck, isExampleTable, resetExampleLabel, useExamples } from '../lib/examples';
-import { deleteSandbox, duplicateSandbox, moveSandbox, updateSandbox, useSandboxes } from '../lib/sandboxStore';
+import { deleteSandbox, duplicateSandbox, moveSandbox, restoreSandbox, updateSandbox, useSandboxes } from '../lib/sandboxStore';
 import { loadSettings, saveSettings } from '../lib/storage';
 import { offerTipAfterUses, resetTips, setTipsOn, tipsOn } from '../lib/tips';
 import { startTour, tourEvent, useTourStep } from '../lib/tour';
@@ -63,7 +67,7 @@ export default function HomeScreen() {
   } = useDecks();
   const insets = useSafeAreaInsets();
   const sandboxes = useSandboxes();
-  const { addFile, addParts, fits } = useFileImport();
+  const { addFile, addParts, fits, planFile } = useFileImport();
 
   // The walkthrough starts by itself the first time the app opens; after that, from the help button.
   useEffect(() => {
@@ -247,22 +251,52 @@ export default function HomeScreen() {
       if (!picked) return;
       if (picked.length > 1 && !pro) return openPro('files');
       let tooBig = false;
+      let choose = false;
       await whileBusy('Opening')(async () => {
         if (picked.length > 1) return addParts(picked);
         const found = await readDeckFile(picked[0]);
+        let handed = false;
         try {
-          if (fits(found)) addFile(found);
+          // Some of it is here already: its choices first (the Open File screen takes the file from here).
+          const plan = planFile(found);
+          if (anyMatches(plan)) {
+            holdFile(found, plan);
+            handed = choose = true;
+          } else if (fits(found)) addFile(found);
           else tooBig = true;
         } finally {
-          found.done();
+          if (!handed) found.done();
         }
       });
+      if (choose) router.push({ pathname: '/open', params: { held: '1' } });
       // Its cards don't fit in the free version: Pro removes the limit.
       if (tooBig) openPro('cards');
     } catch (e) {
       haptics.warn();
       Alert.alert('Couldn’t open that file', e instanceof DeckFileError ? e.message : 'Something went wrong reading it.');
     }
+  };
+
+  /** Duplicate decks to merge (or keep both of): their screen, or word that there are none. */
+  const findDuplicateDecks = () => {
+    const kept = new Set(loadSettings().keptDuplicates ?? []);
+    if (findDuplicates(decks, pictureComparer().saved, kept).length) router.push('/duplicates');
+    else Alert.alert('No duplicates');
+  };
+  /** A table's version from before it was replaced from a file, back (asked first, with when it's from). */
+  const confirmRestoreTable = (id: string) => {
+    const prev = previousOf(tableSlot(id));
+    if (!prev) return;
+    Alert.alert(`Restore version from ${whenText(versionDate(prev))}?`, undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Restore',
+        onPress: () => {
+          restoreSandbox(id);
+          haptics.success();
+        },
+      },
+    ]);
   };
 
   const newGroup = () => askName('New group', `Group ${groups.length + 1}`, (name) => createGroup(name));
@@ -654,6 +688,7 @@ export default function HomeScreen() {
           },
           // (Free: opening a file someone's shared.)
           { label: 'Import decks or tables', opensModal: true, groupStart: true, onPress: importFromFile },
+          ...(decks.length > 1 ? [{ label: 'Find duplicate decks', opensModal: true, onPress: findDuplicateDecks }] : []),
           ...(decks.length
             ? [
                 {
@@ -728,6 +763,8 @@ export default function HomeScreen() {
                 ...(isExampleTable(menuTable.id)
                   ? [{ label: resetExampleLabel(menuTable.id), opensModal: true, onPress: () => examples.confirmResetTable(menuTable) }]
                   : []),
+                // Replaced from a file: the table as it was before, back.
+                ...(previousOf(tableSlot(menuTable.id)) ? [{ label: 'Restore previous version', opensModal: true, onPress: () => confirmRestoreTable(menuTable.id) }] : []),
                 // The table as it lies, with the decks its cards come from.
                 ...fileActions('table', () => tableFile(menuTable, decks), true),
                 {
