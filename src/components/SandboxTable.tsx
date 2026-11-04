@@ -175,7 +175,7 @@ import type { BagItem, Camera, CardSize, PieceKind, PiecePart, PieceShape, Sandb
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { artPicture, faceArtColor, facePicture, loadUpright, tokenPicture } from '../lib/images';
-import { TOKEN_SHAPES, tokenOutline, tokenShapeOf } from '../lib/tokenShapes';
+import { thicknessOf, TOKEN_SHAPES, TOKEN_THICKNESSES, tokenOutline, tokenShapeOf } from '../lib/tokenShapes';
 import type { TokenShape } from '../lib/tokenShapes';
 import { isPlayground, isProPiece, usePro } from '../lib/pro';
 import { updateSandbox, useSandbox } from '../lib/sandboxStore';
@@ -380,6 +380,7 @@ type Menu =
   | { kind: 'addDie' }
   /** A token's shape. */
   | { kind: 'tokenShape'; id: string }
+  | { kind: 'tokenThickness'; id: string }
   /** How see-through a zone or card spot is. */
   | { kind: 'zoneOpacity'; id: string }
   /** For one counter or die, or (with no id) every one picked out. */
@@ -4166,6 +4167,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               // The system's menu, once this has gone (see choosePicture).
               tile('Picture', 'photo', 'image', () => setTimeout(() => choosePicture({ kind: 'token', id }), 450)),
               tile('Shape', 'square.on.circle', 'category', next({ kind: 'tokenShape', id })),
+              tile('Thickness', 'square.stack.3d.up', 'layers', next({ kind: 'tokenThickness', id })),
               colorTile,
               scaleTile,
             ],
@@ -4395,6 +4397,20 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         actions: TOKEN_SHAPES.map(({ shape, name }) => ({
           label: `${name}${shape === now ? '  ✓' : ''}`,
           onPress: () => commit(setPiece(table, token.id, { tokenShape: shape, square: undefined })),
+        })),
+      };
+    }
+    if (menu.kind === 'tokenThickness') {
+      const token = table.pieces?.find((p) => p.id === menu.id && p.kind === 'token');
+      if (!token) return null;
+      const now = thicknessOf(token);
+      return {
+        title: 'Thickness',
+        tiles: [],
+        actions: TOKEN_THICKNESSES.map(({ thickness, name }) => ({
+          label: `${name}${thickness === now ? '  ✓' : ''}`,
+          // (The usual one isn't kept: a token that's never been set is that.)
+          onPress: () => commit(setPiece(table, token.id, { thickness: thickness === 1 ? undefined : thickness })),
         })),
       };
     }
@@ -5702,7 +5718,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       />
       {/* The table's menu, and choosing a deck to add. */}
       <ActionSheet
-        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'tokenShape' || menu?.kind === 'zoneOpacity' ||menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry' || menu?.kind === 'number')}
+        visible={!!sheet && (menu?.kind === 'table' || menu?.kind === 'addDeck' || menu?.kind === 'color' || menu?.kind === 'dieKind' || menu?.kind === 'pieceColor' || menu?.kind === 'components' || menu?.kind === 'addDie' || menu?.kind === 'scale' || menu?.kind === 'rotate' || menu?.kind === 'dieValue' || menu?.kind === 'faces' || menu?.kind === 'pieceShape' || menu?.kind === 'addShape' || menu?.kind === 'tokenShape' || menu?.kind === 'tokenThickness' || menu?.kind === 'zoneOpacity' ||menu?.kind === 'scorePlayers' || menu?.kind === 'scoreList' || menu?.kind === 'scoreEntry' || menu?.kind === 'number')}
         title={sheet?.title}
         banner={sheet && 'banner' in sheet ? sheet.banner : undefined}
         wideTile={sheet && 'wideTile' in sheet ? sheet.wideTile : undefined}

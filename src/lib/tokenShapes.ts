@@ -12,6 +12,18 @@ export const TOKEN_SHAPES: { shape: TokenShape; name: string }[] = [
   { shape: 'star', name: 'Star' },
 ];
 
+/** How thick a token can be, as a share of the usual: flat (no side at all) up to a chunky one. */
+export const TOKEN_THICKNESSES: { thickness: number; name: string }[] = [
+  { thickness: 0, name: 'Flat' },
+  { thickness: 0.5, name: 'Thin' },
+  { thickness: 1, name: 'Standard' },
+  { thickness: 1.75, name: 'Thick' },
+];
+export const MAX_THICKNESS = 1.75;
+
+/** A token's thickness (the usual, if it's never been set). */
+export const thicknessOf = (p: { thickness?: number }) => p.thickness ?? 1;
+
 /** A token's shape (one from before there were shapes: round, or square if it was made square). */
 export const tokenShapeOf = (p: { tokenShape?: TokenShape; square?: boolean }): TokenShape => p.tokenShape ?? (p.square ? 'square' : 'circle');
 

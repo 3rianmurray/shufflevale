@@ -541,6 +541,8 @@ const ZONE_LOOKS = new Set<ZoneLook>(['outline', 'filled', 'dashed']);
 /** The faintest a zone or card spot is drawn (as ZONE_OPACITY_MIN in sandbox.ts). */
 const ZONE_OPACITY_MIN = 0.1;
 const TOKEN_SHAPES = new Set<TokenShape>(['circle', 'square', 'hexagon', 'triangle', 'diamond', 'star']);
+/** The thickest a token can be (as TOKEN_THICKNESSES' thickest, in tokenShapes.ts). */
+const MAX_THICKNESS = 1.75;
 const DIE_SIDES = [4, 6, 8, 10, 12, 20, 100];
 /** The most pieces a table is opened with, the most custom art (as ART_MAX), and a track's spaces (as TRACK_MAX). */
 const MAX_PIECES = 500;
@@ -583,6 +585,7 @@ function pieceFrom(
   if (typeof v.shape === 'string' && PIECE_SHAPES.has(v.shape as PieceShape)) p.shape = v.shape as PieceShape;
   if (typeof v.look === 'string' && ZONE_LOOKS.has(v.look as ZoneLook)) p.look = v.look as ZoneLook;
   if (kind === 'token' && typeof v.tokenShape === 'string' && TOKEN_SHAPES.has(v.tokenShape as TokenShape)) p.tokenShape = v.tokenShape as TokenShape;
+  if (kind === 'token' && finite(v.thickness) && v.thickness >= 0 && v.thickness <= MAX_THICKNESS && v.thickness !== 1) p.thickness = v.thickness;
   const over = idFrom(v.over);
   if (over) p.over = over;
   const group = idFrom(v.group);

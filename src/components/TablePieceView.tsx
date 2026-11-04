@@ -37,7 +37,7 @@ import {
 } from '../lib/sandbox';
 import { imageUri, isSeeThrough } from '../lib/storage';
 import type { TablePiece } from '../lib/sandbox';
-import { tokenOutline, tokenShapeOf } from '../lib/tokenShapes';
+import { thicknessOf, tokenOutline, tokenShapeOf } from '../lib/tokenShapes';
 import type { TokenShape } from '../lib/tokenShapes';
 import { colors } from '../theme';
 import { prefersReducedMotion } from './CardView';
@@ -1416,14 +1416,16 @@ function RoundToken({ piece, color, size, selected, k, square }: { piece: TableP
   const OS = useContext(OversampleContext);
   const art = artFrame(size, size, OS);
   const c = art.at([0.5, 0.5]);
-  const depth = [art.len(0.04), art.len(0.06)] as const;
+  // Its side, as thick as it's set (none at all, flat).
+  const thick = thicknessOf(piece);
+  const depth = [art.len(TOKEN_DEPTH[0] * thick), art.len(TOKEN_DEPTH[1] * thick)] as const;
   const outline: Pt[] = [
     [0.02, 0.02],
     [0.98, 0.02],
     [0.98, 0.98],
     [0.02, 0.98],
   ];
-  const squareSide: Pt[] = outline.map((p) => [p[0] + 0.04, p[1] + 0.06]);
+  const squareSide: Pt[] = outline.map((p) => [p[0] + TOKEN_DEPTH[0] * thick, p[1] + TOKEN_DEPTH[1] * thick]);
   const body = square ? null : cylinderPath(c, art.len(0.48), depth);
   const sticker = isSticker(piece);
   // A picture covers the whole top, edge to edge (no rim of its color round it); a sticker sits a little inside it.
@@ -1492,7 +1494,7 @@ function TokenCount({ n, k }: { n: number; k: number }) {
   );
 }
 
-/** How far down and right a shaped token's top is from its foot, as a share of its width (as a round one's). */
+/** How far down and right a token's top is from its foot, as a share of its width, at the usual thickness. */
 const TOKEN_DEPTH: Pt = [0.04, 0.06];
 /** How many copies of its outline make up a shaped token's side (enough that it reads as solid). */
 const TOKEN_SIDE_STEPS = 6;
@@ -1513,6 +1515,10 @@ function ShapedToken({ piece, shape, color, size, selected, k }: { piece: TableP
   const at = (dx: number, dy: number) => roundedPath(art, top.map(([x, y]) => [x + dx, y + dy] as Pt), rounding);
   const face = at(0, 0);
   const side = shade(color, -0.45);
+  // As thick as it's set (flat, no side at all).
+  const thick = thicknessOf(piece);
+  // (More copies of its outline for a thicker one, so its side still reads as solid.)
+  const sideSteps = Math.ceil(TOKEN_SIDE_STEPS * Math.max(1, thick));
   const seeThrough = isSticker(piece);
   // The picture as it was cropped, covering the whole top (the shape on it as the cropper showed it), no rim of
   // its color round it; a sticker a little inside.
@@ -1522,13 +1528,15 @@ function ShapedToken({ piece, shape, color, size, selected, k }: { piece: TableP
   return (
     <View style={StyleSheet.absoluteFill}>
       <Canvas style={art.style}>
-        <Path path={at(TOKEN_DEPTH[0], TOKEN_DEPTH[1])} color={side}>
+        <Path path={at(TOKEN_DEPTH[0] * thick, TOKEN_DEPTH[1] * thick)} color={side}>
           {pieceShadow(OS)}
         </Path>
-        {Array.from({ length: TOKEN_SIDE_STEPS }, (_, i) => {
-          const t = 1 - i / TOKEN_SIDE_STEPS;
-          return <Path key={i} path={at(TOKEN_DEPTH[0] * t, TOKEN_DEPTH[1] * t)} color={side} />;
-        })}
+        {thick
+          ? Array.from({ length: sideSteps }, (_, i) => {
+              const t = (1 - i / sideSteps) * thick;
+              return <Path key={i} path={at(TOKEN_DEPTH[0] * t, TOKEN_DEPTH[1] * t)} color={side} />;
+            })
+          : null}
         <Path path={face} color={color} />
         {picture ? (
           <Group clip={seeThrough ? undefined : face}>

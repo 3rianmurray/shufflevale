@@ -111,6 +111,8 @@ export interface TablePiece {
   image?: string;
   square?: boolean;
   tokenShape?: TokenShape;
+  /** How thick a token is, as a share of the usual (0 for flat, see TOKEN_THICKNESSES); none for the usual. */
+  thickness?: number;
   /** A running timer: when it runs out (ms since 1970). A paused one: how many seconds it had left. */
   endsAt?: number;
   left?: number;
@@ -1153,7 +1155,7 @@ export const bagItems = (p: TablePiece): BagItem[] => p.items ?? (p.cards ?? [])
 export function itemLook(i: BagItem): string {
   if (i.card) return `card:${i.card.deckId}:${i.card.cardId}`;
   const p = i.piece!;
-  return JSON.stringify([p.kind, p.sides, p.color, p.shape, p.image, p.square, p.tokenShape, p.label, p.scale ?? 1, p.spaces, p.first, p.look, p.w, p.h, p.faces ?? null, p.shadow]);
+  return JSON.stringify([p.kind, p.sides, p.color, p.shape, p.image, p.square, p.tokenShape, p.thickness ?? 1, p.label, p.scale ?? 1, p.spaces, p.first, p.look, p.w, p.h, p.faces ?? null, p.shadow]);
 }
 
 /** Whether things are one or more of the very same thing (what a supply can be made of). */
