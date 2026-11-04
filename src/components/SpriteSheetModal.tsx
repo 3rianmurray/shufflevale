@@ -10,7 +10,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
   useWindowDimensions,
 } from 'react-native';
@@ -26,6 +25,7 @@ import type { Grid, SheetOrder } from '../lib/spriteSheet';
 import type { SheetGuess } from '../lib/sheetGuess';
 import { colors } from '../theme';
 import { Button } from './Button';
+import { NumberKeys, typeKey } from './NumberKeys';
 import { TipToast } from './TipToast';
 import { MAX_TEXT_SCALE, Text } from './Text';
 import { ALL_ORIENTATIONS } from '../lib/orientations';
@@ -78,6 +78,18 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
   const [rowsText, setRowsText] = useState('2');
   const [colsText, setColsText] = useState('2');
   const [countText, setCountText] = useState('');
+  // The field being typed in with the app's own keys, if any, and whether it's still all selected (a key replaces it).
+  const [typingField, setTypingField] = useState<'rows' | 'cols' | 'count' | null>(null);
+  const [typedFresh, setTypedFresh] = useState(true);
+  /** A field's part in the typing: whether it's the one, and a tap to open it (or, open, to close the keys). */
+  const typingProps = (field: 'rows' | 'cols' | 'count') => ({
+    typing: typingField === field,
+    fresh: typedFresh,
+    onTap: () => {
+      setTypingField(typingField === field ? null : field);
+      setTypedFresh(true);
+    },
+  });
   const [order, setOrder] = useState<SheetOrder>('rows');
   /** A sheet of backs numbered from the right (see Grid's `mirrored`). */
   const [mirrored, setMirrored] = useState(false);
@@ -324,8 +336,8 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
           ) : null}
 
           <View style={styles.fields}>
-            <NumberField label="Rows" value={rowsText} onChange={setRowsText} max={MAX_CELLS_PER_SIDE} fallback={rows} />
-            <NumberField label="Columns" value={colsText} onChange={setColsText} max={MAX_CELLS_PER_SIDE} fallback={columns} />
+            <NumberField label="Rows" value={rowsText} onChange={setRowsText} max={MAX_CELLS_PER_SIDE} fallback={rows} {...typingProps('rows')} />
+            <NumberField label="Columns" value={colsText} onChange={setColsText} max={MAX_CELLS_PER_SIDE} fallback={columns} {...typingProps('cols')} />
             {pickOne ? null : (
               <NumberField
                 label={faces ? 'Faces' : 'Cards'}
@@ -334,9 +346,20 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
                 placeholder={String(cells)}
                 max={cells}
                 fallback={cells}
+                {...typingProps('count')}
               />
             )}
           </View>
+          {/* The field being typed in: the app's own keys, under all three. */}
+          {typingField ? (
+            <NumberKeys
+              onKey={(key) => {
+                const [text, set] = typingField === 'rows' ? [rowsText, setRowsText] : typingField === 'cols' ? [colsText, setColsText] : [countText, setCountText];
+                set(typeKey(text, key, typedFresh, 3));
+                setTypedFresh(false);
+              }}
+            />
+          ) : null}
           {pickOne ? null : (
             <View style={styles.chooseRow}>
               <Text style={[styles.help, { flex: 1, marginTop: 0 }]}>Tap or drag across {noun}s to leave them out.</Text>
@@ -457,7 +480,8 @@ const SCRUB_STEP_PX = 18;
 
 /**
  * A whole number that changes as a finger slides left and right across it (one step per short slide, with a
- * tick for each), so whatever it controls updates live. A tap without sliding opens it for typing instead.
+ * tick for each), so whatever it controls updates live. A tap without sliding opens it for typing instead, with the
+ * app's own keys under the fields (see `typing`); tapped again, they go.
  */
 function NumberField({
   label,
@@ -466,6 +490,9 @@ function NumberField({
   placeholder,
   max,
   fallback,
+  typing,
+  fresh,
+  onTap,
 }: {
   label: string;
   value: string;
@@ -475,16 +502,20 @@ function NumberField({
   max: number;
   /** What an empty field counts as when sliding starts (e.g. every cell, for a blank card count). */
   fallback: number;
+  /** It's being typed (the keys under the fields type in it), and still all selected (the first key replaces it). */
+  typing: boolean;
+  fresh: boolean;
+  /** Tapped (not slid): open it for typing, or (typing) close the keys. */
+  onTap: () => void;
 }) {
   const [sliding, setSliding] = useState(false);
-  const [typing, setTyping] = useState(false);
   // What the slide needs that changes from render to render; the slide's own handlers are made once.
   const [latest] = useState(() => {
-    const box = { value: 1, max, onChange, typing: false, start: 1, shown: 1, moved: false };
+    const box = { value: 1, max, onChange, onTap, start: 1, shown: 1, moved: false };
     return { set: (next: Partial<typeof box>) => Object.assign(box, next), get: () => box };
   });
   const current = parseCount(value, fallback, max);
-  latest.set({ value: current, max, onChange, typing });
+  latest.set({ value: current, max, onChange, onTap });
   /** Steps the number by `by`, within 1 and `max`. */
   const step = (by: number) => {
     const next = Math.min(max, Math.max(1, current + by));
@@ -494,9 +525,9 @@ function NumberField({
   };
   const [responder] = useState(() =>
     PanResponder.create({
-      // The number itself takes the touch (not a text field, which would keep it for typing).
-      onStartShouldSetPanResponder: () => !latest.get().typing,
-      onMoveShouldSetPanResponder: () => !latest.get().typing,
+      // The number itself takes the touch: a slide changes it, a tap opens (or closes) the keys.
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
       // Until it's slid sideways, an up-and-down drag can still scroll the screen instead.
       onPanResponderTerminationRequest: () => !latest.get().moved,
       onPanResponderGrant: () => {
@@ -519,8 +550,8 @@ function NumberField({
       },
       onPanResponderRelease: () => {
         setSliding(false);
-        // A tap, not a slide: type a number instead.
-        if (!latest.get().moved) setTyping(true);
+        // A tap, not a slide: type a number instead (or, typing, done).
+        if (!latest.get().moved) latest.get().onTap();
       },
       onPanResponderTerminate: () => setSliding(false),
     }),
@@ -528,28 +559,9 @@ function NumberField({
   return (
     <View style={{ flex: 1, gap: 6 }}>
       <Text style={styles.label}>{label}</Text>
-      {typing ? (
-        <View style={[styles.scrub, styles.scrubbing]}>
-          <TextInput
-            autoFocus
-            maxFontSizeMultiplier={MAX_TEXT_SCALE}
-            value={value}
-            onChangeText={(t) => onChange(t.replace(/\D/g, ''))}
-            onBlur={() => setTyping(false)}
-            keyboardType="number-pad"
-            returnKeyType="done"
-            maxLength={3}
-            selectTextOnFocus
-            placeholder={placeholder}
-            placeholderTextColor={colors.textMuted}
-            style={styles.input}
-            accessibilityLabel={label}
-          />
-        </View>
-      ) : (
         <View
           {...responder.panHandlers}
-          style={[styles.scrub, sliding && styles.scrubbing]}
+          style={[styles.scrub, (sliding || typing) && styles.scrubbing]}
           accessible
           accessibilityRole="adjustable"
           accessibilityLabel={label}
@@ -559,11 +571,12 @@ function NumberField({
           onAccessibilityAction={(e) => {
             if (e.nativeEvent.actionName === 'increment') step(1);
             else if (e.nativeEvent.actionName === 'decrement') step(-1);
-            else setTyping(true);
+            else onTap();
           }}>
-          <Text style={[styles.input, !value && { color: colors.textMuted }]}>{value || placeholder}</Text>
+          <Text style={[styles.input, !value && { color: colors.textMuted }, typing && fresh && !!value && styles.selected]} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
+            {value || placeholder}
+          </Text>
         </View>
-      )}
     </View>
   );
 }
@@ -605,6 +618,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   scrubbing: { borderColor: colors.accent },
+  // Being typed, still all selected: the first key replaces it.
+  selected: { backgroundColor: 'rgba(224,179,84,0.45)', borderRadius: 4, overflow: 'hidden' },
   input: {
     flex: 1,
     color: colors.text,

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 
 import * as haptics from '../lib/haptics';
 import { clampScale, SCALE_MAX, SCALE_MIN } from '../lib/sandbox';
 import { colors } from '../theme';
+import { NumberKeys, typeKey } from './NumberKeys';
 import { MAX_TEXT_SCALE, Text } from './Text';
 
 /** Within this much of 100% (on the slider's own terms), it settles on 100%, with a tick. */
@@ -22,11 +23,13 @@ const percent = (k: number) => `${Math.round(k * 100)}`;
 
 /**
  * A scale to choose, as it's wanted (the chosen things change as it moves): a slider from SCALE_MIN to SCALE_MAX
- * with 100% in the middle, the percentage to type, and a way back to 100%.
+ * with 100% in the middle, the percentage to type (tapped, with the app's own keys under it), and a way back to 100%.
  */
 export function ScaleControl({ value, onChange }: { value: number; onChange: (k: number) => void }) {
   const [track, setTrack] = useState({ left: 0, width: 1 });
+  // The percentage being typed (keys showing), and whether it's still all selected (the first key replaces it).
   const [typed, setTyped] = useState<string | null>(null);
+  const [fresh, setFresh] = useState(true);
   // Kept outside React state: the slider's drag is made once, and reads where the track is (and the track itself,
   // to measure it again) and what's showing.
   const [live] = useState(() => {
@@ -62,11 +65,18 @@ export function ScaleControl({ value, onChange }: { value: number; onChange: (k:
       onPanResponderMove: (e) => at(e.nativeEvent.pageX),
     });
   });
-  const commitTyped = () => {
-    if (typed === null) return;
-    const n = parseFloat(typed.replace(/[^\d.]/g, ''));
-    setTyped(null);
-    if (Number.isFinite(n) && n > 0) onChange(clampScale(n / 100));
+  /** Opens the keys (starting from the percentage, all selected), or closes them. */
+  const toggleKeys = () => {
+    setTyped(typed === null ? percent(value) : null);
+    setFresh(true);
+  };
+  /** A key pressed: the scale follows as soon as what's typed is within range (so 150 doesn't pass through 1% and 15%). */
+  const typeIt = (key: string) => {
+    const next = typeKey(typed ?? '', key, fresh, 3);
+    setTyped(next);
+    setFresh(false);
+    const k = parseInt(next, 10) / 100;
+    if (k >= SCALE_MIN && k <= SCALE_MAX) onChange(k);
   };
   const spot = toSpot(value);
   return (
@@ -92,23 +102,17 @@ export function ScaleControl({ value, onChange }: { value: number; onChange: (k:
         <View style={[styles.thumb, { left: `${spot * 100}%` }]} />
       </View>
       <View style={styles.row}>
-        <View style={styles.inputBox}>
-          <TextInput
-            maxFontSizeMultiplier={MAX_TEXT_SCALE}
-            value={typed ?? percent(value)}
-            onChangeText={setTyped}
-            onFocus={() => setTyped(percent(value))}
-            onBlur={commitTyped}
-            onSubmitEditing={commitTyped}
-            keyboardType="number-pad"
-            returnKeyType="done"
-            maxLength={3}
-            selectTextOnFocus
-            style={styles.input}
-            accessibilityLabel="Scale, in percent"
-          />
+        <Pressable
+          onPress={toggleKeys}
+          accessibilityRole="button"
+          accessibilityLabel="Scale, in percent"
+          accessibilityValue={{ text: typed ?? percent(value) }}
+          style={[styles.inputBox, typed !== null && styles.inputBoxOn]}>
+          <Text style={[styles.input, typed !== null && fresh && !!typed && styles.selected]} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
+            {typed === null ? percent(value) : typed || ' '}
+          </Text>
           <Text style={styles.unit}>%</Text>
-        </View>
+        </Pressable>
         <Text style={styles.limits}>
           {percent(SCALE_MIN)}–{percent(SCALE_MAX)}%
         </Text>
@@ -123,6 +127,7 @@ export function ScaleControl({ value, onChange }: { value: number; onChange: (k:
           <Text style={styles.resetText}>Reset to 100%</Text>
         </Pressable>
       </View>
+      {typed !== null ? <NumberKeys onKey={typeIt} /> : null}
     </View>
   );
 }
@@ -144,7 +149,10 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   inputBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, paddingHorizontal: 10 },
+  inputBoxOn: { borderWidth: 1, borderColor: colors.accent },
   input: { color: colors.text, fontSize: 18, fontWeight: '600', minWidth: 44, paddingVertical: 8, textAlign: 'right' },
+  // Still all selected: the first key replaces it.
+  selected: { backgroundColor: 'rgba(224,179,84,0.45)', borderRadius: 4, overflow: 'hidden' },
   unit: { color: colors.textMuted, fontSize: 16, marginLeft: 2 },
   limits: { flex: 1, color: colors.textMuted, fontSize: 13 },
   reset: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)' },

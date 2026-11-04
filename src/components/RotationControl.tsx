@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 
 import * as haptics from '../lib/haptics';
 import { normalizeAngle } from '../lib/sandbox';
 import { colors } from '../theme';
+import { NumberKeys, typeKey } from './NumberKeys';
 import { MAX_TEXT_SCALE, Text } from './Text';
 
 /** Within this many degrees of a 45° step, the slider settles on it, with a tick. */
@@ -23,11 +24,14 @@ const MARKS = Array.from({ length: 360 / STEP + 1 }, (_, i) => i * STEP - 180);
 
 /**
  * A turn to choose, as it's wanted (what's turned changes as it moves), as the scale is (see ScaleControl): a
- * slider from −180° to 180° with 0° in the middle, settling on each 45° step; the degrees to type; and back to 0°.
+ * slider from −180° to 180° with 0° in the middle, settling on each 45° step; the degrees to type (tapped, with the
+ * app's own keys under it); and back to 0°.
  */
 export function RotationControl({ value, onChange }: { value: number; onChange: (deg: number) => void }) {
   const [track, setTrack] = useState({ left: 0, width: 1 });
+  // The degrees being typed (keys showing), and whether they're still all selected (the first key replaces them).
   const [typed, setTyped] = useState<string | null>(null);
+  const [fresh, setFresh] = useState(true);
   // Kept outside React state: the slider's drag is made once, and reads where the track is (and the track itself,
   // to measure it again) and what's showing.
   const [live] = useState(() => {
@@ -63,13 +67,20 @@ export function RotationControl({ value, onChange }: { value: number; onChange: 
       onPanResponderMove: (e) => at(e.nativeEvent.pageX),
     });
   });
-  const commitTyped = () => {
-    if (typed === null) return;
-    const n = parseFloat(typed.replace(/[^\d.-]/g, ''));
-    setTyped(null);
-    if (Number.isFinite(n)) onChange(normalizeAngle(Math.round(n)));
-  };
   const shown = Math.round(normalizeAngle(value));
+  /** Opens the keys (starting from the degrees, all selected), or closes them. */
+  const toggleKeys = () => {
+    setTyped(typed === null ? String(shown) : null);
+    setFresh(true);
+  };
+  /** A key pressed: what's turned follows as soon as what's typed is a turn (−180 to 180). */
+  const typeIt = (key: string) => {
+    const next = typeKey(typed ?? '', key, fresh, 4);
+    setTyped(next);
+    setFresh(false);
+    const n = parseInt(next, 10);
+    if (Number.isFinite(n) && Math.abs(n) <= 180) onChange(n);
+  };
   const spot = toSpot(shown);
   const mid = toSpot(0);
   return (
@@ -97,23 +108,17 @@ export function RotationControl({ value, onChange }: { value: number; onChange: 
         <View style={[styles.thumb, { left: `${spot * 100}%` }]} />
       </View>
       <View style={styles.row}>
-        <View style={styles.inputBox}>
-          <TextInput
-            maxFontSizeMultiplier={MAX_TEXT_SCALE}
-            value={typed ?? String(shown)}
-            onChangeText={setTyped}
-            onFocus={() => setTyped(String(shown))}
-            onBlur={commitTyped}
-            onSubmitEditing={commitTyped}
-            keyboardType="numbers-and-punctuation"
-            returnKeyType="done"
-            maxLength={5}
-            selectTextOnFocus
-            style={styles.input}
-            accessibilityLabel="Rotation, in degrees"
-          />
+        <Pressable
+          onPress={toggleKeys}
+          accessibilityRole="button"
+          accessibilityLabel="Rotation, in degrees"
+          accessibilityValue={{ text: typed ?? String(shown) }}
+          style={[styles.inputBox, typed !== null && styles.inputBoxOn]}>
+          <Text style={[styles.input, typed !== null && fresh && !!typed && styles.selected]} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
+            {typed === null ? String(shown) : typed || ' '}
+          </Text>
           <Text style={styles.unit}>°</Text>
-        </View>
+        </Pressable>
         <Text style={styles.limits}>−180–180°</Text>
         <Pressable
           onPress={() => {
@@ -126,6 +131,7 @@ export function RotationControl({ value, onChange }: { value: number; onChange: 
           <Text style={styles.resetText}>Reset to 0°</Text>
         </Pressable>
       </View>
+      {typed !== null ? <NumberKeys onKey={typeIt} extra="-" /> : null}
     </View>
   );
 }
@@ -148,7 +154,10 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   inputBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, paddingHorizontal: 10 },
+  inputBoxOn: { borderWidth: 1, borderColor: colors.accent },
   input: { color: colors.text, fontSize: 18, fontWeight: '600', minWidth: 52, paddingVertical: 8, textAlign: 'right' },
+  // Still all selected: the first key replaces it.
+  selected: { backgroundColor: 'rgba(224,179,84,0.45)', borderRadius: 4, overflow: 'hidden' },
   unit: { color: colors.textMuted, fontSize: 16, marginLeft: 2 },
   limits: { flex: 1, color: colors.textMuted, fontSize: 13 },
   reset: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)' },

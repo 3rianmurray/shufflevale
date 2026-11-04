@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Keyboard, PanResponder, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 
 import * as haptics from '../lib/haptics';
 import { colors } from '../theme';
+import { NumberKeys, typeKey } from './NumberKeys';
 import { MAX_TEXT_SCALE, Text } from './Text';
 
 /** How far a finger slides across the number to change it by one. */
@@ -10,7 +11,8 @@ const SCRUB_STEP_PX = 18;
 
 /**
  * A whole number from `min` to `max`: − and + on either side to step it, or a finger slid left and right across
- * the number (one step per short slide, with a tick for each); tapped, it can be typed instead.
+ * the number (one step per short slide, with a tick for each); tapped, it can be typed instead, with the app's own
+ * keys under it (tapped again, they go).
  */
 export function CountStepper({
   value,
@@ -27,7 +29,9 @@ export function CountStepper({
 }) {
   const clamp = (n: number) => Math.min(max, Math.max(min, Math.round(n)));
   const [sliding, setSliding] = useState(false);
+  // The number being typed (keys showing), and whether it's still all selected (the first key replaces it).
   const [typed, setTyped] = useState<string | null>(null);
+  const [fresh, setFresh] = useState(true);
   // What the slide needs that changes from render to render; the slide's own handlers are made once.
   const [latest] = useState(() => {
     const box = { value, min, max, onChange, typing: false, start: value, shown: value, moved: false };
@@ -66,17 +70,21 @@ export function CountStepper({
       onPanResponderRelease: () => {
         setSliding(false);
         // A tap, not a slide: type a number instead.
-        if (!latest.get().moved) setTyped(String(latest.get().value));
+        if (!latest.get().moved) {
+          setTyped(String(latest.get().value));
+          setFresh(true);
+        }
       },
       onPanResponderTerminate: () => setSliding(false),
     }),
   );
-  const finishTyping = () => {
-    if (typed === null) return;
-    const n = parseInt(typed.replace(/\D/g, ''), 10);
-    setTyped(null);
-    Keyboard.dismiss();
-    if (Number.isFinite(n)) onChange(clamp(n));
+  /** A key pressed: the number follows as soon as what's typed is within range. */
+  const typeIt = (key: string) => {
+    const next = typeKey(typed ?? '', key, fresh, String(max).length);
+    setTyped(next);
+    setFresh(false);
+    const n = parseInt(next, 10);
+    if (n >= min && n <= max) onChange(n);
   };
   const button = (by: number) => (
     <Pressable
@@ -90,25 +98,21 @@ export function CountStepper({
     </Pressable>
   );
   return (
+    <View>
     <View style={styles.row}>
       {button(-1)}
       {typed !== null ? (
-        <View style={[styles.number, styles.numberOn]}>
-          <TextInput
-            autoFocus
-            maxFontSizeMultiplier={MAX_TEXT_SCALE}
-            value={typed}
-            onChangeText={(t) => setTyped(t.replace(/\D/g, ''))}
-            onBlur={finishTyping}
-            onSubmitEditing={finishTyping}
-            keyboardType="number-pad"
-            returnKeyType="done"
-            maxLength={String(max).length}
-            selectTextOnFocus
-            style={styles.value}
-            accessibilityLabel={label}
-          />
-        </View>
+        // Being typed: tapped again, the keys go.
+        <Pressable
+          onPress={() => setTyped(null)}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityValue={{ text: typed }}
+          style={[styles.number, styles.numberOn]}>
+          <Text style={[styles.value, fresh && !!typed && styles.selected]} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
+            {typed || ' '}
+          </Text>
+        </Pressable>
       ) : (
         <View
           {...responder.panHandlers}
@@ -122,13 +126,18 @@ export function CountStepper({
           onAccessibilityAction={(e) => {
             if (e.nativeEvent.actionName === 'increment') step(1);
             else if (e.nativeEvent.actionName === 'decrement') step(-1);
-            else setTyped(String(value));
+            else {
+              setTyped(String(value));
+              setFresh(true);
+            }
           }}>
           <Text style={styles.value}>{value}</Text>
           <Text style={styles.hint}>slide</Text>
         </View>
       )}
       {button(1)}
+    </View>
+    {typed !== null ? <NumberKeys onKey={typeIt} /> : null}
     </View>
   );
 }
@@ -141,5 +150,7 @@ const styles = StyleSheet.create({
   number: { minWidth: 120, height: 56, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   numberOn: { borderColor: colors.accent, backgroundColor: 'rgba(255,255,255,0.1)' },
   value: { color: colors.text, fontSize: 26, fontWeight: '800', textAlign: 'center', minWidth: 60, fontVariant: ['tabular-nums'] },
+  // Still all selected: the first key replaces it.
+  selected: { backgroundColor: 'rgba(224,179,84,0.45)', borderRadius: 4, overflow: 'hidden' },
   hint: { color: colors.textMuted, fontSize: 10, fontWeight: '700', marginTop: -2, textTransform: 'uppercase', letterSpacing: 0.5 },
 });
