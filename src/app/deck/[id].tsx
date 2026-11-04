@@ -457,6 +457,8 @@ export default function DeckEditorScreen() {
   // about or float beside it).
   const askCopies = () => {
     if (!selected) return;
+    // Already typing: a tap selects the number, or lets go of it.
+    if (copiesKeys) return setCopiesFresh(!copiesFresh);
     setCopiesKeys(true);
     setCopiesTyped(String(copiesOf(selected)));
     setCopiesFresh(true);

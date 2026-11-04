@@ -81,11 +81,15 @@ export function SpriteSheetModal({ uri, pickOne = false, backs = false, startGri
   // The field being typed in with the app's own keys, if any, and whether it's still all selected (a key replaces it).
   const [typingField, setTypingField] = useState<'rows' | 'cols' | 'count' | null>(null);
   const [typedFresh, setTypedFresh] = useState(true);
-  /** A field's part in the typing: whether it's the one, and a tap to open it (or, open, to close the keys). */
+  /**
+   * A field's part in the typing: whether it's the one, and a tap to open it (all selected); open and still all
+   * selected, to let go of the selection (keys then add on); and again, to close the keys.
+   */
   const typingProps = (field: 'rows' | 'cols' | 'count') => ({
     typing: typingField === field,
     fresh: typedFresh,
     onTap: () => {
+      if (typingField === field && typedFresh) return setTypedFresh(false);
       setTypingField(typingField === field ? null : field);
       setTypedFresh(true);
     },

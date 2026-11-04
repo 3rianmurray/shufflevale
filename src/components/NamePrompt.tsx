@@ -59,11 +59,16 @@ export function NamePrompt() {
           {ownKeys ? (
             // On iPad a number is shown, not typed in a field (so Apple's keyboard never comes): the keys below change
             // it. Still all selected as it opens, it's highlighted (the first key replaces it).
-            <View style={styles.input} onLayout={(e) => setFieldMid(e.nativeEvent.layout.y + e.nativeEvent.layout.height / 2)}>
+            // A tap selects it all, or lets go of the selection.
+            <Pressable
+              onPress={() => setSelectAll(!selectAll)}
+              accessibilityRole="button"
+              style={styles.input}
+              onLayout={(e) => setFieldMid(e.nativeEvent.layout.y + e.nativeEvent.layout.height / 2)}>
               <Text style={[styles.shownNumber, selectAll && !!draft && styles.selectedNumber]} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
                 {draft || ' '}
               </Text>
-            </View>
+            </Pressable>
           ) : (
           <TextInput
             onLayout={(e) => setFieldMid(e.nativeEvent.layout.y + e.nativeEvent.layout.height / 2)}
@@ -77,6 +82,9 @@ export function NamePrompt() {
               setDraft(asTyped(t));
             }}
             selection={selectAll ? { start: 0, end: draft.length } : undefined}
+            // A touch in the field hands the selection back to it (so a tap puts the cursor there, as anywhere), rather
+            // than holding it all selected till the first key.
+            onPressIn={() => setSelectAll(false)}
             autoCapitalize={kind !== 'name' ? 'none' : plain ? 'sentences' : 'words'}
             // Digits only for a count; with a minus sign, or a colon for a time, the keyboard that has them.
             keyboardType={kind === 'number' ? 'number-pad' : kind === 'name' ? 'default' : 'numbers-and-punctuation'}

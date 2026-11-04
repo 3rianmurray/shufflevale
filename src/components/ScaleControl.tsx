@@ -65,8 +65,9 @@ export function ScaleControl({ value, onChange }: { value: number; onChange: (k:
       onPanResponderMove: (e) => at(e.nativeEvent.pageX),
     });
   });
-  /** Opens the keys (starting from the percentage, all selected), or closes them. */
+  /** Opens the keys (starting from the percentage, all selected); open and all selected, lets go of the selection; else closes them. */
   const toggleKeys = () => {
+    if (typed !== null && fresh && typed) return setFresh(false);
     setTyped(typed === null ? percent(value) : null);
     setFresh(true);
   };

@@ -4665,9 +4665,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         tiles: [],
         banner: (
           <View style={styles.numberEntry}>
-            <View style={styles.numberShown}>
+            {/* A tap selects it all, or lets go of the selection. */}
+            <Pressable onPress={() => setNumberFresh(!numberFresh)} accessibilityRole="button" accessibilityLabel={menu.title} style={styles.numberShown}>
               <Text style={[styles.numberText, numberFresh && !!numberTyped && styles.numberSelected]}>{numberTyped || ' '}</Text>
-            </View>
+            </Pressable>
             <NumberKeys
               onKey={(key) => {
                 setNumberTyped(typeKey(numberTyped, key, numberFresh, 12));

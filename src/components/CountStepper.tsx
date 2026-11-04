@@ -102,9 +102,9 @@ export function CountStepper({
     <View style={styles.row}>
       {button(-1)}
       {typed !== null ? (
-        // Being typed: tapped again, the keys go.
+        // Being typed: tapped while all selected, the selection's let go (keys add on); tapped again, the keys go.
         <Pressable
-          onPress={() => setTyped(null)}
+          onPress={() => (fresh && typed ? setFresh(false) : setTyped(null))}
           accessibilityRole="button"
           accessibilityLabel={label}
           accessibilityValue={{ text: typed }}

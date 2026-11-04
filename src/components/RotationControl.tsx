@@ -68,8 +68,9 @@ export function RotationControl({ value, onChange }: { value: number; onChange: 
     });
   });
   const shown = Math.round(normalizeAngle(value));
-  /** Opens the keys (starting from the degrees, all selected), or closes them. */
+  /** Opens the keys (starting from the degrees, all selected); open and all selected, lets go of the selection; else closes them. */
   const toggleKeys = () => {
+    if (typed !== null && fresh && typed) return setFresh(false);
     setTyped(typed === null ? String(shown) : null);
     setFresh(true);
   };
