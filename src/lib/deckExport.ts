@@ -156,7 +156,8 @@ export async function readFileAt(uri: string, earlier?: Map<string, Set<string>>
 /** A file read, its pictures still to be read from it as they're saved: `done` once they have been. */
 export type OpenedFile = UnpackedFile & { done: () => void };
 
-const damaged = () => new DeckFileError('This deck file is damaged.');
+/** A damaged zipped file, saying what's wrong with it (so a file that won't open can be told apart from another). */
+const damaged = (e?: unknown) => new DeckFileError(`This deck file is damaged.${e instanceof Error && e.message ? ` (${e.message})` : ''}`);
 
 /** Reads a zipped Shufflevale file: what's in it, its pictures checked (from their starts), to be read as they're saved. */
 function readZip(readAt: ReadAt, size: number): UnpackedFile {
@@ -175,13 +176,13 @@ function readZip(readAt: ReadAt, size: number): UnpackedFile {
           try {
             return entryBytes(entry, readAt);
           } catch (e) {
-            throw e instanceof ZipError ? damaged() : e;
+            throw e instanceof ZipError ? damaged(e) : e;
           }
         },
       };
     });
   } catch (e) {
-    throw e instanceof ZipError ? damaged() : e;
+    throw e instanceof ZipError ? damaged(e) : e;
   }
 }
 
@@ -210,9 +211,23 @@ export async function readDeckFile(uri: string): Promise<OpenedFile> {
     const opened = file.open(FileMode.ReadOnly);
     handle = opened;
     const size = opened.size ?? file.size;
+    // Read until it's all there: a read can come back with less than asked for (most of all for a big picture).
     const readAt: ReadAt = (offset, length) => {
+      const want = Math.max(0, Math.min(length, size - offset));
       opened.offset = offset;
-      return opened.readBytesSync(Math.max(0, Math.min(length, size - offset)));
+      const first = opened.readBytesSync(want);
+      if (first.length >= want) return first;
+      const out = new Uint8Array(want);
+      out.set(first);
+      let got = first.length;
+      while (got < want) {
+        opened.offset = offset + got;
+        const more = opened.readBytesSync(want - got);
+        if (!more.length) break;
+        out.set(more, got);
+        got += more.length;
+      }
+      return got === want ? out : out.subarray(0, got);
     };
     if (isZip(readAt(0, 4))) return { ...readZip(readAt, size), done };
     // An older file.

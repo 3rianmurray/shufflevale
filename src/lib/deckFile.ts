@@ -464,7 +464,7 @@ function unpackWith(file: Record<string, unknown>, picture: (key: string) => Fil
   }
   if (!Array.isArray(file.decks) || (!file.decks.length && !hasTables)) throw new DeckFileError('This file has no decks in it.');
   const decks: UnpackedDeck[] = file.decks.map((d: unknown) => {
-    if (!isObject(d) || !Array.isArray(d.cards)) throw new DeckFileError('This deck file is damaged.');
+    if (!isObject(d) || !Array.isArray(d.cards)) throw new DeckFileError('This deck file is damaged. (A deck in it has no list of cards.)');
     const group = idFrom(d.group);
     return {
       ...(idFrom(d.id) ? { fileId: idFrom(d.id) } : {}),
@@ -477,7 +477,7 @@ function unpackWith(file: Record<string, unknown>, picture: (key: string) => Fil
       ...(d.playMode === 'table' || d.playMode === 'reveal' ? { playMode: d.playMode } : {}),
       back: d.back ? image(d.back) : null,
       cards: d.cards.map((c: unknown, i: number) => {
-        if (!isObject(c)) throw new DeckFileError('This deck file is damaged.');
+        if (!isObject(c)) throw new DeckFileError('This deck file is damaged. (A card in it is unreadable.)');
         const copies = typeof c.copies === 'number' && c.copies >= 2 ? Math.min(MAX_COPIES, Math.floor(c.copies)) : undefined;
         return {
           ...(idFrom(c.id) ? { fileId: idFrom(c.id) } : {}),

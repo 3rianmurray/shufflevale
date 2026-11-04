@@ -171,7 +171,7 @@ export function zipEntries(size: number, readAt: ReadAt): ZipEntry[] {
 function dataAt(entry: ZipEntry, readAt: ReadAt): number {
   const header = readAt(entry.at, 30);
   const h = view(header);
-  if (header.length < 30 || h.getUint32(0, true) !== LOCAL) throw new ZipError('A zip entry is damaged.');
+  if (header.length < 30 || h.getUint32(0, true) !== LOCAL) throw new ZipError(`${entry.name}'s header is missing.`);
   return entry.at + 30 + h.getUint16(26, true) + h.getUint16(28, true);
 }
 
@@ -179,14 +179,15 @@ function dataAt(entry: ZipEntry, readAt: ReadAt): number {
 export function entryBytes(entry: ZipEntry, readAt: ReadAt): Uint8Array {
   if (entry.method !== 0 && entry.method !== 8) throw new ZipError('A zip entry is packed in a way that can’t be read.');
   const packed = readAt(dataAt(entry, readAt), entry.packed);
-  if (packed.length < entry.packed) throw new ZipError('A zip entry is cut short.');
+  if (packed.length < entry.packed) throw new ZipError(`${entry.name} is cut short.`);
   let bytes: Uint8Array;
   try {
     bytes = entry.method === 0 ? packed : inflateSync(packed, { out: new Uint8Array(entry.size) });
   } catch {
     throw new ZipError('A zip entry is damaged.');
   }
-  if (bytes.length !== entry.size || crc32(bytes) !== entry.crc) throw new ZipError('A zip entry is damaged.');
+  if (bytes.length !== entry.size) throw new ZipError(`${entry.name} is the wrong size.`);
+  if (crc32(bytes) !== entry.crc) throw new ZipError(`${entry.name} doesn't match its checksum.`);
   return bytes;
 }
 
