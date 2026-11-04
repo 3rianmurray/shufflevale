@@ -119,6 +119,14 @@ export default function OpenFileScreen() {
   const matches =
     ready && anyMatches(plan) ? (
       <View style={styles.matches}>
+        {/* Tables first, then their decks. */}
+        {found.tables.map((t, i) => {
+          const chosen = choices.tables[i];
+          if (!plan.tables[i] || !chosen) return null;
+          return choiceRow(`t${i}`, t.name, 'You have this table', ['replace', 'keep'] as TableChoice[], TABLE_WORDS, chosen, (c) =>
+            setChoices({ ...choices, tables: choices.tables.map((was, j) => (j === i ? c : was)) }),
+          );
+        })}
         {found.decks.map((u, i) => {
           const m = plan.decks[i];
           const chosen = choices.decks[i];
@@ -133,13 +141,6 @@ export default function OpenFileScreen() {
           const options: DeckChoice[] = changed ? ['update', 'use', 'keep'] : ['use', 'keep'];
           return choiceRow(`d${i}`, u.name, line, options, DECK_WORDS, chosen, (c) =>
             setChoices({ ...choices, decks: choices.decks.map((was, j) => (j === i ? c : was)) }),
-          );
-        })}
-        {found.tables.map((t, i) => {
-          const chosen = choices.tables[i];
-          if (!plan.tables[i] || !chosen) return null;
-          return choiceRow(`t${i}`, t.name, 'You have this table', ['replace', 'keep'] as TableChoice[], TABLE_WORDS, chosen, (c) =>
-            setChoices({ ...choices, tables: choices.tables.map((was, j) => (j === i ? c : was)) }),
           );
         })}
       </View>
