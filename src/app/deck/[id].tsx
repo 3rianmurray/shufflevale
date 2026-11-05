@@ -29,7 +29,9 @@ import { whenText } from '../../lib/when';
 import * as haptics from '../../lib/haptics';
 import { sampleBack, sampleCards } from '../../lib/sampleDeck';
 import { fitToCard } from '../../lib/cardFit';
-import { keepOriginal, loadUpright, smallPixels } from '../../lib/images';
+import { startFit } from '../../lib/cardWarp';
+import type { ScanStart } from '../../lib/cardWarp';
+import { hasTransparency, keepOriginal, loadUpright, smallPixels } from '../../lib/images';
 import { pickFiles, pickImages } from '../../lib/pickers';
 import { guessSheet } from '../../lib/sheetGuess';
 import type { Grid } from '../../lib/spriteSheet';
@@ -120,7 +122,8 @@ export default function DeckEditorScreen() {
   /** Images waiting in the cropper, and what they become once cropped. */
   const [crop, setCrop] = useState<{ uris: string[]; target: ArtTarget | { cardId: string } } | null>(null);
   /** A photo of a card being found and straightened, and what it's for. */
-  const [scan, setScan] = useState<{ uri: string; target: ArtTarget } | null>(null);
+  // (`start`: its corners already found, for a picture from Photos or Files.)
+  const [scan, setScan] = useState<{ uri: string; target: ArtTarget; start?: ScanStart } | null>(null);
   /** Cropping by hand instead, once the scan screen has gone (iOS shows one full-screen view at a time). */
   const [cropNext, setCropNext] = useState<{ uris: string[]; target: ArtTarget } | null>(null);
   /** A sprite sheet being cut into cards, or picked from for the card back. */
@@ -239,12 +242,25 @@ export default function DeckEditorScreen() {
       await settleAuto(uris[0]);
       setCrop({ uris, target });
     };
-    if (uris.length !== 1 || !(await looksLikeSheet(uris[0], cardRatio(deck)))) return crop();
+    // One picture: its four corners to set, starting from the card found in it (or the picture's own corners, for
+    // art that's the card already), so a photo can be straightened. A see-through one (a cut-out) is cropped.
+    const fit = async () => {
+      if (await hasTransparency(uris[0])) return crop();
+      // An automatic card size is what was found's shape (or the picture's).
+      const start = await startFit(uris[0], (measured) => {
+        if (deck.cardShape?.kind !== 'auto' || deck.cardShape.detected) return cardRatio(deck);
+        const shape: CardShape = { kind: 'auto', detected: detectShape(measured) };
+        changeShape(shape);
+        return cardRatio({ cardShape: shape });
+      });
+      setScan({ uri: uris[0], target, start });
+    };
+    if (uris.length !== 1 || !(await looksLikeSheet(uris[0], cardRatio(deck)))) return fit();
     Alert.alert(
       'This looks like a sprite sheet',
       target === 'cards' ? 'Import it as a sprite sheet, cut into cards?' : 'Choose the back from it as a sprite sheet?',
       [
-        { text: 'No', style: 'cancel', onPress: () => withBusy(crop) },
+        { text: 'No', style: 'cancel', onPress: () => withBusy(fit) },
         { text: 'Yes', onPress: () => setSpriteSheet({ uri: uris[0], target }) },
       ],
     );
@@ -762,6 +778,7 @@ export default function DeckEditorScreen() {
       <CardScanModal
         uri={scan?.uri ?? null}
         cardRatio={cardRatio(deck)}
+        start={scan?.start}
         onDone={(card) => {
           // Already exactly card shaped: it's its own original, should the card size change.
           if (scan?.target === 'back') setBack(card, card);

@@ -182,7 +182,9 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
       <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.title}>Fit the card</Text>
         <Text style={styles.help}>
-          {shown && !shown.found
+          {shown?.whole
+            ? 'Drag the corners onto the card’s corners to straighten it.'
+            : shown && !shown.found
             ? 'Couldn’t spot the card. Drag the four corners onto its corners.'
             : 'Drag a corner if it isn’t on the card’s corner. The card is straightened to fit.'}
         </Text>

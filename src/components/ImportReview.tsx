@@ -14,6 +14,9 @@ import { canCutOut, cutOut } from '../lib/subjectLift';
 import { cardRadius } from '../lib/types';
 import { colors } from '../theme';
 import { Button } from './Button';
+import { startFit } from '../lib/cardWarp';
+import type { ScanStart } from '../lib/cardWarp';
+import { CardScanModal } from './CardScanModal';
 import { CropModal } from './CropModal';
 import { SpriteSheetModal } from './SpriteSheetModal';
 import { TipToast } from './TipToast';
@@ -71,6 +74,8 @@ export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardR
   const [progress, setProgress] = useState<string | null>(null);
   /** The picture being cut again, in the cropper. */
   const [cropping, setCropping] = useState<number | null>(null);
+  /** The picture whose corners are being set, and where they start. */
+  const [fitting, setFitting] = useState<{ at: number; uri: string; start: ScanStart } | null>(null);
   /**
    * How many of the pictures are fronts, when that's known: the fronts, then backs from a sheet of their own
    * (which may hold more or fewer). Otherwise fronts and backs are half and half.
@@ -190,6 +195,18 @@ export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardR
         'No shape stood out from the background in them, so they’re as they were.',
       );
     } else haptics.success();
+  };
+  /** Its four corners to set (to straighten a photo), starting from the card found in what it was cut from. */
+  const fitCorners = async (at: number) => {
+    setBusy(true);
+    try {
+      const start = await startFit(list[at].original, () => cardRatio);
+      setFitting({ at, uri: list[at].original, start });
+    } catch (e) {
+      Alert.alert('Could not open the picture', String(e));
+    } finally {
+      setBusy(false);
+    }
   };
   const remove = (at: number) => {
     setList((l) => l.filter((_, i) => i !== at));
@@ -334,6 +351,7 @@ export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardR
             <View style={styles.pickedButtons}>
               <Button label="Turn 180°" onPress={() => turn(picked)} disabled={busy} style={styles.pickedButton} />
               <Button label="Crop" onPress={() => setCropping(picked)} disabled={busy} style={styles.pickedButton} />
+              <Button label="Corners" onPress={() => fitCorners(picked)} disabled={busy} style={styles.pickedButton} />
               {canCutOut() || list[picked].uncut ? (
                 <Button
                   label={list[picked].uncut ? 'Uncut' : 'Cut out'}
@@ -375,6 +393,17 @@ export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardR
           setCropping(null);
         }}
         onCancel={() => setCropping(null)}
+      />
+      {/* Its corners set and straightened, over this screen. Already exactly card shaped: its own original. */}
+      <CardScanModal
+        uri={fitting?.uri ?? null}
+        cardRatio={cardRatio}
+        start={fitting?.start}
+        onDone={(card) => {
+          if (fitting) replace(fitting.at, { uri: card, original: card });
+          setFitting(null);
+        }}
+        onCancel={() => setFitting(null)}
       />
       {/* A sheet of backs, cut over this screen: starting from the fronts' grid, if they came from a sheet. */}
       <SpriteSheetModal

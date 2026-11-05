@@ -6,7 +6,7 @@
 import { FilterMode, ImageFormat, MipmapMode, Skia } from '@shopify/react-native-skia';
 import { File, Paths } from 'expo-file-system';
 
-import { findCard, homography, outputSize } from './cardScan';
+import { findCard, homography, outputSize, quadSize } from './cardScan';
 import type { Quad } from './cardScan';
 import { newId } from './id';
 import { loadUpright, smallPixels } from './images';
@@ -20,6 +20,8 @@ export interface ScanStart {
   corners: Quad;
   /** Whether a card was actually found (otherwise the corners are just a starting rectangle). */
   found: boolean;
+  /** None found, so the corners are the picture's own (art that's the card already, edge to edge). */
+  whole?: boolean;
 }
 
 /** Turns the photo upright and looks for the card in it. */
@@ -30,6 +32,27 @@ export async function startScan(uri: string): Promise<ScanStart> {
   // Found in the small copy: scaled back up to the photo's own pixels.
   const k = upright.width / small.width;
   return { ...upright, corners: corners.map((p) => ({ x: p.x * k, y: p.y * k })) as Quad, found };
+}
+
+/**
+ * A picture from Photos or Files, ready for its corners to be set: the card found in it, or (none found, as for art
+ * that's the card already) as much of the picture as fits the card's shape, in its middle (as the cropper starts),
+ * so it isn't stretched. `ratioFor` gives the card's shape (width over height), given the shape of what's found.
+ */
+export async function startFit(uri: string, ratioFor: (measured: number) => number): Promise<ScanStart> {
+  const s = await startScan(uri);
+  if (s.found) {
+    const { w, h } = quadSize(s.corners);
+    ratioFor(w / h);
+    return s;
+  }
+  const { width, height } = s;
+  const ratio = ratioFor(width / height);
+  const w = Math.min(width, height * ratio);
+  const h = w / ratio;
+  const x = (width - w) / 2;
+  const y = (height - h) / 2;
+  return { ...s, whole: true, corners: [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }] };
 }
 
 /**
