@@ -972,6 +972,7 @@ function Table({
     if (countFor('reveals') === 3) offerTipSoon('reveal-hold', 1400);
     // Felt as it comes off the deck, and again as it lands on the discard pile.
     haptics.deal();
+    playSound('cardFlip');
     const move = () => apply((t) => T.moveCard(t, top.iid, 'discard'));
     const from = zoneRects.find(([z]) => z === 'deck')?.[1];
     const to = zoneRects.find(([z]) => z === 'discard')?.[1];
@@ -1619,7 +1620,10 @@ function Table({
       // they land if they were held the other way up.
       const stackFace = i !== -1 ? tableGroups[i][0].faceUp : d.faceUp;
       const heldFace = heldFaceUp(d, d.stack[0]);
-      if (stackFace !== heldFace) setLanding((l) => l && { ...l, faceUp: stackFace, turns: true });
+      if (stackFace !== heldFace) {
+        playSound('cardFlip');
+        setLanding((l) => l && { ...l, faceUp: stackFace, turns: true });
+      }
       apply((t) => T.stackOnto(t, ids, onto));
       // The held stack's top card becomes the stack's top; its count pops again as the new count.
       setPoppedStack(ids[0]);
@@ -1689,6 +1693,8 @@ function Table({
     }
     // Piles keep their rules: the deck is always face down and the discard pile always face up.
     const faceUp = zone === 'deck' ? false : zone === 'discard' || zone === 'trash' ? true : d.faceUp;
+    // Heard as it turns over to the pile's way up.
+    if ((zone === 'deck' || zone === 'discard') && heldFaceUp(d, d.stack[0]) !== faceUp) playSound('cardFlip');
     apply((t) => T.moveCards(t, ids, zone, faceUp), zone === 'trash' ? 'Moved to the trash' : undefined);
     // Onto the deck or discard pile: the top card flies from the finger onto the pile, turning to the pile's way
     // up on the way (the rest go straight in, out of sight inside the pile).
