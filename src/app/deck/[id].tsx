@@ -31,7 +31,7 @@ import { sampleBack, sampleCards } from '../../lib/sampleDeck';
 import { fitToCard } from '../../lib/cardFit';
 import { startFit } from '../../lib/cardWarp';
 import type { ScanStart } from '../../lib/cardWarp';
-import { hasTransparency, keepOriginal, loadUpright, smallPixels } from '../../lib/images';
+import { keepOriginal, loadUpright, smallPixels } from '../../lib/images';
 import { pickFiles, pickImages } from '../../lib/pickers';
 import { guessSheet } from '../../lib/sheetGuess';
 import type { Grid } from '../../lib/spriteSheet';
@@ -123,9 +123,9 @@ export default function DeckEditorScreen() {
   const [crop, setCrop] = useState<{ uris: string[]; target: ArtTarget | { cardId: string } } | null>(null);
   /** A photo of a card being found and straightened, and what it's for. */
   // (`start`: its corners already found, for a picture from Photos or Files.)
-  const [scan, setScan] = useState<{ uri: string; target: ArtTarget; start?: ScanStart } | null>(null);
+  const [scan, setScan] = useState<{ uri: string; target: ArtTarget | { cardId: string }; start?: ScanStart } | null>(null);
   /** Cropping by hand instead, once the scan screen has gone (iOS shows one full-screen view at a time). */
-  const [cropNext, setCropNext] = useState<{ uris: string[]; target: ArtTarget } | null>(null);
+  const [cropNext, setCropNext] = useState<{ uris: string[]; target: ArtTarget | { cardId: string } } | null>(null);
   /** A sprite sheet being cut into cards, or picked from for the card back. */
   const [spriteSheet, setSpriteSheet] = useState<{ uri: string; target: ArtTarget } | null>(null);
   /** Several new cards, being checked over (and paired with their own backs) before they're added. */
@@ -237,24 +237,8 @@ export default function DeckEditorScreen() {
       setReview(pictures);
       return;
     }
-    // To crop: an automatic card size is worked out from the first picture first, so the frame fits it.
-    const crop = async () => {
-      await settleAuto(uris[0]);
-      setCrop({ uris, target });
-    };
-    // One picture: its four corners to set, starting from the card found in it (or the picture's own corners, for
-    // art that's the card already), so a photo can be straightened. A see-through one (a cut-out) is cropped.
-    const fit = async () => {
-      if (await hasTransparency(uris[0])) return crop();
-      // An automatic card size is what was found's shape (or the picture's).
-      const start = await startFit(uris[0], (measured) => {
-        if (deck.cardShape?.kind !== 'auto' || deck.cardShape.detected) return cardRatio(deck);
-        const shape: CardShape = { kind: 'auto', detected: detectShape(measured) };
-        changeShape(shape);
-        return cardRatio({ cardShape: shape });
-      });
-      setScan({ uri: uris[0], target, start });
-    };
+    // One picture: on Fit the card (see fitArt).
+    const fit = () => fitArt(uris[0], target);
     if (uris.length !== 1 || !(await looksLikeSheet(uris[0], cardRatio(deck)))) return fit();
     Alert.alert(
       'This looks like a sprite sheet',
@@ -264,6 +248,22 @@ export default function DeckEditorScreen() {
         { text: 'Yes', onPress: () => setSpriteSheet({ uri: uris[0], target }) },
       ],
     );
+  };
+
+  /**
+   * A picture for a card (new, or one already here) or the back, on Fit the card: its four corners to set,
+   * starting from the card found in it (or as much of the picture as fits the card, for art that's the card
+   * already), so a photo can be straightened. Crop by hand is there too. An automatic card size is what was
+   * found's shape (or the picture's).
+   */
+  const fitArt = async (uri: string, target: ArtTarget | { cardId: string }) => {
+    const start = await startFit(uri, (measured) => {
+      if (deck.cardShape?.kind !== 'auto' || deck.cardShape.detected) return cardRatio(deck);
+      const shape: CardShape = { kind: 'auto', detected: detectShape(measured) };
+      changeShape(shape);
+      return cardRatio({ cardShape: shape });
+    });
+    setScan({ uri, target, start });
   };
 
   /**
@@ -430,10 +430,10 @@ export default function DeckEditorScreen() {
     ? [
         ...(Platform.OS === 'ios' ? [{ label: 'Rename', opensModal: true, onPress: () => renameCard(selected) }] : []),
         {
-          label: 'Rotate or re-crop art',
+          label: 'Fit, turn or crop art',
           opensModal: true,
           // From the picture it was cut from, where that's kept.
-          onPress: () => setCrop({ uris: [imageUri(selected.original ?? selected.image)], target: { cardId: selected.id } }),
+          onPress: () => withBusy(() => fitArt(imageUri(selected.original ?? selected.image), { cardId: selected.id })),
         },
         // A card with two different sides: its own back, rather than the deck's.
         {
@@ -586,7 +586,7 @@ export default function DeckEditorScreen() {
                         width={64}
                         onPress={() => {
                           setBackFor(null);
-                          if (backSource) setCrop({ uris: [backSource], target: 'back' });
+                          if (backSource) withBusy(() => fitArt(backSource, 'back'));
                           else openArtMenu('back');
                         }}
                       />
@@ -782,6 +782,7 @@ export default function DeckEditorScreen() {
         onDone={(card) => {
           // Already exactly card shaped: it's its own original, should the card size change.
           if (scan?.target === 'back') setBack(card, card);
+          else if (typeof scan?.target === 'object') decks.replaceCardImage(deck.id, scan.target.cardId, card, card);
           else addNewCards([card], [card]);
           setScan(null);
         }}

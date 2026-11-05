@@ -9,7 +9,7 @@ import { File, Paths } from 'expo-file-system';
 import { findCard, homography, outputSize, quadSize } from './cardScan';
 import type { Quad } from './cardScan';
 import { newId } from './id';
-import { loadUpright, smallPixels } from './images';
+import { hasTransparency, loadUpright, smallPixels } from './images';
 
 /** A photo ready for finding a card in: upright, its size, and where the card's corners seem to be. */
 export interface ScanStart {
@@ -66,6 +66,8 @@ export async function straighten(uri: string, corners: Quad, cardRatio: number):
   const surface = Skia.Surface.Make(width, height);
   if (!surface) throw new Error('Could not make the card');
   const canvas = surface.getCanvas();
+  // (Clear to start with: see-through where the picture is.)
+  canvas.clear(Skia.Color('transparent'));
   canvas.concat(
     Skia.Matrix(
       homography(corners, [
@@ -79,8 +81,10 @@ export async function straighten(uri: string, corners: Quad, cardRatio: number):
   const whole = Skia.XYWHRect(0, 0, image.width(), image.height());
   canvas.drawImageRectOptions(image, whole, whole, FilterMode.Linear, MipmapMode.Linear);
   surface.flush();
-  const out = new File(Paths.cache, `card-${newId()}.jpg`);
+  // A picture with see-through parts (a cut-out) stays a PNG, keeping them.
+  const png = await hasTransparency(uri);
+  const out = new File(Paths.cache, `card-${newId()}.${png ? 'png' : 'jpg'}`);
   out.create();
-  out.write(surface.makeImageSnapshot().encodeToBase64(ImageFormat.JPEG, 90), { encoding: 'base64' });
+  out.write(surface.makeImageSnapshot().encodeToBase64(png ? ImageFormat.PNG : ImageFormat.JPEG, 90), { encoding: 'base64' });
   return out.uri;
 }
