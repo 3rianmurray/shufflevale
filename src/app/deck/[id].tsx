@@ -29,9 +29,10 @@ import { whenText } from '../../lib/when';
 import * as haptics from '../../lib/haptics';
 import { sampleBack, sampleCards } from '../../lib/sampleDeck';
 import { fitToCard } from '../../lib/cardFit';
-import { startFit } from '../../lib/cardWarp';
+import { uprightCorners } from '../../lib/cardScan';
+import { startFit, straighten } from '../../lib/cardWarp';
 import type { ScanStart } from '../../lib/cardWarp';
-import { keepOriginal, loadUpright, smallPixels } from '../../lib/images';
+import { hasTransparency, keepOriginal, loadUpright, smallPixels } from '../../lib/images';
 import { pickFiles, pickImages } from '../../lib/pickers';
 import { guessSheet } from '../../lib/sheetGuess';
 import type { Grid } from '../../lib/spriteSheet';
@@ -225,12 +226,19 @@ export default function DeckEditorScreen() {
   const cropOrCut = async (uris: string[], target: ArtTarget) => {
     // Several new cards: each fitted to the card (a cut-out scaled into it, anything else trimmed to it) and
     // checked over together, rather than cropped one by one (any can still be cut again there).
+    // Where a card is found in one (a photo of it), it's straightened, as a scan is; Straighten fixes it there.
     if (target === 'cards' && uris.length > 1) {
-      const ratio = await settleAuto(uris[0]);
+      // The card shape, settled once (an automatic size, from the first).
+      let settled: number | null = null;
+      const ratioFor = (measured: number) => (settled ??= ratioFrom(measured));
       const pictures: ImportPicture[] = [];
       for (const u of uris) {
-        const upright = await loadUpright(u);
-        pictures.push({ uri: await fitToCard(upright.uri, ratio), original: await keepOriginal(upright.uri) });
+        const start = await startFit(u, ratioFor);
+        if (start.found && !(await hasTransparency(start.uri))) {
+          const ratio = ratioFor(0);
+          const card = await straighten(start.uri, uprightCorners(start.corners, ratio), ratio);
+          pictures.push({ uri: card, original: card, photo: start.uri });
+        } else pictures.push({ uri: await fitToCard(start.uri, ratioFor(0)), original: await keepOriginal(start.uri) });
       }
       setReviewGrid(null);
       setReviewPairing('none');
@@ -257,13 +265,15 @@ export default function DeckEditorScreen() {
    * found's shape (or the picture's).
    */
   const fitArt = async (uri: string, target: ArtTarget | { cardId: string }) => {
-    const start = await startFit(uri, (measured) => {
-      if (deck.cardShape?.kind !== 'auto' || deck.cardShape.detected) return cardRatio(deck);
-      const shape: CardShape = { kind: 'auto', detected: detectShape(measured) };
-      changeShape(shape);
-      return cardRatio({ cardShape: shape });
-    });
+    const start = await startFit(uri, ratioFrom);
     setScan({ uri, target, start });
+  };
+  /** The deck's card shape: an automatic one not yet worked out is settled as `measured` (width over height). */
+  const ratioFrom = (measured: number) => {
+    if (deck.cardShape?.kind !== 'auto' || deck.cardShape.detected) return cardRatio(deck);
+    const shape: CardShape = { kind: 'auto', detected: detectShape(measured) };
+    changeShape(shape);
+    return cardRatio({ cardShape: shape });
   };
 
   /**

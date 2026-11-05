@@ -347,7 +347,7 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
                   <View style={styles.trayButtons}>
                     <Button label="Retake" variant="primary" onPress={() => retake(pickedShot.id)} disabled={pickedShot.card === 'working'} style={{ flex: 1 }} />
                     {/* A rectangular card's corners, dragged into place if they were found wrong. */}
-                    {pickedScan ? <Button label="Corners" onPress={() => setAdjusting(pickedShot.id)} style={{ flex: 1 }} /> : null}
+                    {pickedScan ? <Button label="Straighten" onPress={() => setAdjusting(pickedShot.id)} style={{ flex: 1 }} /> : null}
                     {/* With Backs too, only the last can go (the others would shift every pair after them). */}
                     {!backs || shots[shots.length - 1]?.id === pickedShot.id ? (
                       <Button label="Delete" variant="danger" onPress={() => remove(pickedShot.id)} disabled={pickedShot.card === 'working'} style={{ flex: 1 }} />

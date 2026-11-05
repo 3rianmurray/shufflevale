@@ -29,6 +29,8 @@ export interface ImportPicture {
   original: string;
   /** The picture as it was before it was cut out (see subjectLift), to put back. */
   uncut?: ImportPicture;
+  /** The whole photo it was straightened from (upright), to straighten again from. */
+  photo?: string;
 }
 
 interface Props {
@@ -196,12 +198,13 @@ export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardR
       );
     } else haptics.success();
   };
-  /** Its four corners to set (to straighten a photo), starting from the card found in what it was cut from. */
+  /** Its four corners to set (to straighten a photo), starting from the card found in the photo it came from. */
   const fitCorners = async (at: number) => {
     setBusy(true);
     try {
-      const start = await startFit(list[at].original, () => cardRatio);
-      setFitting({ at, uri: list[at].original, start });
+      const from = list[at].photo ?? list[at].original;
+      const start = await startFit(from, () => cardRatio);
+      setFitting({ at, uri: from, start });
     } catch (e) {
       Alert.alert('Could not open the picture', String(e));
     } finally {
@@ -351,7 +354,7 @@ export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardR
             <View style={styles.pickedButtons}>
               <Button label="Turn 180°" onPress={() => turn(picked)} disabled={busy} style={styles.pickedButton} />
               <Button label="Crop" onPress={() => setCropping(picked)} disabled={busy} style={styles.pickedButton} />
-              <Button label="Corners" onPress={() => fitCorners(picked)} disabled={busy} style={styles.pickedButton} />
+              <Button label="Straighten" onPress={() => fitCorners(picked)} disabled={busy} style={styles.pickedButton} />
               {canCutOut() || list[picked].uncut ? (
                 <Button
                   label={list[picked].uncut ? 'Uncut' : 'Cut out'}
@@ -400,7 +403,7 @@ export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardR
         cardRatio={cardRatio}
         start={fitting?.start}
         onDone={(card) => {
-          if (fitting) replace(fitting.at, { uri: card, original: card });
+          if (fitting) replace(fitting.at, { uri: card, original: card, photo: fitting.uri });
           setFitting(null);
         }}
         onCancel={() => setFitting(null)}
