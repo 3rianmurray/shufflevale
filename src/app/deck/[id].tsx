@@ -29,10 +29,9 @@ import { whenText } from '../../lib/when';
 import * as haptics from '../../lib/haptics';
 import { sampleBack, sampleCards } from '../../lib/sampleDeck';
 import { fitToCard } from '../../lib/cardFit';
-import { uprightCorners } from '../../lib/cardScan';
-import { startFit, straighten } from '../../lib/cardWarp';
+import { startFit } from '../../lib/cardWarp';
 import type { ScanStart } from '../../lib/cardWarp';
-import { hasTransparency, keepOriginal, loadUpright, smallPixels } from '../../lib/images';
+import { keepOriginal, loadUpright, smallPixels } from '../../lib/images';
 import { pickFiles, pickImages } from '../../lib/pickers';
 import { guessSheet } from '../../lib/sheetGuess';
 import type { Grid } from '../../lib/spriteSheet';
@@ -102,7 +101,7 @@ export default function DeckEditorScreen() {
    * The open picture menu: where new card art (`cards`) or the card back (`back`) comes from, or, after
    * choosing a sprite sheet, where that sheet comes from (`sheet-…`).
    */
-  const [menu, setMenu] = useState<ArtTarget | `sheet-${ArtTarget}` | null>(null);
+  const [menu, setMenu] = useState<ArtTarget | `sheet-${ArtTarget}` | 'back-art' | null>(null);
   /** The walkthrough, if it's running: only then are the sample pictures offered. */
   const tour = useTourStep();
   // A tip, the first time a deck has a few cards: reordering them.
@@ -224,29 +223,23 @@ export default function DeckEditorScreen() {
   // One picture that looks like a sprite sheet (a grid of cards): asked whether to cut it up as one, rather than
   // crop it as a single card.
   const cropOrCut = async (uris: string[], target: ArtTarget) => {
-    // Several new cards: each fitted to the card (a cut-out scaled into it, anything else trimmed to it) and
-    // checked over together, rather than cropped one by one (any can still be cut again there).
-    // Where a card is found in one (a photo of it), it's straightened, as a scan is; Straighten fixes it there.
-    if (target === 'cards' && uris.length > 1) {
-      // The card shape, settled once (an automatic size, from the first).
-      let settled: number | null = null;
-      const ratioFor = (measured: number) => (settled ??= ratioFrom(measured));
+    // The whole picture, fitted to the card (a cut-out scaled into it, anything else trimmed to its shape). New
+    // cards are checked over first, where any can be cropped or corner pinned; a back is just used (tap it to
+    // crop or corner pin it).
+    const fit = async () => {
+      const upright = await Promise.all(uris.map(async (u) => (await loadUpright(u)).uri));
+      // An automatic card size, settled from the first.
+      const ratio = await settleAuto(upright[0]);
       const pictures: ImportPicture[] = [];
-      for (const u of uris) {
-        const start = await startFit(u, ratioFor);
-        if (start.found && !(await hasTransparency(start.uri))) {
-          const ratio = ratioFor(0);
-          const card = await straighten(start.uri, uprightCorners(start.corners, ratio), ratio);
-          pictures.push({ uri: card, original: card, photo: start.uri });
-        } else pictures.push({ uri: await fitToCard(start.uri, ratioFor(0)), original: await keepOriginal(start.uri) });
+      for (const u of upright) pictures.push({ uri: await fitToCard(u, ratio), original: await keepOriginal(u) });
+      if (target === 'back') {
+        setBack(pictures[0].uri, pictures[0].original);
+        return;
       }
       setReviewGrid(null);
       setReviewPairing('none');
       setReview(pictures);
-      return;
-    }
-    // One picture: on Fit the card (see fitArt).
-    const fit = () => fitArt(uris[0], target);
+    };
     if (uris.length !== 1 || !(await looksLikeSheet(uris[0], cardRatio(deck)))) return fit();
     Alert.alert(
       'This looks like a sprite sheet',
@@ -259,10 +252,9 @@ export default function DeckEditorScreen() {
   };
 
   /**
-   * A picture for a card (new, or one already here) or the back, on Fit the card: its four corners to set,
-   * starting from the card found in it (or as much of the picture as fits the card, for art that's the card
-   * already), so a photo can be straightened. Crop by hand is there too. An automatic card size is what was
-   * found's shape (or the picture's).
+   * A card's picture (or the back's), corner pinned: its four corners to set, starting from the card found in it
+   * (or as much of the picture as fits the card, if none is), so a photo can be straightened. An automatic card
+   * size is what was found's shape (or the picture's).
    */
   const fitArt = async (uri: string, target: ArtTarget | { cardId: string }) => {
     const start = await startFit(uri, ratioFrom);
@@ -363,6 +355,8 @@ export default function DeckEditorScreen() {
     setMenu(target);
     tourEvent(target === 'cards' ? 'add-cards-menu' : 'back-menu');
   };
+  /** The picture the back is cut from: the uncropped original where it's kept, else the back as it is. */
+  const backSource = deck.backOriginal ? imageUri(deck.backOriginal) : deck.backImage ? imageUri(deck.backImage) : null;
   const sheetSourceActions = (target: ArtTarget) => [
     { label: 'From Photos', opensModal: true, onPress: () => sheetFrom(target, 'photos') },
     { label: 'From Files', opensModal: true, onPress: () => sheetFrom(target, 'files') },
@@ -376,10 +370,16 @@ export default function DeckEditorScreen() {
           ? { title: 'Sprite sheet from…', actions: sheetSourceActions('cards') }
           : menu === 'sheet-back'
             ? { title: 'Sprite sheet from…', actions: sheetSourceActions('back') }
-            : { actions: [] };
-
-  /** The picture the back is cut from: the uncropped original where it's kept, else the back as it is. */
-  const backSource = deck.backOriginal ? imageUri(deck.backOriginal) : deck.backImage ? imageUri(deck.backImage) : null;
+            : menu === 'back-art' && backSource
+              ? {
+                  title: 'Card back',
+                  actions: [
+                    { label: 'Crop', opensModal: true, onPress: () => setCrop({ uris: [backSource], target: 'back' as const }) },
+                    { label: 'Corner pin', opensModal: true, onPress: () => withBusy(() => fitArt(backSource, 'back')) },
+                    { label: 'Choose another picture', onPress: () => openArtMenu('back') },
+                  ],
+                }
+              : { actions: [] };
 
   // A new card size: everything kept with its original is cut again from it to fit (so a landscape photo
   // shows whole on landscape cards, rather than the middle of a portrait crop of it). Cards and backs added
@@ -439,10 +439,15 @@ export default function DeckEditorScreen() {
   const cardActions = selected
     ? [
         ...(Platform.OS === 'ios' ? [{ label: 'Rename', opensModal: true, onPress: () => renameCard(selected) }] : []),
+        // Both from the picture it was cut from, where that's kept.
         {
-          label: 'Fit, turn or crop art',
+          label: 'Crop',
           opensModal: true,
-          // From the picture it was cut from, where that's kept.
+          onPress: () => setCrop({ uris: [imageUri(selected.original ?? selected.image)], target: { cardId: selected.id } }),
+        },
+        {
+          label: 'Corner pin',
+          opensModal: true,
           onPress: () => withBusy(() => fitArt(imageUri(selected.original ?? selected.image), { cardId: selected.id })),
         },
         // A card with two different sides: its own back, rather than the deck's.
@@ -596,7 +601,7 @@ export default function DeckEditorScreen() {
                         width={64}
                         onPress={() => {
                           setBackFor(null);
-                          if (backSource) withBusy(() => fitArt(backSource, 'back'));
+                          if (backSource) setMenu('back-art');
                           else openArtMenu('back');
                         }}
                       />
@@ -796,7 +801,8 @@ export default function DeckEditorScreen() {
           else addNewCards([card], [card]);
           setScan(null);
         }}
-        onCropByHand={(uri) => {
+        // A photo just taken (no card camera) can be cropped instead; a picture being corner pinned already could be.
+        onCropByHand={scan?.start ? undefined : (uri) => {
           if (scan) setCropNext({ uris: [uri], target: scan.target });
           setScan(null);
         }}

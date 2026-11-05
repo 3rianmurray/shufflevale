@@ -354,7 +354,7 @@ export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardR
             <View style={styles.pickedButtons}>
               <Button label="Turn 180°" onPress={() => turn(picked)} disabled={busy} style={styles.pickedButton} />
               <Button label="Crop" onPress={() => setCropping(picked)} disabled={busy} style={styles.pickedButton} />
-              <Button label="Straighten" onPress={() => fitCorners(picked)} disabled={busy} style={styles.pickedButton} />
+              <Button label="Corner pin" onPress={() => fitCorners(picked)} disabled={busy} style={styles.pickedButton} />
               {canCutOut() || list[picked].uncut ? (
                 <Button
                   label={list[picked].uncut ? 'Uncut' : 'Cut out'}

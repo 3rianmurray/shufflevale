@@ -213,7 +213,7 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
       onRequestClose={onCancel}
       onDismiss={onClosed}>
       <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
-        <Text style={styles.title}>Fit the card</Text>
+        <Text style={styles.title}>Corner pin</Text>
         <Text style={styles.help}>
           {placing
             ? `Tap each of the card’s four corners. ${placing.length} of 4.`
