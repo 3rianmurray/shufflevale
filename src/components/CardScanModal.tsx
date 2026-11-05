@@ -218,9 +218,9 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
           {placing
             ? `Tap each of the card’s four corners. ${placing.length} of 4.`
             : shown?.whole
-              ? 'Drag the corners onto the card’s corners to straighten it, or tap Place by hand.'
+              ? 'Drag the corners onto the card’s corners to straighten it.'
               : shown && !shown.found
-                ? 'Couldn’t spot the card. Drag the corners onto its corners, or tap Place by hand.'
+                ? 'Couldn’t spot the card. Drag the corners onto its corners.'
                 : 'Drag a corner if it isn’t on the card’s corner. The card is straightened to fit.'}
         </Text>
 
@@ -309,18 +309,6 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
             hitSlop={8}
             style={({ pressed }) => [styles.turn, pressed && { opacity: 0.7 }]}>
             <Text style={styles.turnText}>⟳ Turn</Text>
-          </Pressable>
-          {/* Placing the corners by hand, a tap each (or back to those there were). */}
-          <Pressable
-            onPress={() => {
-              setPlacing(placing ? null : []);
-              haptics.tick();
-            }}
-            disabled={!corners}
-            accessibilityRole="button"
-            hitSlop={8}
-            style={({ pressed }) => [styles.turn, placing && styles.turnOn, pressed && { opacity: 0.7 }]}>
-            <Text style={[styles.turnText, placing && { color: colors.accentText }]}>{placing ? 'Stop' : 'Place by hand'}</Text>
           </Pressable>
         </View>
 

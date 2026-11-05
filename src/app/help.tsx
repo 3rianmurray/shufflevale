@@ -28,7 +28,7 @@ const TIPS: { title: string; tips: [string, string][] }[] = [
       ['Sprite sheets', 'The grid is found for you; slide a finger across a number to change it. Tap or drag across cards to leave them out.'],
       ['Scanning cards', 'Lay each card on a plain background. Choose Rectangle to have each card found and straightened, or Cut out for cards of other shapes. The lightning bolt turns the flash on for each shot, and 2× zooms the camera in; both are off unless you turn them on.'],
       ['Fixing a scan', 'Tap the small picture in the corner to see every shot: retake or delete one, or tap Corner pin to drag its four corners onto the card’s. If a card can’t be found, its corners open by themselves.'],
-      ['Corner pinning a picture', 'A picture from Photos or Files is used whole. To straighten a photo of a card, tap it, then Corner pin: its corners start on the card, found for you. Drag any that are off, or tap Place by hand and tap each of the card’s four corners.'],
+      ['Corner pinning a picture', 'A picture from Photos or Files is used whole. To straighten a photo of a card, tap it, then Corner pin: its corners start on the card, found for you. Drag any that are off.'],
       ['Cards with their own backs', 'Turn on Backs too when scanning: it asks for each card’s front, then its back. Or add a sheet of backs when you check the cards: each pairs with the card of the same number.'],
       ['Cards with odd shapes', 'Scan them with Cut out chosen. Photos added together can be cut out when you check them: tap Cut out every card.'],
     ],
