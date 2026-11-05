@@ -4,7 +4,7 @@ import { ActivityIndicator, Alert, Modal, PanResponder, Pressable, StyleSheet, V
 import type { LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { homography, turnCorners, uprightCorners } from '../lib/cardScan';
+import { homography, orderCorners, turnCorners, uprightCorners } from '../lib/cardScan';
 import type { Point, Quad } from '../lib/cardScan';
 import { startScan, straighten } from '../lib/cardWarp';
 import type { ScanStart } from '../lib/cardWarp';
@@ -20,6 +20,8 @@ const GRAB_RADIUS = 48;
 const HANDLE = 26;
 const LOUPE = 120;
 const LOUPE_ZOOM = 2.5;
+/** Room round the photo, so a corner on its very edge is still easy to grab. */
+const EDGE_ROOM = HANDLE;
 /** The live preview of the straightened card: its height. */
 const PREVIEW_H = 96;
 
@@ -56,6 +58,8 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
   const [turns, setTurns] = useState(0);
   /** The corner being dragged, if any. */
   const [dragging, setDragging] = useState<number | null>(null);
+  /** Placing the corners by hand, a tap each: those tapped so far (the photo's pixels). */
+  const [placing, setPlacing] = useState<Point[] | null>(null);
   const [area, setArea] = useState<{ w: number; h: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const shown = scan && scan.source === uri ? scan : null;
@@ -69,6 +73,7 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
         if (canceled) return;
         setScan({ ...s, source: uri });
         setCorners(s.corners);
+        setPlacing(null);
         // A card photographed sideways is turned to stand the deck's way.
         setTurns(uprightCorners(s.corners, cardRatio) === s.corners ? 0 : 1);
       })
@@ -81,23 +86,37 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
   }, [uri, cardRatio]);
 
   // The photo fitted into the space it has; `fit` takes its pixels to the screen's.
-  const fit = shown && area ? Math.min(area.w / shown.width, area.h / shown.height) : 0;
+  const fit = shown && area ? Math.min((area.w - EDGE_ROOM * 2) / shown.width, (area.h - EDGE_ROOM * 2) / shown.height) : 0;
   const box = shown ? { w: shown.width * fit, h: shown.height * fit } : null;
   const onScreen = (p: Point) => ({ x: p.x * fit, y: p.y * fit });
 
-  // Dragging a corner: the nearest one to where the finger lands, moved with it (kept on the photo). The
-  // handlers are made once, reading the latest of what they need.
+  // Dragging a corner: the nearest one to where the finger lands, moved with it (kept on the photo); or, placing
+  // them by hand, a tap puts the next one there. The handlers are made once, reading the latest of what they need.
   const [latest] = useState(() => {
-    const live = { corners: null as Quad | null, fit: 0, box: null as { w: number; h: number } | null, index: -1, from: { x: 0, y: 0 } };
+    const live = {
+      corners: null as Quad | null,
+      fit: 0,
+      box: null as { w: number; h: number } | null,
+      index: -1,
+      from: { x: 0, y: 0 },
+      placing: null as Point[] | null,
+      tapAt: null as Point | null,
+    };
     return { set: (next: Partial<typeof live>) => Object.assign(live, next), get: () => live };
   });
-  latest.set({ corners, fit, box });
+  latest.set({ corners, fit, box, placing });
   const [responder] = useState(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: (e) => {
-        const { corners: q, fit: k } = latest.get();
-        if (!q || !k) return false;
-        const { locationX: x, locationY: y } = e.nativeEvent;
+        const { corners: q, fit: k, box: b, placing: placed } = latest.get();
+        if (!q || !k || !b) return false;
+        // (Where it lands on the photo: the room round it is outside it.)
+        const x = e.nativeEvent.locationX - EDGE_ROOM;
+        const y = e.nativeEvent.locationY - EDGE_ROOM;
+        if (placed) {
+          latest.set({ index: -1, tapAt: { x: Math.min(b.w, Math.max(0, x)) / k, y: Math.min(b.h, Math.max(0, y)) / k } });
+          return true;
+        }
         const dist = q.map((p) => Math.hypot(p.x * k - x, p.y * k - y));
         const index = dist.indexOf(Math.min(...dist));
         if (dist[index] > GRAB_RADIUS) return false;
@@ -106,6 +125,7 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
       },
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
+        if (latest.get().index < 0) return;
         setDragging(latest.get().index);
         haptics.lift();
       },
@@ -117,6 +137,19 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
         setCorners(q.map((p, i) => (i === index ? { x, y } : p)) as Quad);
       },
       onPanResponderRelease: () => {
+        const { placing: placed, tapAt } = latest.get();
+        if (placed && tapAt) {
+          // The next corner, where it was tapped; the fourth puts them all in order, as the card's.
+          const next = [...placed, tapAt];
+          latest.set({ tapAt: null });
+          if (next.length < 4) setPlacing(next);
+          else {
+            setCorners(orderCorners(next));
+            setPlacing(null);
+          }
+          haptics.tick();
+          return;
+        }
         setDragging(null);
         haptics.drop();
       },
@@ -182,47 +215,73 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
       <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.title}>Fit the card</Text>
         <Text style={styles.help}>
-          {shown?.whole
-            ? 'Drag the corners onto the card’s corners to straighten it.'
-            : shown && !shown.found
-            ? 'Couldn’t spot the card. Drag the four corners onto its corners.'
-            : 'Drag a corner if it isn’t on the card’s corner. The card is straightened to fit.'}
+          {placing
+            ? `Tap each of the card’s four corners. ${placing.length} of 4.`
+            : shown?.whole
+              ? 'Drag the corners onto the card’s corners to straighten it, or tap Tap corners.'
+              : shown && !shown.found
+                ? 'Couldn’t spot the card. Drag the corners onto its corners, or tap Tap corners.'
+                : 'Drag a corner if it isn’t on the card’s corner. The card is straightened to fit.'}
         </Text>
 
         <View style={styles.photoArea} onLayout={(e: LayoutChangeEvent) => setArea({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
           {shown && box && image && corners ? (
-            <View style={{ width: box.w, height: box.h }} {...responder.panHandlers}>
-              <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-                <SkiaImage image={image} x={0} y={0} width={box.w} height={box.h} fit="fill" />
-                <Path path={shade} color="rgba(0,0,0,0.45)" />
-                <Path path={outline} color={colors.accent} style="stroke" strokeWidth={2} />
-                {corners.map((p, i) => {
-                  const s = onScreen(p);
-                  return (
-                    <Group key={i}>
-                      <Circle cx={s.x} cy={s.y} r={HANDLE / 2} color={i === dragging ? colors.accent : 'rgba(224,179,84,0.35)'} />
-                      <Circle cx={s.x} cy={s.y} r={HANDLE / 2} color={colors.accent} style="stroke" strokeWidth={2} />
-                    </Group>
-                  );
-                })}
-              </Canvas>
-              {held && loupeAt ? (
-                <View style={[styles.loupe, { left: loupeAt.x, top: loupeAt.y }]} pointerEvents="none">
-                  <Canvas style={{ width: LOUPE, height: LOUPE }}>
-                    <Group
-                      transform={[
-                        { translateX: LOUPE / 2 - held.x * fit * LOUPE_ZOOM },
-                        { translateY: LOUPE / 2 - held.y * fit * LOUPE_ZOOM },
-                        { scale: LOUPE_ZOOM },
-                      ]}>
-                      <SkiaImage image={image} x={0} y={0} width={box.w} height={box.h} fit="fill" />
-                      <Path path={outline} color={colors.accent} style="stroke" strokeWidth={1.5 / LOUPE_ZOOM} />
-                    </Group>
-                    <Line p1={vec(LOUPE / 2 - 10, LOUPE / 2)} p2={vec(LOUPE / 2 + 10, LOUPE / 2)} color="#fff" strokeWidth={1} />
-                    <Line p1={vec(LOUPE / 2, LOUPE / 2 - 10)} p2={vec(LOUPE / 2, LOUPE / 2 + 10)} color="#fff" strokeWidth={1} />
-                  </Canvas>
-                </View>
-              ) : null}
+            // (Touches land on this, the photo and the room round it; nothing inside takes them.)
+            <View style={{ width: box.w + EDGE_ROOM * 2, height: box.h + EDGE_ROOM * 2, padding: EDGE_ROOM }} {...responder.panHandlers}>
+              <View style={{ width: box.w, height: box.h, overflow: 'visible' }} pointerEvents="none">
+                <Canvas
+                  style={{ position: 'absolute', left: -EDGE_ROOM, top: -EDGE_ROOM, width: box.w + EDGE_ROOM * 2, height: box.h + EDGE_ROOM * 2 }}
+                  pointerEvents="none">
+                  <Group transform={[{ translateX: EDGE_ROOM }, { translateY: EDGE_ROOM }]}>
+                    <SkiaImage image={image} x={0} y={0} width={box.w} height={box.h} fit="fill" />
+                    {placing ? (
+                      // The corners tapped so far, joined up in the order they were tapped.
+                      <Group>
+                        {placing.slice(1).map((p, i) => {
+                          const a = onScreen(placing[i]);
+                          const b = onScreen(p);
+                          return <Line key={`l${i}`} p1={vec(a.x, a.y)} p2={vec(b.x, b.y)} color={colors.accent} strokeWidth={2} />;
+                        })}
+                        {placing.map((p, i) => {
+                          const s = onScreen(p);
+                          return <Circle key={i} cx={s.x} cy={s.y} r={HANDLE / 2} color={colors.accent} />;
+                        })}
+                      </Group>
+                    ) : (
+                      <>
+                        <Path path={shade} color="rgba(0,0,0,0.45)" />
+                        <Path path={outline} color={colors.accent} style="stroke" strokeWidth={2} />
+                        {corners.map((p, i) => {
+                          const s = onScreen(p);
+                          return (
+                            <Group key={i}>
+                              <Circle cx={s.x} cy={s.y} r={HANDLE / 2} color={i === dragging ? colors.accent : 'rgba(224,179,84,0.35)'} />
+                              <Circle cx={s.x} cy={s.y} r={HANDLE / 2} color={colors.accent} style="stroke" strokeWidth={2} />
+                            </Group>
+                          );
+                        })}
+                      </>
+                    )}
+                  </Group>
+                </Canvas>
+                {held && loupeAt ? (
+                  <View style={[styles.loupe, { left: loupeAt.x, top: loupeAt.y }]} pointerEvents="none">
+                    <Canvas style={{ width: LOUPE, height: LOUPE }}>
+                      <Group
+                        transform={[
+                          { translateX: LOUPE / 2 - held.x * fit * LOUPE_ZOOM },
+                          { translateY: LOUPE / 2 - held.y * fit * LOUPE_ZOOM },
+                          { scale: LOUPE_ZOOM },
+                        ]}>
+                        <SkiaImage image={image} x={0} y={0} width={box.w} height={box.h} fit="fill" />
+                        <Path path={outline} color={colors.accent} style="stroke" strokeWidth={1.5 / LOUPE_ZOOM} />
+                      </Group>
+                      <Line p1={vec(LOUPE / 2 - 10, LOUPE / 2)} p2={vec(LOUPE / 2 + 10, LOUPE / 2)} color="#fff" strokeWidth={1} />
+                      <Line p1={vec(LOUPE / 2, LOUPE / 2 - 10)} p2={vec(LOUPE / 2, LOUPE / 2 + 10)} color="#fff" strokeWidth={1} />
+                    </Canvas>
+                  </View>
+                ) : null}
+              </View>
             </View>
           ) : (
             <ActivityIndicator color={colors.accent} size="large" />
@@ -250,6 +309,18 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
             hitSlop={8}
             style={({ pressed }) => [styles.turn, pressed && { opacity: 0.7 }]}>
             <Text style={styles.turnText}>⟳ Turn</Text>
+          </Pressable>
+          {/* Placing the corners by hand, a tap each (or back to those there were). */}
+          <Pressable
+            onPress={() => {
+              setPlacing(placing ? null : []);
+              haptics.tick();
+            }}
+            disabled={!corners}
+            accessibilityRole="button"
+            hitSlop={8}
+            style={({ pressed }) => [styles.turn, placing && styles.turnOn, pressed && { opacity: 0.7 }]}>
+            <Text style={[styles.turnText, placing && { color: colors.accentText }]}>{placing ? 'Stop' : 'Tap corners'}</Text>
           </Pressable>
         </View>
 
@@ -281,6 +352,7 @@ const styles = StyleSheet.create({
   previewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 },
   preview: { borderRadius: 6, overflow: 'hidden', backgroundColor: colors.surface },
   turn: { backgroundColor: colors.surfaceRaised, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14 },
+  turnOn: { backgroundColor: colors.accent },
   turnText: { color: colors.text, fontSize: 15, fontWeight: '600' },
   actions: { flexDirection: 'row', gap: 8, paddingTop: 6 },
 });
