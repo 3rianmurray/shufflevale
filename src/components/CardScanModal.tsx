@@ -4,7 +4,7 @@ import { ActivityIndicator, Alert, Modal, PanResponder, Pressable, StyleSheet, V
 import type { LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { homography, orderCorners, turnCorners, uprightCorners } from '../lib/cardScan';
+import { homography, turnCorners, uprightCorners } from '../lib/cardScan';
 import type { Point, Quad } from '../lib/cardScan';
 import { startScan, straighten } from '../lib/cardWarp';
 import type { ScanStart } from '../lib/cardWarp';
@@ -24,6 +24,31 @@ const LOUPE_ZOOM = 2.5;
 const EDGE_ROOM = HANDLE;
 /** The live preview of the straightened card: its height. */
 const PREVIEW_H = 96;
+/** How far in a pinch can zoom, from the photo fitted to the screen. */
+const MAX_ZOOM = 8;
+
+/** How the photo is drawn: its pixels scaled by `s`, its top-left corner at (tx, ty) in the touch area. */
+interface PhotoView {
+  /** The photo and space it's for (a new photo, or the screen turned, starts fitted again). */
+  key: string;
+  s: number;
+  tx: number;
+  ty: number;
+}
+/** The photo's size (its pixels), the space it's shown in, and its scale fitted to that space. */
+interface Frame {
+  w: number;
+  h: number;
+  area: { w: number; h: number };
+  fit: number;
+}
+
+/** Kept from being moved off screen: centered along a side it doesn't fill, otherwise covering the space. */
+function keepInView(v: PhotoView, f: Frame): PhotoView {
+  const axis = (t: number, size: number, room: number) =>
+    size + EDGE_ROOM * 2 <= room ? (room - size) / 2 : Math.min(EDGE_ROOM, Math.max(room - size - EDGE_ROOM, t));
+  return { ...v, tx: axis(v.tx, f.w * v.s, f.area.w), ty: axis(v.ty, f.h * v.s, f.area.h) };
+}
 
 interface Props {
   /** The photo to find a card in. The screen shows while this is set. */
@@ -58,8 +83,8 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
   const [turns, setTurns] = useState(0);
   /** The corner being dragged, if any. */
   const [dragging, setDragging] = useState<number | null>(null);
-  /** Placing the corners by hand, a tap each: those tapped so far (the photo's pixels). */
-  const [placing, setPlacing] = useState<Point[] | null>(null);
+  /** Zoomed or moved by pinching (for the photo and space it was set for): see `PhotoView`. */
+  const [view, setView] = useState<PhotoView | null>(null);
   const [area, setArea] = useState<{ w: number; h: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const shown = scan && scan.source === uri ? scan : null;
@@ -73,7 +98,7 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
         if (canceled) return;
         setScan({ ...s, source: uri });
         setCorners(s.corners);
-        setPlacing(null);
+        setView(null);
         // A card photographed sideways is turned to stand the deck's way.
         setTurns(uprightCorners(s.corners, cardRatio) === s.corners ? 0 : 1);
       })
@@ -85,75 +110,97 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uri, cardRatio]);
 
-  // The photo fitted into the space it has; `fit` takes its pixels to the screen's.
+  // The photo fitted into the space it has (with room round it, so a corner on its very edge is easy to grab),
+  // unless it's been zoomed or moved: `at` takes its pixels to the screen's.
   const fit = shown && area ? Math.min((area.w - EDGE_ROOM * 2) / shown.width, (area.h - EDGE_ROOM * 2) / shown.height) : 0;
-  const box = shown ? { w: shown.width * fit, h: shown.height * fit } : null;
-  const onScreen = (p: Point) => ({ x: p.x * fit, y: p.y * fit });
+  const viewKey = shown && area ? `${shown.uri}|${area.w}|${area.h}` : '';
+  const frame = shown && area ? { w: shown.width, h: shown.height, area, fit } : null;
+  const at: PhotoView | null =
+    view && view.key === viewKey ? view : frame ? { key: viewKey, s: fit, tx: (area!.w - frame.w * fit) / 2, ty: (area!.h - frame.h * fit) / 2 } : null;
+  /** Where a point on the photo is drawn, from the photo's top-left corner as drawn. */
+  const onScreen = (p: Point) => ({ x: p.x * (at?.s ?? 0), y: p.y * (at?.s ?? 0) });
 
-  // Dragging a corner: the nearest one to where the finger lands, moved with it (kept on the photo); or, placing
-  // them by hand, a tap puts the next one there. The handlers are made once, reading the latest of what they need.
+  // One finger on a corner drags it (kept on the photo); one elsewhere moves the photo, once zoomed in; two pinch
+  // to zoom and move it. The handlers are made once, reading the latest of what they need.
   const [latest] = useState(() => {
     const live = {
       corners: null as Quad | null,
-      fit: 0,
-      box: null as { w: number; h: number } | null,
+      at: null as PhotoView | null,
+      frame: null as Frame | null,
+      mode: 'none' as 'none' | 'corner' | 'pan' | 'pinch',
       index: -1,
       from: { x: 0, y: 0 },
-      placing: null as Point[] | null,
-      tapAt: null as Point | null,
+      /** Where the touch area is on the screen. */
+      origin: { x: 0, y: 0 },
+      startView: null as PhotoView | null,
+      pinch: { d: 1, mid: { x: 0, y: 0 } },
     };
     return { set: (next: Partial<typeof live>) => Object.assign(live, next), get: () => live };
   });
-  latest.set({ corners, fit, box, placing });
+  latest.set({ corners, at, frame });
   const [responder] = useState(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: (e) => {
-        const { corners: q, fit: k, box: b, placing: placed } = latest.get();
-        if (!q || !k || !b) return false;
-        // (Where it lands on the photo: the room round it is outside it.)
-        const x = e.nativeEvent.locationX - EDGE_ROOM;
-        const y = e.nativeEvent.locationY - EDGE_ROOM;
-        if (placed) {
-          latest.set({ index: -1, tapAt: { x: Math.min(b.w, Math.max(0, x)) / k, y: Math.min(b.h, Math.max(0, y)) / k } });
-          return true;
-        }
-        const dist = q.map((p) => Math.hypot(p.x * k - x, p.y * k - y));
+        const { corners: q, at: v } = latest.get();
+        if (!q || !v) return false;
+        const { locationX: x, locationY: y, pageX, pageY } = e.nativeEvent;
+        latest.set({ origin: { x: pageX - x, y: pageY - y }, startView: v });
+        const dist = q.map((p) => Math.hypot(p.x * v.s + v.tx - x, p.y * v.s + v.ty - y));
         const index = dist.indexOf(Math.min(...dist));
-        if (dist[index] > GRAB_RADIUS) return false;
-        latest.set({ index, from: { ...q[index] } });
+        if (dist[index] <= GRAB_RADIUS) latest.set({ mode: 'corner', index, from: { ...q[index] } });
+        else latest.set({ mode: 'pan', index: -1 });
         return true;
       },
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
-        if (latest.get().index < 0) return;
+        if (latest.get().mode !== 'corner') return;
         setDragging(latest.get().index);
         haptics.lift();
       },
-      onPanResponderMove: (_, g) => {
-        const { corners: q, fit: k, box: b, index, from } = latest.get();
-        if (!q || !k || !b || index < 0) return;
-        const x = Math.min(b.w / k, Math.max(0, from.x + g.dx / k));
-        const y = Math.min(b.h / k, Math.max(0, from.y + g.dy / k));
-        setCorners(q.map((p, i) => (i === index ? { x, y } : p)) as Quad);
-      },
-      onPanResponderRelease: () => {
-        const { placing: placed, tapAt } = latest.get();
-        if (placed && tapAt) {
-          // The next corner, where it was tapped; the fourth puts them all in order, as the card's.
-          const next = [...placed, tapAt];
-          latest.set({ tapAt: null });
-          if (next.length < 4) setPlacing(next);
-          else {
-            setCorners(orderCorners(next));
-            setPlacing(null);
+      onPanResponderMove: (e, g) => {
+        const live = latest.get();
+        const { corners: q, at: v, frame: f, origin } = live;
+        if (!q || !v || !f) return;
+        const touches = e.nativeEvent.touches;
+        if (touches.length >= 2) {
+          const a = { x: touches[0].pageX - origin.x, y: touches[0].pageY - origin.y };
+          const b = { x: touches[1].pageX - origin.x, y: touches[1].pageY - origin.y };
+          const d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+          const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          // A second finger: the corner stays where it got to, and the pinch starts from here.
+          if (live.mode !== 'pinch') {
+            if (live.mode === 'corner') setDragging(null);
+            latest.set({ mode: 'pinch', index: -1, startView: v, pinch: { d, mid } });
+            return;
           }
-          haptics.tick();
+          const start = live.startView!;
+          const s = Math.min(f.fit * MAX_ZOOM, Math.max(f.fit, (start.s * d) / live.pinch.d));
+          // The point of the photo that was between the fingers stays between them.
+          const px = (live.pinch.mid.x - start.tx) / start.s;
+          const py = (live.pinch.mid.y - start.ty) / start.s;
+          setView(keepInView({ key: v.key, s, tx: mid.x - px * s, ty: mid.y - py * s }, f));
           return;
         }
-        setDragging(null);
-        haptics.drop();
+        if (live.mode === 'corner') {
+          const x = Math.min(f.w, Math.max(0, live.from.x + g.dx / v.s));
+          const y = Math.min(f.h, Math.max(0, live.from.y + g.dy / v.s));
+          setCorners(q.map((p, i) => (i === live.index ? { x, y } : p)) as Quad);
+        } else if (live.mode === 'pan' && live.startView) {
+          const start = live.startView;
+          setView(keepInView({ ...start, key: v.key, tx: start.tx + g.dx, ty: start.ty + g.dy }, f));
+        }
       },
-      onPanResponderTerminate: () => setDragging(null),
+      onPanResponderRelease: () => {
+        if (latest.get().mode === 'corner') {
+          setDragging(null);
+          haptics.drop();
+        }
+        latest.set({ mode: 'none' });
+      },
+      onPanResponderTerminate: () => {
+        setDragging(null);
+        latest.set({ mode: 'none' });
+      },
     }),
   );
 
@@ -176,6 +223,8 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
   // The outline, and everything outside it shaded.
   const outlineBuilder = Skia.PathBuilder.Make();
   const shadeBuilder = Skia.PathBuilder.Make();
+  // The photo as drawn, zoomed as it is.
+  const box = shown && at ? { w: shown.width * at.s, h: shown.height * at.s } : null;
   if (corners && box) {
     const pts = corners.map(onScreen);
     outlineBuilder.moveTo(pts[0].x, pts[0].y);
@@ -189,8 +238,9 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
   }
   const shade = shadeBuilder.build();
   const held = dragging !== null && corners ? corners[dragging] : null;
-  // The magnifier: over the side of the photo away from the corner being dragged, so the finger isn't over it.
-  const loupeAt = held && box ? { x: onScreen(held).x < box.w / 2 ? box.w - LOUPE - 8 : 8, y: 8 } : null;
+  // The magnifier: over the side of the screen away from the corner being dragged, so the finger isn't over it.
+  const loupeAt =
+    held && at && area ? { x: onScreen(held).x + at.tx < area.w / 2 ? area.w - LOUPE - 8 : 8, y: 8 } : null;
 
   const use = async () => {
     if (!shown || !card) return;
@@ -215,73 +265,51 @@ export function CardScanModal({ uri, cardRatio, start, onDone, onCropByHand, onC
       <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.title}>Corner pin</Text>
         <Text style={styles.help}>
-          {placing
-            ? `Tap each of the card’s four corners. ${placing.length} of 4.`
-            : shown?.whole
-              ? 'Drag the corners onto the card’s corners to straighten it.'
-              : shown && !shown.found
-                ? 'Couldn’t spot the card. Drag the corners onto its corners.'
-                : 'Drag a corner if it isn’t on the card’s corner. The card is straightened to fit.'}
+          {shown?.whole
+            ? 'Drag the corners onto the card’s corners to straighten it. Pinch to zoom.'
+            : shown && !shown.found
+              ? 'Couldn’t spot the card. Drag the corners onto its corners. Pinch to zoom.'
+              : 'Drag a corner if it isn’t on the card’s corner. Pinch to zoom.'}
         </Text>
 
         <View style={styles.photoArea} onLayout={(e: LayoutChangeEvent) => setArea({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
-          {shown && box && image && corners ? (
-            // (Touches land on this, the photo and the room round it; nothing inside takes them.)
-            <View style={{ width: box.w + EDGE_ROOM * 2, height: box.h + EDGE_ROOM * 2, padding: EDGE_ROOM }} {...responder.panHandlers}>
-              <View style={{ width: box.w, height: box.h, overflow: 'visible' }} pointerEvents="none">
-                <Canvas
-                  style={{ position: 'absolute', left: -EDGE_ROOM, top: -EDGE_ROOM, width: box.w + EDGE_ROOM * 2, height: box.h + EDGE_ROOM * 2 }}
-                  pointerEvents="none">
-                  <Group transform={[{ translateX: EDGE_ROOM }, { translateY: EDGE_ROOM }]}>
-                    <SkiaImage image={image} x={0} y={0} width={box.w} height={box.h} fit="fill" />
-                    {placing ? (
-                      // The corners tapped so far, joined up in the order they were tapped.
-                      <Group>
-                        {placing.slice(1).map((p, i) => {
-                          const a = onScreen(placing[i]);
-                          const b = onScreen(p);
-                          return <Line key={`l${i}`} p1={vec(a.x, a.y)} p2={vec(b.x, b.y)} color={colors.accent} strokeWidth={2} />;
-                        })}
-                        {placing.map((p, i) => {
-                          const s = onScreen(p);
-                          return <Circle key={i} cx={s.x} cy={s.y} r={HANDLE / 2} color={colors.accent} />;
-                        })}
+          {shown && box && at && image && corners ? (
+            // (Touches land on this, the whole space; nothing inside takes them. Zoomed in, the photo is cut off at
+            // its edges.)
+            <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} {...responder.panHandlers}>
+              <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+                <Group transform={[{ translateX: at.tx }, { translateY: at.ty }]}>
+                  <SkiaImage image={image} x={0} y={0} width={box.w} height={box.h} fit="fill" />
+                  <Path path={shade} color="rgba(0,0,0,0.45)" />
+                  <Path path={outline} color={colors.accent} style="stroke" strokeWidth={2} />
+                  {corners.map((p, i) => {
+                    const s = onScreen(p);
+                    return (
+                      <Group key={i}>
+                        <Circle cx={s.x} cy={s.y} r={HANDLE / 2} color={i === dragging ? colors.accent : 'rgba(224,179,84,0.35)'} />
+                        <Circle cx={s.x} cy={s.y} r={HANDLE / 2} color={colors.accent} style="stroke" strokeWidth={2} />
                       </Group>
-                    ) : (
-                      <>
-                        <Path path={shade} color="rgba(0,0,0,0.45)" />
-                        <Path path={outline} color={colors.accent} style="stroke" strokeWidth={2} />
-                        {corners.map((p, i) => {
-                          const s = onScreen(p);
-                          return (
-                            <Group key={i}>
-                              <Circle cx={s.x} cy={s.y} r={HANDLE / 2} color={i === dragging ? colors.accent : 'rgba(224,179,84,0.35)'} />
-                              <Circle cx={s.x} cy={s.y} r={HANDLE / 2} color={colors.accent} style="stroke" strokeWidth={2} />
-                            </Group>
-                          );
-                        })}
-                      </>
-                    )}
-                  </Group>
-                </Canvas>
-                {held && loupeAt ? (
-                  <View style={[styles.loupe, { left: loupeAt.x, top: loupeAt.y }]} pointerEvents="none">
-                    <Canvas style={{ width: LOUPE, height: LOUPE }}>
-                      <Group
-                        transform={[
-                          { translateX: LOUPE / 2 - held.x * fit * LOUPE_ZOOM },
-                          { translateY: LOUPE / 2 - held.y * fit * LOUPE_ZOOM },
-                          { scale: LOUPE_ZOOM },
-                        ]}>
-                        <SkiaImage image={image} x={0} y={0} width={box.w} height={box.h} fit="fill" />
-                        <Path path={outline} color={colors.accent} style="stroke" strokeWidth={1.5 / LOUPE_ZOOM} />
-                      </Group>
-                      <Line p1={vec(LOUPE / 2 - 10, LOUPE / 2)} p2={vec(LOUPE / 2 + 10, LOUPE / 2)} color="#fff" strokeWidth={1} />
-                      <Line p1={vec(LOUPE / 2, LOUPE / 2 - 10)} p2={vec(LOUPE / 2, LOUPE / 2 + 10)} color="#fff" strokeWidth={1} />
-                    </Canvas>
-                  </View>
-                ) : null}
-              </View>
+                    );
+                  })}
+                </Group>
+              </Canvas>
+              {held && loupeAt ? (
+                <View style={[styles.loupe, { left: loupeAt.x, top: loupeAt.y }]} pointerEvents="none">
+                  <Canvas style={{ width: LOUPE, height: LOUPE }}>
+                    <Group
+                      transform={[
+                        { translateX: LOUPE / 2 - held.x * at.s * LOUPE_ZOOM },
+                        { translateY: LOUPE / 2 - held.y * at.s * LOUPE_ZOOM },
+                        { scale: LOUPE_ZOOM },
+                      ]}>
+                      <SkiaImage image={image} x={0} y={0} width={box.w} height={box.h} fit="fill" />
+                      <Path path={outline} color={colors.accent} style="stroke" strokeWidth={1.5 / LOUPE_ZOOM} />
+                    </Group>
+                    <Line p1={vec(LOUPE / 2 - 10, LOUPE / 2)} p2={vec(LOUPE / 2 + 10, LOUPE / 2)} color="#fff" strokeWidth={1} />
+                    <Line p1={vec(LOUPE / 2, LOUPE / 2 - 10)} p2={vec(LOUPE / 2, LOUPE / 2 + 10)} color="#fff" strokeWidth={1} />
+                  </Canvas>
+                </View>
+              ) : null}
             </View>
           ) : (
             <ActivityIndicator color={colors.accent} size="large" />
@@ -340,7 +368,6 @@ const styles = StyleSheet.create({
   previewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 },
   preview: { borderRadius: 6, overflow: 'hidden', backgroundColor: colors.surface },
   turn: { backgroundColor: colors.surfaceRaised, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14 },
-  turnOn: { backgroundColor: colors.accent },
   turnText: { color: colors.text, fontSize: 15, fontWeight: '600' },
   actions: { flexDirection: 'row', gap: 8, paddingTop: 6 },
 });
