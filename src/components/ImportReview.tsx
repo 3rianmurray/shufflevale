@@ -55,8 +55,8 @@ const GAP = 12;
 
 const PAIRINGS: [Pairing, string][] = [
   ['none', 'Same back'],
-  ['inTurn', 'Front, back…'],
-  ['halves', 'Fronts, then backs'],
+  ['inTurn', 'Front and Back'],
+  ['halves', 'All Fronts then All Backs'],
 ];
 
 /**
@@ -431,7 +431,7 @@ const styles = StyleSheet.create({
   segmentItem: { flex: 1, paddingVertical: 8, paddingHorizontal: 6, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   segmentSelected: { backgroundColor: colors.accent },
   segmentText: { color: colors.text, fontSize: 14, fontWeight: '600' },
-  // Two lines at most, so a label is never cut off: "Fronts, then backs" wraps rather than running out.
+  // Two lines at most, so a label is never cut off: "All Fronts then All Backs" wraps rather than running out.
   segmentLabel: { textAlign: 'center', flexShrink: 1 },
   help: { color: colors.textMuted, fontSize: 13, marginTop: 8 },
   note: { color: colors.accent, fontSize: 14, fontWeight: '500', marginTop: 8 },
