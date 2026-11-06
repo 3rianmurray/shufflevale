@@ -284,7 +284,7 @@ export function ImportReview({ pictures, sheetGrid, startPairing = 'none', cardR
                   accessibilityRole="button"
                   accessibilityState={{ selected: pairing === value }}
                   style={[styles.segmentItem, pairing === value && styles.segmentSelected]}>
-                  <Text style={[styles.segmentText, pairing === value && { color: colors.accentText }]} numberOfLines={1}>
+                  <Text style={[styles.segmentText, styles.segmentLabel, pairing === value && { color: colors.accentText }]}>
                     {text}
                   </Text>
                 </Pressable>
@@ -428,9 +428,11 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 22, fontWeight: '700' },
   label: { color: colors.textMuted, fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   segment: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 10, padding: 3, marginTop: 6 },
-  segmentItem: { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 8, alignItems: 'center' },
+  segmentItem: { flex: 1, paddingVertical: 8, paddingHorizontal: 6, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   segmentSelected: { backgroundColor: colors.accent },
   segmentText: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  // Two lines at most, so a label is never cut off: "Fronts, then backs" wraps rather than running out.
+  segmentLabel: { textAlign: 'center', flexShrink: 1 },
   help: { color: colors.textMuted, fontSize: 13, marginTop: 8 },
   note: { color: colors.accent, fontSize: 14, fontWeight: '500', marginTop: 8 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
