@@ -1585,11 +1585,25 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         pieces: (table.pieces ?? []).filter((p) => !piecesIn.includes(p)),
       });
     }
-    const place = gridOn ? (p: { x: number; y: number; angle: number }) => snapToGrid(p, gridStep) : undefined;
+    // Snapped as one: the group's first thing lands on the grid, and everything in the group moves by that same
+    // amount, so the layout inside the group stays as it was (each thing is not snapped on its own).
+    const pivot = gestureState.get().groupFrom;
+    const lead = table.stacks.find((s) => s.id === chosen[0]) ?? (table.pieces ?? []).find((p) => pickedPieces.includes(p.id));
+    let shift = by;
+    if (gridOn && lead) {
+      // Where the lead thing ends up, turned (if the group was) about the finger's point.
+      const r = ((turn ?? 0) * Math.PI) / 180;
+      const dx = lead.x - pivot.x;
+      const dy = lead.y - pivot.y;
+      const at = turn ? { x: pivot.x + dx * Math.cos(r) - dy * Math.sin(r), y: pivot.y + dx * Math.sin(r) + dy * Math.cos(r) } : { x: lead.x, y: lead.y };
+      const landed = { x: at.x + by.x, y: at.y + by.y };
+      const on = snapToGrid({ ...landed, angle: 0 }, gridStep);
+      shift = { x: by.x + on.x - landed.x, y: by.y + on.y - landed.y };
+    }
     // Each settled in any card spot, or zone that lines up cards, it's let go in.
-    const moved = settleStacks(turn ? rotateStacks(table, chosen, gestureState.get().groupFrom, turn, by, place) : moveStacks(table, chosen, by, place), chosen, size);
+    const moved = settleStacks(turn ? rotateStacks(table, chosen, pivot, turn, shift) : moveStacks(table, chosen, shift), chosen, size);
     // Counters and dice picked out with them come too (as far as the finger went).
-    commit(pickedPieces.length && (by.x || by.y) ? movePieces(moved, pickedPieces, by) : moved);
+    commit(pickedPieces.length && (shift.x || shift.y) ? movePieces(moved, pickedPieces, shift) : moved);
     tourEvent('tables-moved');
     haptics.drop();
   };
