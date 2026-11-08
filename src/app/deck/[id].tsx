@@ -761,7 +761,8 @@ export default function DeckEditorScreen() {
         header={
           selected ? (
             <View style={{ alignItems: 'center', marginBottom: 6 }}>
-              <CardView deck={deck} card={selected} width={Math.min(200, width * 0.5)} />
+              {/* Typing the copies, the card's picture is left out, so Done stays on screen. */}
+              {copiesKeys ? null : <CardView deck={deck} card={selected} width={Math.min(200, width * 0.5)} />}
               <View style={styles.copiesRow}>
                 <Text style={styles.copiesLabel}>Copies in deck</Text>
                 <Pressable onPress={askCopies} accessibilityRole="button" accessibilityLabel="Copies in deck" style={({ pressed }) => [styles.copiesInput, pressed && { opacity: 0.7 }]}>
@@ -783,7 +784,11 @@ export default function DeckEditorScreen() {
         // Its copies are kept as they're typed: closing it is being done, not cancelling.
         closeLabel="Done"
         // Done (the one button) puts the menu's buttons back while the number keys show, and closes it otherwise.
-        onClose={() => (copiesKeys ? setCopiesKeys(false) : setSheetOpen(false))}
+        // Done with the number keys showing closes the whole menu (the copies are already kept as typed).
+        onClose={() => {
+          setCopiesKeys(false);
+          setSheetOpen(false);
+        }}
         // On iPad, in the middle of the screen.
         place={IS_PAD ? { kind: 'center' } : undefined}
       />
