@@ -2679,7 +2679,8 @@ export const takeFromTrash = (t: SandboxTable, iids: string[]): SandboxTable => 
 /**
  * Tidies the table: every stack turned to the nearest 45° and moved onto the grid, and every loose piece moved onto
  * it too (dice back to 0, as cards are straight; cloth zones, card spots and custom art stay where they are). Locked ones stay put. Two
- * never share a spot (which would look like one thing): one whose spot is taken goes to the nearest free one.
+ * never share a spot (which would look like one thing): one whose spot is taken goes to the nearest free one. A
+ * group moves as one, keeping its layout.
  */
 export function tidyTable(t: SandboxTable, step = GRID_STEP): SandboxTable {
   const key = (p: { x: number; y: number }) => `${Math.round(p.x)},${Math.round(p.y)}`;
@@ -2704,13 +2705,33 @@ export function tidyTable(t: SandboxTable, step = GRID_STEP): SandboxTable {
     taken.add(key(at));
     return at;
   };
+  // A group is tidied as one: its first thing settled on the grid, the rest moved by the same amount and left turned
+  // as they were, so the layout inside it stays. One holding custom art or a cloth zone stays put, as they do.
+  const live = liveGroups(t);
+  const fixed = new Set((t.pieces ?? []).filter((p) => p.group && (onCloth(p) || p.kind === 'art')).map((p) => p.group!));
+  const groupOf = (item: { group?: string }) => (item.group && live.has(item.group) ? item.group : undefined);
+  const shifts = new Map<string, { x: number; y: number }>();
+  const shifted = <T extends { x: number; y: number }>(g: string, item: T): T => {
+    let by = shifts.get(g);
+    if (by) taken.add(key({ x: item.x + by.x, y: item.y + by.y }));
+    else {
+      const at = settle(item);
+      by = { x: at.x - item.x, y: at.y - item.y };
+      shifts.set(g, by);
+    }
+    return { ...item, x: item.x + by.x, y: item.y + by.y };
+  };
   const stacks = t.stacks.map((s) => {
     if (staysPut(t, s)) return s;
+    const g = groupOf(s);
+    if (g) return fixed.has(g) ? s : shifted(g, s);
     const angle = normalizeAngle(Math.round(s.angle / SNAP_STEP) * SNAP_STEP);
     return { ...s, ...settle(s), angle };
   });
   const pieces = (t.pieces ?? []).map((p) => {
     if (onCloth(p) || p.kind === 'art' || staysPut(t, p)) return p;
+    const g = groupOf(p);
+    if (g) return fixed.has(g) ? p : shifted(g, p);
     const at = settle(p);
     if (p.kind !== 'die') return { ...p, x: at.x, y: at.y };
     return { ...p, x: at.x, y: at.y, angle: 0 };

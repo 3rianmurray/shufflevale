@@ -512,6 +512,19 @@ test('cleaning up: loose pieces go onto the grid too, but cloth zones, custom ar
   assert.deepEqual([at('locked').x, at('locked').y], [500, 500]);
 });
 
+test('cleaning up: a group moves as one, keeping its layout and turns', () => {
+  const t = tableWith(
+    { id: 'a', x: 101, y: 99, angle: 10, group: 'g', cards: [card('1')] },
+    { id: 'b', x: 157, y: 123, angle: 30, group: 'g', cards: [card('2')] },
+  );
+  const tidy = tidyTable(t, 40);
+  const [a, b] = tidy.stacks;
+  assert.deepEqual([a.x, a.y], [100, 100]);
+  // Moved just as far as the first, turned as it was.
+  assert.deepEqual([b.x, b.y, b.angle], [156, 124, 30]);
+  assert.equal(a.angle, 10);
+});
+
 test('gathering up: each deck used anywhere comes back whole, shuffled and face down; hands and trash emptied', () => {
   const deck = { id: 'd', name: 'D', backImage: null, cards: [{ id: 'x', name: 'X', image: '' }, { id: 'y', name: 'Y', image: '', copies: 2 }], createdAt: 0, updatedAt: 0 } as Deck;
   const other = { ...deck, id: 'unused' } as Deck;
