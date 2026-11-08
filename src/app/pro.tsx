@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '../components/AppIcon';
@@ -82,23 +82,18 @@ export default function ProScreen() {
     </>
   );
 
-  // On iPad, a window sized to what's in it (see the layout), so no scrolling; on iPhone, the whole screen.
-  return IS_PAD ? (
-    <View style={[styles.content, styles.padContent]}>{body}</View>
-  ) : (
+  // Scrolls wherever it's shown (on iPad, a sheet that may be short of the whole screen), so Restore Purchases at
+  // the bottom is always reachable.
+  return (
     <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
       {body}
     </ScrollView>
   );
 }
 
-const IS_PAD = Platform.OS === 'ios' && Platform.isPad;
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   content: { alignItems: 'center', padding: 24, paddingTop: 32 },
-  // (Room above the icon too: the window's top edge cut it off with the usual padding.)
-  padContent: { backgroundColor: colors.bg, paddingTop: 56, paddingBottom: 28 },
   title: { color: colors.text, fontSize: 26, fontWeight: '700', marginTop: 14 },
   reason: { color: colors.accent, fontSize: 15, textAlign: 'center', marginTop: 10, lineHeight: 21 },
   perks: { alignSelf: 'stretch', backgroundColor: colors.surface, borderRadius: 14, padding: 16, gap: 14, marginTop: 22 },
