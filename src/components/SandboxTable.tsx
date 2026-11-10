@@ -5425,9 +5425,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             </View>
           ) : null}
 
-          {/* With one stack of two or more picked out (not dragged): a yellow one to search through it. */}
+          {/* With one stack of two or more picked out (not dragged): one to search through it. */}
           {!held && !groupMoving && canSearch ? (
-            <View pointerEvents="none" style={[styles.flipButton, styles.searchButtonLook, roundAt(searchButton), toolsOpen && styles.waiting]}>
+            <View pointerEvents="none" style={[styles.flipButton, roundAt(searchButton), toolsOpen && styles.waiting]}>
               <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={24 * columnScale} weight="semibold" tintColor={colors.accentText} />
             </View>
           ) : null}
@@ -6244,7 +6244,6 @@ const styles = StyleSheet.create({
   hidden: { opacity: 0 },
   /** The selection's buttons while the tools lie over them: dimmed, and doing nothing till they're put away. */
   waiting: { opacity: 0.5 },
-  searchButtonLook: { backgroundColor: '#ffd83d' },
   moreButtonLook: { backgroundColor: 'rgba(8,18,26,0.85)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.3)' },
   lockBadge: {
     position: 'absolute',
