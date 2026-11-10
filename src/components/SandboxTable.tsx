@@ -1386,10 +1386,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const pictureFrom = async (source: PictureSource, target: PictureTarget) => {
     // (A face's picture is cropped to the face's shape afterward, whichever it comes from.)
     const forToken = target.kind === 'token';
-    let uri: string | undefined;
+    // New custom art can be several pictures at once (each its own piece, all grouped), up to the room left for art.
+    const several = target.kind === 'art' && !target.id;
+    const room = Math.max(1, ART_MAX - artCount);
+    const limit = several ? room : 1;
+    let uris: string[] = [];
     if (source === 'files') {
-      const doc = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
-      uri = doc.canceled ? undefined : doc.assets[0]?.uri;
+      const doc = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true, multiple: several });
+      uris = doc.canceled ? [] : doc.assets.slice(0, limit).map((a) => a.uri);
     } else if (source === 'camera') {
       const allowed = await ImagePicker.requestCameraPermissionsAsync();
       if (!allowed.granted) {
@@ -1398,16 +1402,19 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       }
       // The whole photo (a token's is cropped to its shape afterward).
       const shot = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });
-      uri = shot.canceled ? undefined : shot.assets[0]?.uri;
+      uris = shot.canceled ? [] : shot.assets.slice(0, 1).map((a) => a.uri);
     } else {
       // Not edited here, so a cut-out (a subject saved from Photos) keeps its see-through background; and taken as
       // it's stored, not converted first (which can keep the picker waiting a while).
       const picked = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
+        allowsMultipleSelection: several,
+        selectionLimit: limit,
         preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current,
       });
-      uri = picked.canceled ? undefined : picked.assets[0]?.uri;
+      uris = picked.canceled ? [] : picked.assets.slice(0, limit).map((a) => a.uri);
     }
+    const uri = uris[0];
     if (!uri) return;
     try {
       // The table as it is now (the picker took a while).
@@ -1423,6 +1430,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         if (token) setCropTokenShape(tokenShapeOf(token));
         return setTokenCrop({ uri, id: target.id });
       }
+      // Several pictures of custom art: each its own piece, laid out and grouped (see addArtGroup).
+      if (several && uris.length > 1) return addArtGroup(uris);
       const art = await artPicture(uri);
       const fresh = latest.get();
       if (!fresh.table) return;
@@ -1433,6 +1442,27 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     } catch (e) {
       Alert.alert('Couldn’t use that picture', e instanceof Error ? e.message : String(e));
     }
+  };
+  /**
+   * Several pictures of custom art, picked at once: each its own piece (its size as any one's), laid out in an even
+   * grid and made one group, so they move (and clean up) together, as a deck's cards do. One undo takes them all.
+   */
+  const addArtGroup = async (uris: string[]) => {
+    const pictures: { image: string; w: number; h: number }[] = [];
+    for (const uri of uris) {
+      const art = await artPicture(uri);
+      pictures.push({ image: importImage(TOKEN_PICTURES, art.uri), ...artSize(art.width, art.height) });
+    }
+    const fresh = latest.get();
+    if (!fresh.table) return;
+    const mid = addSpot();
+    const ids = pictures.map(() => newId());
+    const added = pictures.reduce((t, p, i) => addPiece(t, { ...newPiece('art', ids[i], { x: mid.x + i, y: mid.y }), image: p.image, w: p.w, h: p.h }), fresh.table);
+    const gridded = gridItems(added, [], ids, fresh.size);
+    fresh.setSelected([]);
+    fresh.commit(raiseArt(groupItems(gridded, [], ids, newId()), ids));
+    fresh.setPickedPieces(ids);
+    haptics.drop();
   };
   /**
    * Custom art's subject cut out of its picture (a standee or token photographed on the table, say), lying just
