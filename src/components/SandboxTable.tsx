@@ -1615,6 +1615,40 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         pieces: (table.pieces ?? []).filter((p) => !piecesIn.includes(p)),
       });
     }
+    // Cards picked out (and nothing else), let go over a deck facing the same way: every card of them flies to it, and
+    // stacks on it. Anything else picked out with them, or a card that never stacks, means no stacking.
+    const leader = table.stacks.find((s) => s.id === chosen[0]);
+    const canStack = !pickedPieces.length && !!leader && !chosen.some((id) => table.stacks.some((s) => s.id === id && (staysPut(table, s) || s.cards.some((c) => c.solo))));
+    if (canStack && leader) {
+      const others = { ...table, stacks: table.stacks.filter((s) => !chosen.includes(s.id)) };
+      const face = leader.cards[leader.cards.length - 1].faceUp;
+      const deck = stackTargetAt(others, grab.x + by.x, grab.y + by.y, size, undefined, gridOn ? gridStackReach(gridStep) : undefined, face);
+      if (deck) {
+        // Each card flies from where it lay in its stack (relative to the deck), one after another, then they stack.
+        const flights: Flyer[] = [];
+        const cards: SandboxCard[] = [];
+        for (const id of chosen) {
+          const s = table.stacks.find((st) => st.id === id);
+          if (!s) continue;
+          for (const card of s.cards) {
+            flights.push({
+              key: newId(),
+              card,
+              at: { x: deck.x, y: deck.y, angle: deck.angle },
+              from: { dx: s.x - deck.x, dy: s.y - deck.y, angle: s.angle },
+              face,
+              delay: Math.min(flights.length, FLY_STAGGER_MAX) * FLY_STAGGER_MS,
+            });
+            cards.push(card);
+          }
+        }
+        setFlyers(flights);
+        commit(putOnTable(others, cards, { x: deck.x, y: deck.y, angle: deck.angle }, newId(), deck));
+        setSelected([]);
+        haptics.drop();
+        return;
+      }
+    }
     // Snapped as one: the group's first thing lands on the grid, and everything in the group moves by that same
     // amount, so the layout inside the group stays as it was (each thing is not snapped on its own).
     const pivot = gestureState.get().groupFrom;
@@ -1995,6 +2029,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       turnedOver: false,
       /** What's carried was taken out of the search: once it's put down (or the drag's lost), the search closes. */
       fromSearch: false,
+      /** Which way up the cards came out of the search (null if they didn't): for stacking, not how they're drawn. */
+      searchFace: null as boolean | null,
       /** Cards put down on the table this visit (for a tip, after a few). */
       drops: 0,
       /** The carried card's middle relative to the carrying finger, and its turn, both on screen. */
@@ -2056,8 +2092,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (!L.table) return;
     const w = toTable(readCamera(), p.x, p.y);
     const except = touch.sources.find((src) => src.kind === 'stack')?.stackId;
-    // Only onto a stack facing the same way as what's carried.
-    const face = touch.cards[touch.cards.length - 1]?.faceUp;
+    // Only onto a stack facing the same way as what's carried (as they came out of the search, if they did).
+    const face = touch.searchFace !== null && !touch.turnedOver ? touch.searchFace : touch.cards[touch.cards.length - 1]?.faceUp;
     // Cards that never stack go onto nothing.
     const solo = touch.cards.some((c) => c.solo);
     // Looked for on the table as it'll be once they're taken: a card can't go back onto where it alone lay.
@@ -2115,6 +2151,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     touch.mode = 'carry';
     touch.snapped = false;
     touch.turnedOver = false;
+    touch.searchFace = null;
     touch.buttonFingers.clear();
     touch.sources = [exact];
     touch.cards = cards;
@@ -2179,9 +2216,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const putDown = () => {
     const touch = gestureState.get();
     const L = latest.get();
-    const { sources, cards, turnedOver } = touch;
+    const { sources, cards, turnedOver, searchFace } = touch;
     touch.sources = [];
     touch.cards = [];
+    touch.searchFace = null;
     const p = carriedPose();
     L.setHeld(null);
     L.setTarget(null);
@@ -2208,8 +2246,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const bag = bagAt(L.table, w.x, w.y);
     if (bag) return L.dropIntoBag(bag.id, cards.map((card) => ({ card })), takeAll(L.table, sources));
     const whole = sources.find((src) => src.kind === 'stack');
-    // Only onto a stack facing the same way.
-    const face = cards[cards.length - 1].faceUp;
+    // Only onto a stack facing the same way (as they came out of the search, if they did).
+    const face = searchFace !== null && !turnedOver ? searchFace : cards[cards.length - 1].faceUp;
     let onto = cards.some((c) => c.solo)
       ? null
       : // On the table as it'll be once they're taken: where a card alone lay is nowhere to go back onto (it would
@@ -2414,6 +2452,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         touch.scaleShown = 0;
         touch.snapped = false;
         touch.turnedOver = false;
+        touch.searchFace = null;
         touch.twist = null;
         touch.buttonFingers.clear();
         L.setHeld({ sources: touch.sources, cards: touch.cards });
@@ -3207,6 +3246,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         L.setHeld(null);
         L.setTarget(null);
       }
+      touch.searchFace = null;
       if (touch.mode === 'lasso') L.setLassoPath(null);
       if (touch.mode === 'piece') {
         L.setPieceDrag(null);
@@ -3263,6 +3303,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       touch.turnedOver = false;
       touch.buttonFingers.clear();
       touch.fromSearch = true;
+      // Drawn face up as a pile, but stacked as the cards came out (a face-down deck takes them face down).
+      touch.searchFace = held[0].faceUp;
       const carried = [...held].reverse().map((c) => ({ ...c, faceUp: true }));
       touch.sources = carried.map((c) => ({ kind: 'card', stackId: stack.id, iid: c.iid }));
       touch.cards = carried;
@@ -5837,19 +5879,25 @@ interface Flyer {
   from: { dx: number; dy: number; angle: number };
   /** Which way up it lands (the gathering stack's way). */
   face: boolean;
+  /** How long it waits before it sets off (so a pile's cards leave one after another), in ms. */
+  delay?: number;
 }
 
 /** How long a gathered card takes to fly into its stack. */
 const GATHER_MS = 340;
+/** A pile's cards fly to a deck one after another: each this much after the one before, the last at most this many on. */
+const FLY_STAGGER_MS = 25;
+const FLY_STAGGER_MAX = 40;
 
 /** One card's flight into a gathered stack: gliding there, turning to its angle, and flipping over if it must. */
 function GatherFlyer({ flyer, deck, size, onLanded }: { flyer: Flyer; deck: Deck; size: { w: number; h: number }; onLanded: () => void }) {
   const [t] = useState(() => new RNAnimated.Value(0));
   const [faceUp, setFaceUp] = useState(flyer.card.faceUp);
   useEffect(() => {
+    const delay = flyer.delay ?? 0;
     // Turned to the stack's way as it goes (the card turning over as it flies).
-    setTimeout(() => setFaceUp(flyer.face), GATHER_MS * 0.15);
-    RNAnimated.timing(t, { toValue: 1, duration: GATHER_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => {
+    setTimeout(() => setFaceUp(flyer.face), delay + GATHER_MS * 0.15);
+    RNAnimated.timing(t, { toValue: 1, duration: GATHER_MS, delay, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => {
       haptics.tick();
       onLanded();
     });
