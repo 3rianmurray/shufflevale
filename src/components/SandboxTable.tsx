@@ -365,7 +365,7 @@ const GROUP_BOX_ROOM = 8;
 const PASTE_MAX = 50;
 
 /** The buttons in the column by what's picked out (see `column`). */
-type ColumnButton = 'flip' | 'shuffle' | 'gather' | 'roll' | 'grid' | 'more';
+type ColumnButton = 'flip' | 'shuffle' | 'search' | 'gather' | 'roll' | 'grid' | 'more';
 
 /** What a menu is open on. */
 type Menu =
@@ -1679,9 +1679,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const canShuffle = chosen.some((id) => (table?.stacks.find((s) => s.id === id)?.cards.length ?? 0) > 1);
   /** Two or more things picked out: the grid button lays them out (one alone has nothing to line up with). */
   const gridLive = chosen.length + pickedPieces.length > 1;
+  /** Exactly one stack of two or more cards is picked out: the search button shows (yellow), to look through it. */
+  const canSearch = chosen.length === 1 && (table?.stacks.find((s) => s.id === chosen[0])?.cards.length ?? 0) > 1;
   const column: ColumnButton[] = [
     ...(chosen.length ? (['flip'] as const) : []),
     ...(canShuffle ? (['shuffle'] as const) : []),
+    ...(canSearch ? (['search'] as const) : []),
     ...(chosen.length > 1 ? (['gather'] as const) : []),
     ...(rollKind ? (['roll'] as const) : []),
     ...(gridLive ? (['grid'] as const) : []),
@@ -1700,17 +1703,19 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   /** Where a button of the column stands (one not in it, as dice dragged have their roll one: just above it). */
   const slotOf = (b: ColumnButton) => slot(column.includes(b) ? column.indexOf(b) : column.length);
   const shuffleButton = slotOf('shuffle');
+  const searchButton = slotOf('search');
   /** The gather button, as it stands while the cards are just picked out (while they're dragged, see `stackButton`). */
   const gatherButton = slotOf('gather');
   const moreButton = slotOf('more');
   const buttonsLive = !held && !groupMoving && !toolsOpen;
   /** Which of the selection's buttons is at a point on screen, if any (while nothing's carried). */
-  const selectionButtonAt = (x: number, y: number): 'flip' | 'shuffle' | 'gather' | 'more' | null => {
+  const selectionButtonAt = (x: number, y: number): 'flip' | 'shuffle' | 'search' | 'gather' | 'more' | null => {
     const on = (b: { x: number; y: number; size: number }) => Math.hypot(x - (b.x + b.size / 2), y - (b.y + b.size / 2)) <= b.size / 2 + 8;
     // Not while the tools are out: they lie over the buttons, which wait, dimmed.
     if (!buttonsLive) return null;
     if (chosen.length && on(slot(0))) return 'flip';
     if (canShuffle && on(shuffleButton)) return 'shuffle';
+    if (canSearch && on(searchButton)) return 'search';
     if (chosen.length > 1 && on(gatherButton)) return 'gather';
     if (column.includes('more') && on(moreButton)) return 'more';
     return null;
@@ -1733,6 +1738,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   };
   /** The shuffle button: every picked-out stack shuffled. */
   const shuffleSelection = () => shuffleStacks(chosen);
+  /** The search button: the picked-out stack is looked through (see StackSearchPanel). */
+  const searchPicked = () => {
+    if (!canSearch) return;
+    setSearchLeaving(false);
+    setSearching(chosen[0]);
+  };
   /**
    * The stack button, while a group is dragged: all of it gathered into one stack where the grabbed one lies, every
    * card facing the way the grabbed one does. It stays picked out (and in hand), as the one new stack.
@@ -1806,8 +1817,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       dropGroup: (by: { x: number; y: number }) => void;
       flipGroup: () => void;
       trashSelection: () => void;
-      selectionButtonAt: (x: number, y: number) => 'flip' | 'shuffle' | 'gather' | 'more' | null;
+      selectionButtonAt: (x: number, y: number) => 'flip' | 'shuffle' | 'search' | 'gather' | 'more' | null;
       shuffleSelection: () => void;
+      searchPicked: () => void;
       gatherGroup: (lead: string) => string | undefined;
       flipFromTap: (src: Source) => void;
       cameraLocked: boolean;
@@ -1849,7 +1861,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     };
     return { set: (next: typeof box) => Object.assign(box, next), get: () => box };
   });
-  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onGridButton, gridPicked, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, onDragRollButton, rollDice, openPro, zoomTo: (t) => zoomToTarget(t) });
+  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, searchPicked, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onGridButton, gridPicked, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, onDragRollButton, rollDice, openPro, zoomTo: (t) => zoomToTarget(t) });
 
   // The gesture in progress (never drawn from, so kept outside React state).
   const [gestureState] = useState(() => {
@@ -2485,6 +2497,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
               offerTipAfterUses('tables-double-tap');
             }
             else if (b === 'shuffle') L.shuffleSelection();
+            else if (b === 'search') L.searchPicked();
             else if (b === 'gather') L.gatherGroup(L.selected[L.selected.length - 1]);
             else openPickedMenu();
             return;
@@ -5412,6 +5425,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             </View>
           ) : null}
 
+          {/* With one stack of two or more picked out (not dragged): a yellow one to search through it. */}
+          {!held && !groupMoving && canSearch ? (
+            <View pointerEvents="none" style={[styles.flipButton, styles.searchButtonLook, roundAt(searchButton), toolsOpen && styles.waiting]}>
+              <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={24 * columnScale} weight="semibold" tintColor={colors.accentText} />
+            </View>
+          ) : null}
+
           {/* With two or more picked out: one to gather them all into a stack (just above the flip button while they're dragged). */}
           {!held && chosen.length > 1 ? (
             <View
@@ -6224,6 +6244,7 @@ const styles = StyleSheet.create({
   hidden: { opacity: 0 },
   /** The selection's buttons while the tools lie over them: dimmed, and doing nothing till they're put away. */
   waiting: { opacity: 0.5 },
+  searchButtonLook: { backgroundColor: '#ffd83d' },
   moreButtonLook: { backgroundColor: 'rgba(8,18,26,0.85)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.3)' },
   lockBadge: {
     position: 'absolute',
