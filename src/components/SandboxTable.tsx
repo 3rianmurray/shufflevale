@@ -1445,7 +1445,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   };
   /**
    * Several pictures of custom art, picked at once: each its own piece (its size as any one's), laid out in an even
-   * grid and made one group, so they move (and clean up) together, as a deck's cards do. One undo takes them all.
+   * grid, none grouped with another, so each moves on its own. One undo takes them all.
    */
   const addArtGroup = async (uris: string[]) => {
     const pictures: { image: string; w: number; h: number }[] = [];
@@ -1460,7 +1460,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const added = pictures.reduce((t, p, i) => addPiece(t, { ...newPiece('art', ids[i], { x: mid.x + i, y: mid.y }), image: p.image, w: p.w, h: p.h }), fresh.table);
     const gridded = gridItems(added, [], ids, fresh.size);
     fresh.setSelected([]);
-    fresh.commit(raiseArt(groupItems(gridded, [], ids, newId()), ids));
+    fresh.commit(raiseArt(gridded, ids));
     fresh.setPickedPieces(ids);
     haptics.drop();
   };
