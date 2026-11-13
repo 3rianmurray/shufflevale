@@ -15,9 +15,12 @@ const SHORT_HEIGHT = 500;
  * row; on a short screen on its side (an iPhone turned sideways), six to a row and lower, so they leave room.
  */
 export function NumberKeys({ onKey, extra = '' }: { onKey: (key: string) => void; extra?: string }) {
-  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', extra, '0', DELETE_KEY];
   const { width, height } = useWindowDimensions();
   const short = height < SHORT_HEIGHT && width > height;
+  // Upright, 0 sits under 8 as on a phone's keypad; on its side, after 9, so all the numbers are together.
+  const keys = short
+    ? ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', extra, DELETE_KEY]
+    : ['1', '2', '3', '4', '5', '6', '7', '8', '9', extra, '0', DELETE_KEY];
   const size = short ? styles.keyShort : styles.keyTall;
   return (
     <View style={[styles.keys, short && styles.keysShort]}>
