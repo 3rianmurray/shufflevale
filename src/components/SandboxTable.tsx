@@ -1622,18 +1622,30 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (deck) {
       const others = { ...table, stacks: table.stacks.filter((s) => !chosen.includes(s.id)) };
       const face = deck.cards[deck.cards.length - 1].faceUp;
-      // Each card flies from where it lay in its stack (relative to the deck), one after another, then they stack.
+      // Each card flies from where the finger had carried it (moved, and turned about the finger if the group was),
+      // one after another, then they stack.
+      const r = ((turn ?? 0) * Math.PI) / 180;
+      const carried = (s: SandboxStack) => {
+        const dx = s.x - grab.x;
+        const dy = s.y - grab.y;
+        return {
+          x: grab.x + dx * Math.cos(r) - dy * Math.sin(r) + by.x,
+          y: grab.y + dx * Math.sin(r) + dy * Math.cos(r) + by.y,
+          angle: s.angle + (turn ?? 0),
+        };
+      };
       const flights: Flyer[] = [];
       const cards: SandboxCard[] = [];
       for (const id of chosen) {
         const s = table.stacks.find((st) => st.id === id);
         if (!s) continue;
+        const was = carried(s);
         for (const card of s.cards) {
           flights.push({
             key: newId(),
             card,
             at: { x: deck.x, y: deck.y, angle: deck.angle },
-            from: { dx: s.x - deck.x, dy: s.y - deck.y, angle: s.angle },
+            from: { dx: was.x - deck.x, dy: was.y - deck.y, angle: was.angle },
             face,
             delay: Math.min(flights.length, FLY_STAGGER_MAX) * FLY_STAGGER_MS,
           });
