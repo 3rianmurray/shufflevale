@@ -2032,8 +2032,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       turnedOver: false,
       /** What's carried was taken out of the search: once it's put down (or the drag's lost), the search closes. */
       fromSearch: false,
-      /** Which way up the cards came out of the search (null if they didn't): for stacking, not how they're drawn. */
-      searchFace: null as boolean | null,
       /** Cards put down on the table this visit (for a tip, after a few). */
       drops: 0,
       /** The carried card's middle relative to the carrying finger, and its turn, both on screen. */
@@ -2095,13 +2093,10 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (!L.table) return;
     const w = toTable(readCamera(), p.x, p.y);
     const except = touch.sources.find((src) => src.kind === 'stack')?.stackId;
-    // Only onto a stack facing the same way as what's carried (as they came out of the search, if they did); a whole
-    // stack carried goes onto one facing either way, turning over to it (as a selection does).
-    const face = except ? undefined : touch.searchFace !== null && !touch.turnedOver ? touch.searchFace : touch.cards[touch.cards.length - 1]?.faceUp;
-    // Cards that never stack go onto nothing.
+    // Cards that never stack go onto nothing. Onto a stack facing either way: they turn over to it as they join.
     const solo = touch.cards.some((c) => c.solo);
     // Looked for on the table as it'll be once they're taken: a card can't go back onto where it alone lay.
-    const over = !L.inTray(p.x, p.y) && !solo ? stackTargetAt(takeAll(L.table, touch.sources), w.x, w.y, L.size, except, L.gridOn ? gridStackReach(L.gridStep) : undefined, face) : null;
+    const over = !L.inTray(p.x, p.y) && !solo ? stackTargetAt(takeAll(L.table, touch.sources), w.x, w.y, L.size, except, L.gridOn ? gridStackReach(L.gridStep) : undefined) : null;
     L.setTarget(over?.id ?? null);
     // Over the hand: a gap opens where they'd go in, and near either end the row scrolls along.
     if (L.inTray(p.x, p.y)) {
@@ -2155,7 +2150,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     touch.mode = 'carry';
     touch.snapped = false;
     touch.turnedOver = false;
-    touch.searchFace = null;
     touch.buttonFingers.clear();
     touch.sources = [exact];
     touch.cards = cards;
@@ -2220,10 +2214,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const putDown = () => {
     const touch = gestureState.get();
     const L = latest.get();
-    const { sources, cards, turnedOver, searchFace } = touch;
+    const { sources, cards, turnedOver } = touch;
     touch.sources = [];
     touch.cards = [];
-    touch.searchFace = null;
     const p = carriedPose();
     L.setHeld(null);
     L.setTarget(null);
@@ -2250,16 +2243,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const bag = bagAt(L.table, w.x, w.y);
     if (bag) return L.dropIntoBag(bag.id, cards.map((card) => ({ card })), takeAll(L.table, sources));
     const whole = sources.find((src) => src.kind === 'stack');
-    // Only onto a stack facing the same way (as they came out of the search, if they did); a whole stack carried goes
-    // onto one facing either way, turning over to it (as a selection does).
-    const shown = searchFace !== null && !turnedOver ? searchFace : cards[cards.length - 1].faceUp;
-    const face = whole ? undefined : shown;
-    const facing = (s: SandboxStack) => face === undefined || s.cards[s.cards.length - 1].faceUp === face;
+    // Onto a stack facing either way: the cards turn over to it as they join.
+    const shown = cards[cards.length - 1].faceUp;
     let onto = cards.some((c) => c.solo)
       ? null
       : // On the table as it'll be once they're taken: where a card alone lay is nowhere to go back onto (it would
         // land, unsnapped, as if joining it). The rest of a stack it came off still counts.
-        stackTargetAt(takeAll(L.table, sources), w.x, w.y, L.size, whole?.kind === 'stack' ? whole.stackId : undefined, L.gridOn ? gridStackReach(L.gridStep) : undefined, face);
+        stackTargetAt(takeAll(L.table, sources), w.x, w.y, L.size, whole?.kind === 'stack' ? whole.stackId : undefined, L.gridOn ? gridStackReach(L.gridStep) : undefined);
     // With snapping on, its middle on the nearest grid crossing.
     const free = { x: w.x, y: w.y, angle: p.tableAngle };
     let at = L.gridOn && !onto ? snapToGrid(free, L.gridStep) : free;
@@ -2267,7 +2257,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const spot = onto ? null : spotAt(L.table, w.x, w.y);
     if (spot) {
       const there = takeAll(L.table, sources).stacks.find(
-        (s) => s.id !== (whole?.kind === 'stack' ? whole.stackId : '') && Math.hypot(s.x - spot.x, s.y - spot.y) < 1 && !s.cards.some((c) => c.solo) && facing(s),
+        (s) => s.id !== (whole?.kind === 'stack' ? whole.stackId : '') && Math.hypot(s.x - spot.x, s.y - spot.y) < 1 && !s.cards.some((c) => c.solo),
       );
       if (there && !cards.some((c) => c.solo)) onto = there;
       else at = { x: spot.x, y: spot.y, angle: 0 };
@@ -2277,7 +2267,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const rest = takeAll(L.table, sources);
       const others = whole?.kind === 'stack' ? { ...rest, stacks: rest.stacks.filter((s) => s.id !== whole.stackId) } : rest;
       const cell = zoneCellAt(others, w.x, w.y, cardSizeOf(cards[cards.length - 1], L.size));
-      const joins = cell?.onto && !cards.some((c) => c.solo) && !cell.onto.cards.some((c) => c.solo) && facing(cell.onto);
+      const joins = cell?.onto && !cards.some((c) => c.solo) && !cell.onto.cards.some((c) => c.solo);
       if (joins) onto = cell.onto!;
       else if (cell) at = cell.at;
     }
@@ -2461,7 +2451,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         touch.scaleShown = 0;
         touch.snapped = false;
         touch.turnedOver = false;
-        touch.searchFace = null;
         touch.twist = null;
         touch.buttonFingers.clear();
         L.setHeld({ sources: touch.sources, cards: touch.cards });
@@ -3266,7 +3255,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         L.setHeld(null);
         L.setTarget(null);
       }
-      touch.searchFace = null;
       if (touch.mode === 'lasso') L.setLassoPath(null);
       if (touch.mode === 'piece') {
         L.setPieceDrag(null);
@@ -3323,8 +3311,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       touch.turnedOver = false;
       touch.buttonFingers.clear();
       touch.fromSearch = true;
-      // Drawn face up as a pile, but stacked as the cards came out (a face-down deck takes them face down).
-      touch.searchFace = held[0].faceUp;
       const carried = [...held].reverse().map((c) => ({ ...c, faceUp: true }));
       touch.sources = carried.map((c) => ({ kind: 'card', stackId: stack.id, iid: c.iid }));
       touch.cards = carried;
