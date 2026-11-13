@@ -1616,30 +1616,24 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         pieces: (table.pieces ?? []).filter((p) => !piecesIn.includes(p)),
       });
     }
-    // Cards picked out (and nothing else), let go over a deck facing the same way: every card of them flies to it, and
-    // stacks on it. Anything else picked out with them, or a card that never stacks, means no stacking.
-    const deck = groupStackDeck(table, chosen, pickedPieces, gestureState.get().groupLead, { x: grab.x + by.x, y: grab.y + by.y }, size, gridOn ? gridStackReach(gridStep) : undefined);
+    // Cards picked out (and nothing else), the grabbed one's middle let go over a deck: every card of them flies to it
+    // and stacks on it, taking its face. Anything else picked out with them, or a card that never stacks, means no
+    // stacking.
+    const grabbed = table.stacks.find((s) => s.id === gestureState.get().groupLead) ?? table.stacks.find((s) => s.id === chosen[0]);
+    const deck = grabbed
+      ? groupStackDeck(table, chosen, pickedPieces, carriedTo(grabbed, grab, by, turn ?? 0), size, gridOn ? gridStackReach(gridStep) : undefined)
+      : null;
     if (deck) {
       const others = { ...table, stacks: table.stacks.filter((s) => !chosen.includes(s.id)) };
       const face = deck.cards[deck.cards.length - 1].faceUp;
       // Each card flies from where the finger had carried it (moved, and turned about the finger if the group was),
-      // one after another, then they stack.
-      const r = ((turn ?? 0) * Math.PI) / 180;
-      const carried = (s: SandboxStack) => {
-        const dx = s.x - grab.x;
-        const dy = s.y - grab.y;
-        return {
-          x: grab.x + dx * Math.cos(r) - dy * Math.sin(r) + by.x,
-          y: grab.y + dx * Math.sin(r) + dy * Math.cos(r) + by.y,
-          angle: s.angle + (turn ?? 0),
-        };
-      };
+      // one after another, turning over to the deck's face if need be, then they stack.
       const flights: Flyer[] = [];
       const cards: SandboxCard[] = [];
       for (const id of chosen) {
         const s = table.stacks.find((st) => st.id === id);
         if (!s) continue;
-        const was = carried(s);
+        const was = carriedTo(s, grab, by, turn ?? 0);
         for (const card of s.cards) {
           flights.push({
             key: newId(),
@@ -2956,7 +2950,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // A selection carried over a deck that would take it lights the deck up, as a card's would.
         const L2 = latest.get();
         if (L2.table && !L2.inTray(f.now.x, f.now.y)) {
-          const deck = groupStackDeck(L2.table, L2.selected, L2.pickedPieces, touch.groupLead, w, L2.size, L2.gridOn ? gridStackReach(L2.gridStep) : undefined);
+          // Judged by the grabbed stack's middle, where it's been carried to (as a carried card's is), not the finger.
+          const grabbed = L2.table.stacks.find((s) => s.id === touch.groupLead) ?? L2.table.stacks.find((s) => s.id === L2.selected[0]);
+          const by = { x: w.x - touch.groupFrom.x, y: w.y - touch.groupFrom.y };
+          const deck = grabbed
+            ? groupStackDeck(L2.table, L2.selected, L2.pickedPieces, carriedTo(grabbed, touch.groupFrom, by, touch.groupAngle), L2.size, L2.gridOn ? gridStackReach(L2.gridStep) : undefined)
+            : null;
           L2.setTarget(deck?.id ?? null);
         }
         // Counters and dice picked out with them go along (drawn where they've got to).
@@ -5899,24 +5898,33 @@ interface Flyer {
 }
 
 /**
- * The deck a picked-out selection of cards would stack on if let go with its finger at a table point. None if anything
- * else is picked out with them, or one of them never stacks or is locked. The deck must face the way the grabbed card
- * does (see stackTargetAt); the selection's own stacks are left out.
+ * Where a stack of a dragged group has been carried to: turned about the finger's first point by `turn` (degrees),
+ * then moved by `by`, all in table units.
+ */
+function carriedTo(s: { x: number; y: number; angle: number }, pivot: { x: number; y: number }, by: { x: number; y: number }, turn: number) {
+  const r = (turn * Math.PI) / 180;
+  const dx = s.x - pivot.x;
+  const dy = s.y - pivot.y;
+  return { x: pivot.x + dx * Math.cos(r) - dy * Math.sin(r) + by.x, y: pivot.y + dx * Math.sin(r) + dy * Math.cos(r) + by.y, angle: s.angle + turn };
+}
+
+/**
+ * The deck a picked-out selection of cards would stack on, its grabbed stack's middle carried to a table point. None if
+ * anything else is picked out with them, or one of them never stacks or is locked. Whichever way the deck faces: the
+ * cards take its face as they fly in (as gathering does). The selection's own stacks are left out.
  */
 function groupStackDeck(
   t: SandboxTable,
   chosen: string[],
   pickedPieces: string[],
-  lead: string | undefined,
   at: { x: number; y: number },
   size: CardSize,
   reach: number | undefined,
 ): SandboxStack | null {
-  const leader = t.stacks.find((s) => s.id === lead) ?? t.stacks.find((s) => s.id === chosen[0]);
-  if (!leader || pickedPieces.length) return null;
+  if (!chosen.length || pickedPieces.length) return null;
   if (t.stacks.some((s) => chosen.includes(s.id) && (staysPut(t, s) || s.cards.some((c) => c.solo)))) return null;
   const others = { ...t, stacks: t.stacks.filter((s) => !chosen.includes(s.id)) };
-  return stackTargetAt(others, at.x, at.y, size, undefined, reach, leader.cards[leader.cards.length - 1].faceUp);
+  return stackTargetAt(others, at.x, at.y, size, undefined, reach);
 }
 
 /** How long a gathered card takes to fly into its stack. */
