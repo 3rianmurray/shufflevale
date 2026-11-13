@@ -1900,6 +1900,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       saveCamera: () => void;
       setHeld: (h: Held | null) => void;
       setTarget: (id: string | null) => void;
+      setFlyers: (f: Flyer[]) => void;
       setMenu: (m: Menu) => void;
       searchFrom: string | null;
       endSearch: () => void;
@@ -1928,7 +1929,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     };
     return { set: (next: typeof box) => Object.assign(box, next), get: () => box };
   });
-  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, searchPicked, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onGridButton, gridPicked, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, onDragRollButton, rollDice, openPro, zoomTo: (t) => zoomToTarget(t) });
+  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, searchPicked, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setFlyers, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onGridButton, gridPicked, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, onDragRollButton, rollDice, openPro, zoomTo: (t) => zoomToTarget(t) });
 
   // The gesture in progress (never drawn from, so kept outside React state).
   const [gestureState] = useState(() => {
@@ -2283,8 +2284,23 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (whole?.kind === 'stack' && sources.length === 1 && !onto && !turnedOver) {
       return L.commit(raise(placeStack(L.table, whole.stackId, at), whole.stackId));
     }
-    // Joining a stack facing the other way, the cards turn over to it.
-    if (onto && onto.cards[onto.cards.length - 1].faceUp !== shown) playSound('cardFlip');
+    if (onto) {
+      // Joining a stack facing the other way, the cards turn over to it.
+      const face = onto.cards[onto.cards.length - 1].faceUp;
+      if (face !== shown) playSound('cardFlip');
+      // Each card flies from where it was let go into the stack, one after another, turning over if need be (as a
+      // dropped selection's do).
+      L.setFlyers(
+        cards.map((card, i) => ({
+          key: newId(),
+          card,
+          at: { x: onto.x, y: onto.y, angle: onto.angle },
+          from: { dx: w.x - onto.x, dy: w.y - onto.y, angle: p.tableAngle },
+          face,
+          delay: Math.min(i, FLY_STAGGER_MAX) * FLY_STAGGER_MS,
+        })),
+      );
+    }
     L.commit(putOnTable(takeAll(L.table, sources), cards, at, newId(), onto));
   };
 
