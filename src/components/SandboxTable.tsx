@@ -5609,6 +5609,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
                 },
                 heldStyle,
               ]}>
+              <PileEdges
+                count={chosen.reduce((n, id) => n + (table.stacks.find((s) => s.id === id)?.cards.length ?? 0), 0)}
+                deck={decksById.get(groupLeadTop.deckId)!}
+                card={cardOf(groupLeadTop)}
+                faceUp={groupLeadTop.faceUp}
+                size={cardSizeOf(groupLeadTop, size)}
+              />
               <CardView
                 deck={decksById.get(groupLeadTop.deckId)!}
                 card={cardOf(groupLeadTop)}
@@ -5649,6 +5656,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             <Animated.View
               pointerEvents="none"
               style={[styles.held, { width: heldSize.w, height: heldSize.h, left: -heldSize.w / 2, top: -heldSize.h / 2 }, heldStyle]}>
+              {/* A pile keeps its depth while it's carried: the paper edges under its top card, as on the table. */}
+              <PileEdges count={held.cards.length} deck={heldDeck} card={cardOf(heldTop)} faceUp={heldTop.faceUp} size={heldSize} />
               <CardView deck={heldDeck} card={cardOf(heldTop)} faceUp={heldTop.faceUp} width={heldSize.w} sharp />
               {held.cards.length > 1 ? (
                 <View style={styles.badge}>
@@ -6157,6 +6166,35 @@ function lassoRetrace(line: { x: number; y: number }[], to: { x: number; y: numb
     if (dLen && (move.x * d.x + move.y * d.y) / (moved * dLen) < -0.5) found = i;
   }
   return found;
+}
+
+/**
+ * The paper edges under a pile's top card, as a stack on the table has (see StackView): none for one card, nor under a
+ * see-through card (a die-cut shape), where they'd show round it.
+ */
+function PileEdges({
+  count,
+  deck,
+  card,
+  faceUp,
+  size,
+}: {
+  count: number;
+  deck: Deck;
+  card: Deck['cards'][number] | undefined;
+  faceUp: boolean;
+  size: { w: number; h: number };
+}) {
+  const showing = faceUp ? card?.image : (card?.back ?? deck.backImage);
+  const edges = isSeeThrough(showing) ? 0 : Math.min(2, count - 1);
+  const radius = cardRadius(deck, size.w);
+  return (
+    <>
+      {Array.from({ length: edges }, (_, i) => (
+        <View key={i} pointerEvents="none" style={[styles.edge, { left: (edges - i) * 2, top: (edges - i) * 2, width: size.w, height: size.h, borderRadius: radius }]} />
+      ))}
+    </>
+  );
 }
 
 /** A stack on the table: its top card (and edges below it, for more than one), turned as it lies. */
