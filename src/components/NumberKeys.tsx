@@ -27,10 +27,11 @@ export function NumberKeys({ onKey, extra = '' }: { onKey: (key: string) => void
             key={i}
             onPress={() => onKey(key)}
             accessibilityRole="button"
-            accessibilityLabel={key === DELETE_KEY ? 'Delete' : key === '-' ? 'Minus' : key}
+            accessibilityLabel={key === DELETE_KEY ? 'Delete' : key === '-' ? 'Plus or minus' : key}
             style={({ pressed }) => [styles.key, size, pressed && styles.pressed]}>
+            {/* The minus key switches the sign (pressed again, it comes off), so it reads +/−. */}
             <Text style={[styles.keyText, key.length > 1 && styles.wordText]} maxFontSizeMultiplier={MAX_TEXT_SCALE}>
-              {key}
+              {key === '-' ? '+/−' : key}
             </Text>
           </Pressable>
         ) : (
