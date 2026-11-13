@@ -4179,7 +4179,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const tile = (label: string, ios: string, android: string, onPress: () => void, disabled = false): SheetTile => ({ label, icon: icon(ios, android), onPress, disabled });
       // What opens over the table once this has gone: another menu, the name prompt, the system's picture menu.
       const next = (m: Menu) => () => setTimeout(() => setMenu(m), 250);
-      // (The words on the table are kept as typed, not title-cased like names: see askText.)
       const ask = (title: string, current: string, done: (text: string) => void) => () => setTimeout(() => askText(title, current, done), 350);
       // A number (or a time), with the app's own keys in its menu.
       const askNum = (title: string, current: string, done: (text: string) => void, kind: 'number' | 'signed' | 'time' = 'number') => () =>

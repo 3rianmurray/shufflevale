@@ -18,7 +18,7 @@ import type { ImportPicture } from '../../components/ImportReview';
 import { ReorderableGrid } from '../../components/ReorderableGrid';
 import { SpriteSheetModal } from '../../components/SpriteSheetModal';
 import { useDecks } from '../../lib/DecksContext';
-import { askName, MAX_NAME_LENGTH, titleCase } from '../../lib/names';
+import { askName, MAX_NAME_LENGTH } from '../../lib/names';
 import { backUpWithNotice, shareWithNotice } from '../../lib/fileActions';
 import { deleteDeckWarning } from '../../lib/deckInUse';
 import { cardRoom, FREE_CARD_LIMIT } from '../../lib/limits';
@@ -110,7 +110,7 @@ export default function DeckEditorScreen() {
   // Left with nothing in it (no cards, no back), the deck isn't kept.
   const { dropIfEmpty } = decks;
   useEffect(() => () => dropIfEmpty(id), [id, dropIfEmpty]);
-  /** The deck's name as it's being typed (in title case), until it's done. */
+  /** The deck's name as it's being typed, until it's done. */
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   /** The card being given its own back (a two-sided card), while its back's picture is chosen; else the deck's. */
   const [backFor, setBackFor] = useState<string | null>(null);
@@ -572,7 +572,7 @@ export default function DeckEditorScreen() {
                   <TextInput
                     maxFontSizeMultiplier={MAX_TEXT_SCALE}
                     value={nameDraft ?? deck.name}
-                    onChangeText={(t) => setNameDraft(titleCase(t))}
+                    onChangeText={setNameDraft}
                     maxLength={MAX_NAME_LENGTH}
                     onEndEditing={(e) => {
                       const name = e.nativeEvent.text.trim();

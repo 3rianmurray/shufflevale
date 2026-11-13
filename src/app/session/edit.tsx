@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../components/Button';
 import { DeckPicker, pickerStyles as styles } from '../../components/DeckPicker';
 import { useDecks } from '../../lib/DecksContext';
-import { MAX_NAME_LENGTH, titleCase } from '../../lib/names';
+import { MAX_NAME_LENGTH } from '../../lib/names';
 import { colors } from '../../theme';
 import { MAX_TEXT_SCALE, Text } from '../../components/Text';
 
@@ -57,7 +57,7 @@ export default function EditSessionScreen() {
             <TextInput
               maxFontSizeMultiplier={MAX_TEXT_SCALE}
               value={name}
-              onChangeText={(t) => setName(titleCase(t))}
+              onChangeText={setName}
               maxLength={MAX_NAME_LENGTH}
               style={styles.input}
               placeholder="e.g. Zombicide"

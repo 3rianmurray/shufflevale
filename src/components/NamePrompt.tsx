@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 
-import { answerName, MAX_NAME_LENGTH, titleCase, useNameRequest } from '../lib/names';
+import { answerName, MAX_NAME_LENGTH, useNameRequest } from '../lib/names';
 import { colors } from '../theme';
 import { Button } from './Button';
 import { NumberKeys, typeKey } from './NumberKeys';
@@ -9,8 +9,7 @@ import { MAX_TEXT_SCALE, Text } from './Text';
 import { ALL_ORIENTATIONS } from '../lib/orientations';
 
 /**
- * The app's prompt for a name (see `askName`), over every screen: a title, a field that keeps what's typed in
- * title case, and Cancel and Save.
+ * The app's prompt for a name (see `askName`), over every screen: a title, a field, and Cancel and Save.
  */
 export function NamePrompt() {
   const request = useNameRequest();
@@ -19,15 +18,13 @@ export function NamePrompt() {
   const [shown, setShown] = useState<typeof request>(null);
   // What's there is selected as it opens (so typing replaces it), until the first change.
   const [selectAll, setSelectAll] = useState(true);
-  // A name is title-cased as it's typed; words on a table (plain), a number or a time are kept as typed (a number
-  // or time with the number keyboard).
+  // Kept just as typed (a number or time with the number keyboard).
   const kind = shown?.kind ?? 'name';
   const plain = !!shown?.plain;
-  const asTyped = (t: string) => (kind === 'name' && !plain ? titleCase(t) : t);
   if (request !== shown) {
     setShown(request);
     setSelectAll(true);
-    setDraft(request ? ((request.kind ?? 'name') === 'name' && !request.plain ? titleCase(request.current) : request.current) : '');
+    setDraft(request ? request.current : '');
   }
   const save = () => answerName(draft);
 
@@ -79,13 +76,13 @@ export function NamePrompt() {
             maxLength={MAX_NAME_LENGTH}
             onChangeText={(t) => {
               setSelectAll(false);
-              setDraft(asTyped(t));
+              setDraft(t);
             }}
             selection={selectAll ? { start: 0, end: draft.length } : undefined}
             // A touch in the field hands the selection back to it (so a tap puts the cursor there, as anywhere), rather
             // than holding it all selected till the first key.
             onPressIn={() => setSelectAll(false)}
-            autoCapitalize={kind !== 'name' ? 'none' : plain ? 'sentences' : 'words'}
+            autoCapitalize={kind !== 'name' ? 'none' : 'sentences'}
             // Digits only for a count; with a minus sign, or a colon for a time, the keyboard that has them.
             keyboardType={kind === 'number' ? 'number-pad' : kind === 'name' ? 'default' : 'numbers-and-punctuation'}
             returnKeyType="done"

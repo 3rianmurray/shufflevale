@@ -7,7 +7,7 @@ import { Button } from '../../components/Button';
 import { DeckPicker, pickerStyles as styles } from '../../components/DeckPicker';
 import { useDecks } from '../../lib/DecksContext';
 import { newId } from '../../lib/id';
-import { MAX_NAME_LENGTH, titleCase } from '../../lib/names';
+import { MAX_NAME_LENGTH } from '../../lib/names';
 import { layDecks, MAX_TABLE_CARDS } from '../../lib/sandbox';
 import { deckSize } from '../../lib/types';
 import { createSandboxWith, useSandboxes } from '../../lib/sandboxStore';
@@ -48,7 +48,7 @@ export default function NewTableScreen() {
             <TextInput
               maxFontSizeMultiplier={MAX_TEXT_SCALE}
               value={name}
-              onChangeText={(t) => setName(titleCase(t))}
+              onChangeText={setName}
               maxLength={MAX_NAME_LENGTH}
               style={styles.input}
               placeholder="e.g. Game Night"

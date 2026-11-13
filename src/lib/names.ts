@@ -1,5 +1,5 @@
-// Names the player types (decks, cards, groups, tables, hands, sessions), kept in title case as they're typed,
-// and the app's own prompt for asking for one (iOS's system prompt can't change the text as it's typed).
+// Names the player types (decks, cards, groups, tables, hands, sessions), kept just as they're typed, and the app's
+// own prompt for asking for one.
 import { useSyncExternalStore } from 'react';
 
 /** The longest a name can be (decks, cards, groups, tables, hands, sessions): plenty, and it still fits on screen. */
@@ -9,15 +9,7 @@ export const MAX_NAME_LENGTH = 60;
 export const clampName = (name: string) => name.trim().slice(0, MAX_NAME_LENGTH).trim();
 
 /**
- * Text in title case: the first letter of every word made a capital, as it's typed. The rest is left as typed,
- * so capitals inside words (e.g. "McDonald", "UNO") stay.
- */
-export function titleCase(text: string): string {
-  return text.replace(/(^|[\s\-/(])(\p{Ll})/gu, (_, before: string, letter: string) => before + letter.toUpperCase());
-}
-
-/**
- * What's being asked for: words (a name, title-cased as it's typed); a whole number (`number`, or `signed` if it can
+ * What's being asked for: words (a name, kept as typed); a whole number (`number`, or `signed` if it can
  * be below 0); or a time (minutes, or minutes:seconds). Each brings up the keyboard it wants.
  */
 export type AskKind = 'name' | 'number' | 'signed' | 'time';
@@ -28,7 +20,7 @@ export interface NameRequest {
   current: string;
   done: (name: string) => void;
   kind?: AskKind;
-  /** Words to be kept just as typed (the words on a table: a zone's name, a text label), not title-cased like names. */
+  /** Words on a table (a zone's name, a text label) rather than a name: the empty field says Text, not Name. */
   plain?: boolean;
   /** What the yellow button says, if not Save (say, Paste for how many copies to paste). */
   confirm?: string;
