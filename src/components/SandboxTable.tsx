@@ -2095,8 +2095,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (!L.table) return;
     const w = toTable(readCamera(), p.x, p.y);
     const except = touch.sources.find((src) => src.kind === 'stack')?.stackId;
-    // Only onto a stack facing the same way as what's carried (as they came out of the search, if they did).
-    const face = touch.searchFace !== null && !touch.turnedOver ? touch.searchFace : touch.cards[touch.cards.length - 1]?.faceUp;
+    // Only onto a stack facing the same way as what's carried (as they came out of the search, if they did); a whole
+    // stack carried goes onto one facing either way, turning over to it (as a selection does).
+    const face = except ? undefined : touch.searchFace !== null && !touch.turnedOver ? touch.searchFace : touch.cards[touch.cards.length - 1]?.faceUp;
     // Cards that never stack go onto nothing.
     const solo = touch.cards.some((c) => c.solo);
     // Looked for on the table as it'll be once they're taken: a card can't go back onto where it alone lay.
@@ -2249,8 +2250,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const bag = bagAt(L.table, w.x, w.y);
     if (bag) return L.dropIntoBag(bag.id, cards.map((card) => ({ card })), takeAll(L.table, sources));
     const whole = sources.find((src) => src.kind === 'stack');
-    // Only onto a stack facing the same way (as they came out of the search, if they did).
-    const face = searchFace !== null && !turnedOver ? searchFace : cards[cards.length - 1].faceUp;
+    // Only onto a stack facing the same way (as they came out of the search, if they did); a whole stack carried goes
+    // onto one facing either way, turning over to it (as a selection does).
+    const shown = searchFace !== null && !turnedOver ? searchFace : cards[cards.length - 1].faceUp;
+    const face = whole ? undefined : shown;
+    const facing = (s: SandboxStack) => face === undefined || s.cards[s.cards.length - 1].faceUp === face;
     let onto = cards.some((c) => c.solo)
       ? null
       : // On the table as it'll be once they're taken: where a card alone lay is nowhere to go back onto (it would
@@ -2263,7 +2267,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     const spot = onto ? null : spotAt(L.table, w.x, w.y);
     if (spot) {
       const there = takeAll(L.table, sources).stacks.find(
-        (s) => s.id !== (whole?.kind === 'stack' ? whole.stackId : '') && Math.hypot(s.x - spot.x, s.y - spot.y) < 1 && !s.cards.some((c) => c.solo) && s.cards[s.cards.length - 1].faceUp === face,
+        (s) => s.id !== (whole?.kind === 'stack' ? whole.stackId : '') && Math.hypot(s.x - spot.x, s.y - spot.y) < 1 && !s.cards.some((c) => c.solo) && facing(s),
       );
       if (there && !cards.some((c) => c.solo)) onto = there;
       else at = { x: spot.x, y: spot.y, angle: 0 };
@@ -2273,7 +2277,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const rest = takeAll(L.table, sources);
       const others = whole?.kind === 'stack' ? { ...rest, stacks: rest.stacks.filter((s) => s.id !== whole.stackId) } : rest;
       const cell = zoneCellAt(others, w.x, w.y, cardSizeOf(cards[cards.length - 1], L.size));
-      const joins = cell?.onto && !cards.some((c) => c.solo) && !cell.onto.cards.some((c) => c.solo) && cell.onto.cards[cell.onto.cards.length - 1].faceUp === face;
+      const joins = cell?.onto && !cards.some((c) => c.solo) && !cell.onto.cards.some((c) => c.solo) && facing(cell.onto);
       if (joins) onto = cell.onto!;
       else if (cell) at = cell.at;
     }
@@ -2289,6 +2293,8 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     if (whole?.kind === 'stack' && sources.length === 1 && !onto && !turnedOver) {
       return L.commit(raise(placeStack(L.table, whole.stackId, at), whole.stackId));
     }
+    // Joining a stack facing the other way, the cards turn over to it.
+    if (onto && onto.cards[onto.cards.length - 1].faceUp !== shown) playSound('cardFlip');
     L.commit(putOnTable(takeAll(L.table, sources), cards, at, newId(), onto));
   };
 
