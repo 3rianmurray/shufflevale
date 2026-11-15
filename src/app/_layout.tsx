@@ -67,7 +67,15 @@ export default function RootLayout() {
           <Stack.Screen name="session/edit" options={{ title: 'Session' }} />
           <Stack.Screen name="sandbox/new" options={{ title: 'New Table' }} />
           <Stack.Screen name="help" options={{ title: 'Help' }} />
-          <Stack.Screen name="about" options={{ title: 'About' }} />
+          {/* On iPad a window in the middle of the screen, like the Shufflevale menu; on iPhone, its own screen. */}
+          <Stack.Screen
+            name="about"
+            options={
+              IS_PAD
+                ? { title: 'About', presentation: 'transparentModal', animation: 'fade', headerShown: false, contentStyle: { backgroundColor: 'transparent' } }
+                : { title: 'About' }
+            }
+          />
           {/*
             On iPad its own card over the screen, as tall as it needs up to nearly the whole height, either way up (iPad's
             form sheet is a fixed size, whatever detents it's given, and cut the screen off); on iPhone, the whole screen.
