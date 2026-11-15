@@ -325,6 +325,38 @@ export const cameraZoom = (c: Camera) => Math.hypot(c.a, c.b);
 /** The camera's turn, in degrees clockwise. */
 export const cameraAngle = (c: Camera) => (Math.atan2(c.b, c.a) * 180) / Math.PI;
 
+/**
+ * The camera kept over the table: the table point in the middle of the view (`mid`, on screen) never leaves the
+ * table, so it can't be slid off into the dark round it. Zoom and turn are kept; only the slide is held back.
+ */
+export function keepTableInView(c: Camera, mid: { x: number; y: number }): Camera {
+  const p = toTable(c, mid.x, mid.y);
+  const x = Math.min(TABLE_W, Math.max(0, p.x));
+  const y = Math.min(TABLE_H, Math.max(0, p.y));
+  if (x === p.x && y === p.y) return c;
+  const s = toScreen(c, x, y);
+  return { ...c, tx: c.tx + mid.x - s.x, ty: c.ty + mid.y - s.y };
+}
+
+/**
+ * How much further a moved group must go to stay on the table, as one thing let go there would: every middle in it
+ * (`at`, where they'd land) inside the table, the group keeping its layout. On the grid, the extra is whole squares,
+ * so it stays lined up. Nothing to add, {0, 0}.
+ */
+export function keepGroupOnTable(at: { x: number; y: number }[], step?: number): { x: number; y: number } {
+  if (!at.length) return { x: 0, y: 0 };
+  const fix = (lo: number, hi: number, max: number) => {
+    const by = lo < 0 ? -lo : hi > max ? max - hi : 0;
+    if (!by || !step) return by;
+    // Whole squares, rounded away from the edge, unless that would push its other side off.
+    const n = Math.sign(by) * Math.ceil(Math.abs(by) / step) * step;
+    return (by > 0 ? hi + n <= max : lo + n >= 0) ? n : by;
+  };
+  const xs = at.map((p) => p.x);
+  const ys = at.map((p) => p.y);
+  return { x: fix(Math.min(...xs), Math.max(...xs), TABLE_W), y: fix(Math.min(...ys), Math.max(...ys), TABLE_H) };
+}
+
 /** How far the camera can zoom out and in. */
 export const MIN_ZOOM = 0.12;
 export const MAX_ZOOM = 4;

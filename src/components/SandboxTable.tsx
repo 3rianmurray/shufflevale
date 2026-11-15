@@ -120,6 +120,8 @@ import {
   setPiece,
   stackTargetAt,
   startCamera,
+  keepTableInView,
+  keepGroupOnTable,
   tableBounds,
   fitCamera,
   TABLE_H,
@@ -1294,8 +1296,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       return dropIntoBag(bag.id, pieces.map((piece) => ({ piece })), { ...table, pieces: (table.pieces ?? []).filter((p) => !drag.ids.includes(p.id)) });
     }
     const snapped = gridOn ? snapToGrid({ ...to, angle: 0 }, gridStep) : to;
+    // Kept on the table (all of them moved back in together, their layout kept).
+    const by = { x: snapped.x - lead.x, y: snapped.y - lead.y };
+    const landing = (table.pieces ?? []).filter((p) => drag.ids.includes(p.id) && !staysPut(table, p)).map((p) => ({ x: p.x + by.x, y: p.y + by.y }));
+    const back = keepGroupOnTable(landing, gridOn ? gridStep : undefined);
     // Custom art moved comes over every card, as a stack moved does (turned as it was twisted).
-    const moved = raiseArt(movePieces(table, drag.ids, { x: snapped.x - lead.x, y: snapped.y - lead.y }), drag.ids);
+    const moved = raiseArt(movePieces(table, drag.ids, { x: by.x + back.x, y: by.y + back.y }), drag.ids);
     commit(drag.turn !== undefined ? setPiece(moved, lead.id, { angle: normalizeAngle(drag.turn) }) : moved);
     haptics.drop();
   };
@@ -1667,6 +1673,13 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       const on = snapToGrid({ ...landed, angle: 0 }, gridStep);
       shift = { x: by.x + on.x - landed.x, y: by.y + on.y - landed.y };
     }
+    // Kept on the table, as one thing let go off its edge is: the whole group moved back in together, its layout kept.
+    const landing = [
+      ...table.stacks.filter((s) => chosen.includes(s.id) && !staysPut(table, s)).map((s) => carriedTo(s, pivot, shift, turn ?? 0)),
+      ...(table.pieces ?? []).filter((p) => pickedPieces.includes(p.id) && !staysPut(table, p)).map((p) => ({ x: p.x + shift.x, y: p.y + shift.y })),
+    ];
+    const back = keepGroupOnTable(landing, gridOn ? gridStep : undefined);
+    shift = { x: shift.x + back.x, y: shift.y + back.y };
     // Each settled in any card spot, or zone that lines up cards, it's let go in.
     const moved = settleStacks(turn ? rotateStacks(table, chosen, pivot, turn, shift) : moveStacks(table, chosen, shift), chosen, size);
     // Counters and dice picked out with them come too (as far as the finger went).
@@ -1926,10 +1939,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       dropScoreScroll: () => void;
       openPro: () => void;
       zoomTo: (target: ZoomTarget) => void;
+      /** The middle of what's in view, on screen (between the top bar and the hand), once it's laid out. */
+      viewMid: { x: number; y: number } | null;
     };
     return { set: (next: typeof box) => Object.assign(box, next), get: () => box };
   });
-  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, searchPicked, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setFlyers, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onGridButton, gridPicked, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, onDragRollButton, rollDice, openPro, zoomTo: (t) => zoomToTarget(t) });
+  latest.set({ table, size, handTop, inTray, trayLeft, trayW, hand, handIndex, handCardAt, handInsertAt, maxHandScroll, gridOn, gridStep, setGroupInHand, flyPile, groupToHand, groupHandScale, handScaleOf, selected: chosen, setSelected: selectStacks, setLassoPath, setGroupMoving, stackButton, moreButton, dropGroup, flipGroup, trashSelection, selectionButtonAt, shuffleSelection, searchPicked, gatherGroup, flipFromTap, cameraLocked: !!table?.lockCamera, toolsOpen, showTools, fitAll: () => table && fitView(table), setHandGap: changeGap, flipButton, commit, saveCamera, setHeld, setTarget, setFlyers, setMenu, searchFrom: searching, endSearch, setGroupShift, addPieceToTable, openAddAt: (at) => { setAddAt(at); setMenu({ kind: 'components' }); }, dropIntoBag, setZoneSize, dropZoneSize, setScoreScroll, dropScoreScroll, tapPiece, setPieceDrag, dropPieces, onGridButton, gridPicked, pickedDice, pickedRollables, pickedPieces, setPickedPieces, onRollButton, onDragRollButton, rollDice, openPro, zoomTo: (t) => zoomToTarget(t), viewMid: view ? { x: view.w / 2, y: (insets.top + TOP_BAR_H + handTop - HAND_TAB_H) / 2 } : null });
 
   // The gesture in progress (never drawn from, so kept outside React state).
   const [gestureState] = useState(() => {
@@ -3031,7 +3046,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           if (square && !touch.camSquare) haptics.tick();
           touch.camSquare = square;
         }
-        writeCamera(cam);
+        // Never off into the dark round the table: the middle of the view stays over it.
+        const mid = latest.get().viewMid;
+        writeCamera(mid ? keepTableInView(cam, mid) : cam);
       }
     };
     const up = (changed: Touch[]) => {

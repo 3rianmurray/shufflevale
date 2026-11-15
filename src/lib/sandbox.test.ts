@@ -40,6 +40,9 @@ import {
   settleOnto,
   fitCamera,
   tableBounds,
+  keepTableInView,
+  keepGroupOnTable,
+  TABLE_H,
   gatherStacks,
   moveStacks,
   stacksInShape,
@@ -603,4 +606,24 @@ test('a new table: its decks in a row across the middle, in order, on the grid',
   assert.equal(t.stacks[1].x, TABLE_W / 2);
   assert.ok(t.stacks[0].x < t.stacks[1].x && t.stacks[1].x < t.stacks[2].x);
   assert.ok(t.stacks.every((s) => s.x % 40 === 0 && s.y === t.stacks[0].y));
+});
+
+test('the camera is kept over the table, zoom and turn kept', () => {
+  const mid = { x: 200, y: 400 };
+  const inside: Camera = { a: 1, b: 0, tx: -1000, ty: -800 };
+  assert.deepEqual(keepTableInView(inside, mid), inside);
+  const turned: Camera = { a: 0, b: 2, tx: 50000, ty: -90000 };
+  const kept = keepTableInView(turned, mid);
+  assert.equal(kept.a, 0);
+  assert.equal(kept.b, 2);
+  const p = toTable(kept, mid.x, mid.y);
+  assert.ok(p.x >= -0.001 && p.x <= TABLE_W + 0.001 && p.y >= -0.001 && p.y <= TABLE_H + 0.001);
+});
+
+test('a group let go off the table is moved back on together', () => {
+  assert.deepEqual(keepGroupOnTable([{ x: 100, y: 100 }, { x: 300, y: 200 }]), { x: 0, y: 0 });
+  assert.deepEqual(keepGroupOnTable([{ x: -50, y: 100 }, { x: 150, y: TABLE_H + 30 }]), { x: 50, y: -30 });
+  // On the grid: whole squares, so it stays lined up.
+  assert.deepEqual(keepGroupOnTable([{ x: -50, y: 100 }], 120), { x: 120, y: 0 });
+  assert.deepEqual(keepGroupOnTable([{ x: TABLE_W + 10, y: 100 }], 120), { x: -120, y: 0 });
 });
