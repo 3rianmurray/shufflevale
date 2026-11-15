@@ -43,6 +43,8 @@ import {
   keepTableInView,
   keepGroupOnTable,
   TABLE_H,
+  rotateItems,
+  rotatePieces,
   gatherStacks,
   moveStacks,
   stacksInShape,
@@ -626,4 +628,38 @@ test('a group let go off the table is moved back on together', () => {
   // On the grid: whole squares, so it stays lined up.
   assert.deepEqual(keepGroupOnTable([{ x: -50, y: 100 }], 120), { x: 120, y: 0 });
   assert.deepEqual(keepGroupOnTable([{ x: TABLE_W + 10, y: 100 }], 120), { x: -120, y: 0 });
+});
+
+test('the rotation slider turns several things round their middle, as one', () => {
+  const t: SandboxTable = {
+    ...tableWith({ id: 'a', x: 1000, y: 1000, angle: 0, cards: [] }, { id: 'b', x: 1200, y: 1000, angle: 0, cards: [] }),
+    pieces: [{ id: 'd', kind: 'die', x: 1100, y: 1200, value: 1, angle: 0 } as TablePiece],
+  };
+  const turned = rotateItems(t, ['a', 'b'], ['d'], 90);
+  const a = turned.stacks.find((s) => s.id === 'a')!;
+  const b = turned.stacks.find((s) => s.id === 'b')!;
+  // The middle is (1100, 1100), turned a quarter clockwise: a (top left of it) goes top right, b (top right) bottom
+  // right, the die (below it) to its left.
+  assert.deepEqual([Math.round(a.x), Math.round(a.y), a.angle], [1200, 1000, 90]);
+  assert.deepEqual([Math.round(b.x), Math.round(b.y), b.angle], [1200, 1200, 90]);
+  const d = turned.pieces!.find((p) => p.id === 'd')!;
+  assert.deepEqual([d.x, d.y, d.angle], [1000, 1100, 90]);
+  // One thing on its own turns where it lies.
+  const one = rotateItems(t, ['a'], [], 45).stacks.find((s) => s.id === 'a')!;
+  assert.deepEqual([one.x, one.y, one.angle], [1000, 1000, 45]);
+});
+
+test('pieces twisted with a group go round its point; only art and dice turn', () => {
+  const t: SandboxTable = {
+    ...tableWith(),
+    pieces: [
+      { id: 'd', kind: 'die', x: 200, y: 100, value: 1, angle: 0 } as TablePiece,
+      { id: 'm', kind: 'meeple', x: 100, y: 200, value: 0 } as TablePiece,
+    ],
+  };
+  const turned = rotatePieces(t, ['d', 'm'], { x: 100, y: 100 }, 90, { x: 10, y: 0 });
+  const d = turned.pieces!.find((p) => p.id === 'd')!;
+  const m = turned.pieces!.find((p) => p.id === 'm')!;
+  assert.deepEqual([d.x, d.y, d.angle], [110, 200, 90]);
+  assert.deepEqual([m.x, m.y, m.angle], [10, 100, undefined]);
 });

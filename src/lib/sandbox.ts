@@ -1392,15 +1392,28 @@ export const artLevel = (t: SandboxTable, art: TablePiece) => (art.over ? t.stac
 export const turnsFreely = (p: Pick<TablePiece, 'kind'>) => p.kind === 'art' || p.kind === 'die';
 
 /**
- * Stacks and pieces (those that turn: see turnsFreely) turned to an angle, as the rotation slider sets it. A locked
- * stack still turns where it lies (as it still flips); a locked piece stays as it is.
+ * Stacks and pieces turned by the rotation slider, to `deg` for the first of them. One thing turns where it lies.
+ * Several turn together round their middle, as one: each carried round it and turned by as much (pieces that don't
+ * turn to any angle, see turnsFreely, stay upright), so their layout turns with them. A locked stack still turns where
+ * it lies (as it still flips); a locked piece stays as it is.
  */
 export function rotateItems(t: SandboxTable, stackIds: string[], pieceIds: string[], deg: number): SandboxTable {
-  const angle = normalizeAngle(deg);
+  const stacks = t.stacks.filter((s) => stackIds.includes(s.id));
+  const pieces = (t.pieces ?? []).filter((p) => pieceIds.includes(p.id));
+  const first = stacks[0]?.angle ?? pieces[0]?.angle ?? 0;
+  const by = deg - first;
+  if (!by) return t;
+  // Their middle: the middle of the box round everything that moves.
+  const moving = [...stacks.filter((s) => !staysPut(t, s)), ...pieces.filter((p) => !staysPut(t, p))];
+  const xs = moving.map((m) => m.x);
+  const ys = moving.map((m) => m.y);
+  const mid = moving.length ? { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 } : { x: 0, y: 0 };
+  const turned = rotatePieces(rotateStacks(t, stackIds, mid, by, { x: 0, y: 0 }), pieceIds, mid, by, { x: 0, y: 0 });
+  // (Kept in the order they lay: rotateStacks puts the moved ones on top.) A locked stack turns where it lies.
+  const byId = new Map(turned.stacks.map((s) => [s.id, s]));
   return {
-    ...t,
-    stacks: t.stacks.map((s) => (stackIds.includes(s.id) ? { ...s, angle } : s)),
-    ...(t.pieces ? { pieces: t.pieces.map((p) => (pieceIds.includes(p.id) && turnsFreely(p) && !p.locked ? { ...p, angle } : p)) } : {}),
+    ...turned,
+    stacks: t.stacks.map((s) => (stackIds.includes(s.id) ? (staysPut(t, s) ? { ...s, angle: normalizeAngle(s.angle + by) } : byId.get(s.id)!) : s)),
   };
 }
 
@@ -2582,6 +2595,30 @@ export function rotateStacks(
     return { ...s, ...at, angle: normalizeAngle(at.angle) };
   });
   return { ...t, stacks: [...moved.filter((s) => !moving.has(s.id)), ...moved.filter((s) => moving.has(s.id))] };
+}
+
+/**
+ * Pieces moved and turned with a group (as rotateStacks does stacks): each carried round `pivot` by `angle` degrees,
+ * then moved `by`. Those that turn to any angle (custom art, dice: see turnsFreely) turn with it; the rest stay
+ * upright. Locked ones stay put.
+ */
+export function rotatePieces(t: SandboxTable, ids: string[], pivot: { x: number; y: number }, angle: number, by: { x: number; y: number }): SandboxTable {
+  if (!angle) return movePieces(t, ids, by);
+  const r = (angle * Math.PI) / 180;
+  const cos = Math.cos(r);
+  const sin = Math.sin(r);
+  const pieces = (t.pieces ?? []).map((p) => {
+    if (!ids.includes(p.id) || staysPut(t, p)) return p;
+    const dx = p.x - pivot.x;
+    const dy = p.y - pivot.y;
+    return {
+      ...p,
+      x: Math.round(pivot.x + dx * cos - dy * sin + by.x),
+      y: Math.round(pivot.y + dx * sin + dy * cos + by.y),
+      ...(turnsFreely(p) ? { angle: normalizeAngle((p.angle ?? 0) + angle) } : {}),
+    };
+  });
+  return separateDice({ ...t, pieces }, ids);
 }
 
 /**

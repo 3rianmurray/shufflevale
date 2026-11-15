@@ -147,6 +147,7 @@ import {
   fanStack,
   removeStacks,
   rotateStacks,
+  rotatePieces,
   setSolo,
   setStack,
   settleOnto,
@@ -530,7 +531,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
    * by where they're drawn (never by a moving style on their views: one could be left on a view used again for
    * another piece, which was then drawn away from where it lay, and couldn't be picked up where it was seen).
    */
-  const [groupShift, setGroupShift] = useState<{ dx: number; dy: number } | null>(null);
+  const [groupShift, setGroupShift] = useState<{ dx: number; dy: number; turn?: number; pivot?: { x: number; y: number } } | null>(null);
   /** Cards flying into a stack just gathered (each the top of a stack that was picked out). */
   const [flyers, setFlyers] = useState<Flyer[]>([]);
   /** Where carried cards would go into the hand, while they're over it: a gap opens there. */
@@ -1676,14 +1677,14 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     // Kept on the table, as one thing let go off its edge is: the whole group moved back in together, its layout kept.
     const landing = [
       ...table.stacks.filter((s) => chosen.includes(s.id) && !staysPut(table, s)).map((s) => carriedTo(s, pivot, shift, turn ?? 0)),
-      ...(table.pieces ?? []).filter((p) => pickedPieces.includes(p.id) && !staysPut(table, p)).map((p) => ({ x: p.x + shift.x, y: p.y + shift.y })),
+      ...(table.pieces ?? []).filter((p) => pickedPieces.includes(p.id) && !staysPut(table, p)).map((p) => carriedTo({ x: p.x, y: p.y, angle: 0 }, pivot, shift, turn ?? 0)),
     ];
     const back = keepGroupOnTable(landing, gridOn ? gridStep : undefined);
     shift = { x: shift.x + back.x, y: shift.y + back.y };
     // Each settled in any card spot, or zone that lines up cards, it's let go in.
     const moved = settleStacks(turn ? rotateStacks(table, chosen, pivot, turn, shift) : moveStacks(table, chosen, shift), chosen, size);
-    // Counters and dice picked out with them come too (as far as the finger went).
-    commit(pickedPieces.length && (shift.x || shift.y) ? movePieces(moved, pickedPieces, shift) : moved);
+    // Counters, dice and art picked out with them come too (as far as the finger went), turned round the same point.
+    commit(pickedPieces.length && (shift.x || shift.y || turn) ? rotatePieces(moved, pickedPieces, pivot, turn ?? 0, shift) : moved);
     tourEvent('tables-moved');
     haptics.drop();
   };
@@ -1926,7 +1927,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       onDragRollButton: (x: number, y: number) => boolean;
       rollDice: (ids: string[]) => void;
       setPieceDrag: (d: PieceDrag | null) => void;
-      setGroupShift: (d: { dx: number; dy: number } | null) => void;
+      setGroupShift: (d: { dx: number; dy: number; turn?: number; pivot?: { x: number; y: number } } | null) => void;
       dropPieces: (d: PieceDrag) => void;
       onGridButton: (x: number, y: number) => boolean;
       gridPicked: () => void;
@@ -2984,8 +2985,6 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
             : null;
           L2.setTarget(deck?.id ?? null);
         }
-        // Counters and dice picked out with them go along (drawn where they've got to).
-        if (latest.get().pickedPieces.length) latest.get().setGroupShift({ dx: w.x - touch.groupFrom.x, dy: w.y - touch.groupFrom.y });
         // Twisted by a second finger: turned round the first, settling onto the table's 45° steps when close.
         const tw = touch.groupTwist && touch.fingers.get(touch.groupTwist.id);
         if (touch.groupTwist && tw) {
@@ -2994,6 +2993,11 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           if (square && turn !== touch.groupAngle) haptics.tick();
           touch.groupAngle = turn;
           groupTurn.set(turn);
+        }
+        // Counters, dice and art picked out with them go along, turned round the same point as the cards (drawn
+        // where they've got to).
+        if (latest.get().pickedPieces.length) {
+          latest.get().setGroupShift({ dx: w.x - touch.groupFrom.x, dy: w.y - touch.groupFrom.y, turn: touch.groupAngle, pivot: touch.groupFrom });
         }
         // Over the hand, it gathers into one pile under the finger, at hand size, and the hand makes room; back
         // over the table, it spreads out again as it was.
@@ -4997,12 +5001,22 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     pieceDrag?.ids.includes(p.id)
       ? { x: p.x + pieceDrag.dx, y: p.y + pieceDrag.dy }
       : groupMoving && groupShift && pickedPieces.includes(p.id) && !staysPut(table, p)
-        ? { x: p.x + groupShift.dx, y: p.y + groupShift.dy }
+        ? groupShift.turn && groupShift.pivot
+          ? carriedTo({ x: p.x, y: p.y, angle: 0 }, groupShift.pivot, { x: groupShift.dx, y: groupShift.dy }, groupShift.turn)
+          : { x: p.x + groupShift.dx, y: p.y + groupShift.dy }
+        : undefined;
+  /** A piece's turn for now: as it's twisted on its own, or (custom art and dice) turned with a group twisted. */
+  const turnedTo = (p: TablePiece) =>
+    pieceDrag?.ids.includes(p.id)
+      ? pieceDrag.lead === p.id
+        ? pieceDrag.turn
+        : undefined
+      : groupMoving && groupShift?.turn && pickedPieces.includes(p.id) && !staysPut(table, p) && turnsFreely(p)
+        ? (p.angle ?? 0) + groupShift.turn
         : undefined;
   /** A piece as it's drawn on the table (always the same view, never drawn afresh as it moves). */
   const drawPiece = (p: TablePiece, layer?: number) => {
-    const dragged = !!pieceDrag?.ids.includes(p.id);
-    const turn = dragged && pieceDrag?.lead === p.id ? pieceDrag.turn : undefined;
+    const turn = turnedTo(p);
     // A score pad being made taller or shorter, or scrolled: as it is for now.
     const shown = zoneSize?.id === p.id ? { ...p, ...resized(p, zoneSize) } : scoreScroll?.id === p.id ? { ...p, scroll: scoreScroll.scroll } : p;
     return (
