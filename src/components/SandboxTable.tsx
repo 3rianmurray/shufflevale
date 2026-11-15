@@ -3896,7 +3896,12 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
     ];
     return unionOf(boxes);
   })();
-  const spotlight = spot && !IS_PAD ? (
+  // Kept as it was when the menu opened: things scaled or turned by its slider change size, and the window would
+  // otherwise move out of their way as the slider moves. (Set during render, React's way for state that follows state.)
+  const [heldTarget, setHeldTarget] = useState<{ menu: Menu; rect: typeof menuTarget } | null>(null);
+  if (menu && heldTarget?.menu !== menu) setHeldTarget({ menu, rect: menuTarget });
+  const windowAvoids = menu && heldTarget?.menu === menu ? heldTarget.rect : menuTarget;
+  const spotlight =spot && !IS_PAD ? (
     <Animated.View style={[styles.world, spotStyle]} pointerEvents="none">
       {menuStack ? (
         <StackView
@@ -5748,7 +5753,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
         // On iPad, a window beside it; a card in the hand's beside where it was tapped.
         near={spotNear ?? (IS_PAD && menu?.kind === 'hand' && menuSpot?.at ? { x: menuSpot.at.x, y: menuSpot.at.y, w: 0, h: 0 } : undefined)}
         // Several picked out (on iPad): a window above the finger, or (a follow-up) where the last one was.
-        place={IS_PAD && menu?.kind === 'selection' ? { at: menuSpot?.at, from: menuSpot?.from, avoid: menuSpot?.from ? menuTarget : undefined } : undefined}
+        place={IS_PAD && menu?.kind === 'selection' ? { at: menuSpot?.at, from: menuSpot?.from, avoid: menuSpot?.from ? windowAvoids : undefined } : undefined}
         onPlace={(rect) => lastWindow.set({ rect })}
         title={sheet?.title}
         tiles={sheet?.tiles ?? []}
@@ -5901,7 +5906,7 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
           menu?.kind === 'table' || menu?.kind === 'color'
             ? { kind: 'drop' }
             : IS_PAD
-              ? { kind: 'window', at: menuSpot?.at, from: menuSpot?.from, avoid: menuSpot?.from ? menuTarget : undefined }
+              ? { kind: 'window', at: menuSpot?.at, from: menuSpot?.from, avoid: menuSpot?.from ? windowAvoids : undefined }
               : undefined
         }
         onPlace={(rect) => lastWindow.set({ rect })}
