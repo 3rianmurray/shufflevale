@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '../components/AppIcon';
@@ -31,6 +31,7 @@ const PERKS: [string, string][] = [
 export default function ProScreen() {
   const { reason } = useLocalSearchParams<{ reason?: Reason }>();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
   const pro = useProState();
   const on = isPro(pro);
 
@@ -82,8 +83,23 @@ export default function ProScreen() {
     </>
   );
 
-  // Scrolls wherever it's shown (on iPad, a sheet that may be short of the whole screen), so Restore Purchases at
-  // the bottom is always reachable.
+  // On iPad: a card in the middle of the screen, as tall as it needs, up to nearly the whole height (portrait or
+  // landscape, with room above and below). A tap outside it closes it. It scrolls if it's still too tall, so Restore
+  // Purchases at the bottom is always reachable.
+  if (IS_PAD) {
+    return (
+      <View style={styles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Close" />
+        <View style={[styles.card, { width: Math.min(CARD_WIDTH, width - 48), maxHeight: height - insets.top - insets.bottom - CARD_ROOM * 2 }]}>
+          <ScrollView style={styles.cardScroll} contentContainerStyle={styles.content}>
+            {body}
+          </ScrollView>
+        </View>
+      </View>
+    );
+  }
+
+  // On iPhone the whole screen; it scrolls, so Restore Purchases at the bottom is always reachable.
   return (
     <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
       {body}
@@ -91,8 +107,24 @@ export default function ProScreen() {
   );
 }
 
+const IS_PAD = Platform.OS === 'ios' && Platform.isPad;
+/** The iPad card's width at most, and the room kept above and below it. */
+const CARD_WIDTH = 600;
+const CARD_ROOM = 24;
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
+  // iPad: the screen dimmed behind the card, which sits in the middle.
+  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+  card: {
+    backgroundColor: colors.bg,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.25)',
+    overflow: 'hidden',
+  },
+  // Only as tall as what's in it (up to the card's most).
+  cardScroll: { flexGrow: 0 },
   content: { alignItems: 'center', padding: 24, paddingTop: 32 },
   title: { color: colors.text, fontSize: 26, fontWeight: '700', marginTop: 14 },
   reason: { color: colors.accent, fontSize: 15, textAlign: 'center', marginTop: 10, lineHeight: 21 },

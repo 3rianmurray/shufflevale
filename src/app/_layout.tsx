@@ -68,10 +68,17 @@ export default function RootLayout() {
           <Stack.Screen name="sandbox/new" options={{ title: 'New Table' }} />
           <Stack.Screen name="help" options={{ title: 'Help' }} />
           <Stack.Screen name="about" options={{ title: 'About' }} />
-          {/* On iPad a tall sheet with a little room top and bottom, so Restore Purchases is always on it (scrolling if need be); on iPhone, the whole screen. */}
+          {/*
+            On iPad its own card over the screen, as tall as it needs up to nearly the whole height, either way up (iPad's
+            form sheet is a fixed size, whatever detents it's given, and cut the screen off); on iPhone, the whole screen.
+          */}
           <Stack.Screen
             name="pro"
-            options={IS_PAD ? { title: 'Pro', presentation: 'formSheet', sheetAllowedDetents: [0.94] } :{ title: 'Pro', presentation: 'modal' }}
+            options={
+              IS_PAD
+                ? { title: 'Pro', presentation: 'transparentModal', animation: 'fade', headerShown: false, contentStyle: { backgroundColor: 'transparent' } }
+                : { title: 'Pro', presentation: 'modal' }
+            }
           />
           {/* A Shufflevale file opened in the app from elsewhere (see +native-intent). */}
           <Stack.Screen name="open" options={{ title: 'Open File', presentation: 'modal' }} />
