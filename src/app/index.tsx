@@ -106,8 +106,8 @@ export default function HomeScreen() {
   const [tableMenu, setTableMenu] = useState<string | null>(null);
   /** The app's menu (••• at the top): files and the examples. */
   const [appMenuOpen, setAppMenuOpen] = useState(false);
-  /** The menu is closing for Pro to come up. */
-  const [toPro, setToPro] = useState(false);
+  /** The menu is closing (at once) for Pro, or on iPad About, to come up over the screen. */
+  const [leavingFor, setLeavingFor] = useState<'pro' | 'about' | null>(null);
   /**
    * The row swiped open (`deck:…`, `group:…` or `session:…`) and which of its buttons is showing: Delete on
    * the right, or a deck's Duplicate on the left. One at a time.
@@ -640,18 +640,20 @@ export default function HomeScreen() {
         // On iPad it drops from the top right corner, under the three lines; on iPhone, a sheet from the bottom.
         place={Platform.OS === 'ios' && Platform.isPad ? { kind: 'drop', corner: 'right' } : undefined}
         onClose={() => setAppMenuOpen(false)}
-        // For Pro: the menu goes at once, and Pro comes up once it has gone (iOS shows one modal at a time).
-        closeInstantly={toPro}
+        // For Pro (and About, on iPad): the menu goes at once, and the window comes up once it has gone (iOS shows one
+        // modal at a time).
+        closeInstantly={!!leavingFor}
         afterClose={() => {
-          if (!toPro) return;
-          setToPro(false);
-          openPro();
+          if (!leavingFor) return;
+          setLeavingFor(null);
+          if (leavingFor === 'pro') openPro();
+          else router.push('/about');
         }}
         // Shufflevale Pro, set apart at the top: gold-edged, with what's left of the free version's cards.
         banner={
           <Pressable
             onPress={() => {
-              setToPro(true);
+              setLeavingFor('pro');
               setAppMenuOpen(false);
             }}
             accessibilityRole="button"
@@ -700,7 +702,13 @@ export default function HomeScreen() {
               ]
             : []),
           // The version running (down to the update), and where to get help.
-          { label: 'About Shufflevale', groupStart: true, onPress: () => router.push('/about') },
+          // (On iPad it's a window over the screen, so the menu goes at once first, as for Pro.)
+          Platform.OS === 'ios' && Platform.isPad
+            ? { label: 'About Shufflevale', groupStart: true, keepsOpen: true, onPress: () => {
+                setLeavingFor('about');
+                setAppMenuOpen(false);
+              } }
+            : { label: 'About Shufflevale', groupStart: true, onPress: () => router.push('/about') },
         ]}
       />
 
