@@ -10,7 +10,7 @@ Your own cards, ready to play
 Got a sprite sheet? Shufflevale finds the grid and cuts it into a deck for you. Or scan cards with the camera, then play them on an open table.
 
 ## Description (4000 max)
-Shufflevale turns the cards you have into decks you can play on your phone: board game cards, homemade games, prototypes, flash cards, tarot, anything with a front and a back.
+Shufflevale turns the cards you have into decks you can play on your iPhone and iPad: board game cards, homemade games, prototypes, flash cards, tarot, anything with a front and a back.
 
 MAKE A DECK IN MINUTES
 • Got a sprite sheet? Import it and Shufflevale works out the grid by itself, then cuts the whole sheet into cards at once. Keep just the cards you want.
@@ -29,7 +29,7 @@ Put decks together in a session and swipe between them, so a game's event, item 
 LAY IT ALL OUT ON A TABLE
 Open a big table and bring on any of your decks, or just the cards you choose.
 • Drag cards anywhere, flip them, turn them, and stack them. Hold a stack to move the whole thing.
-• Four hands along the bottom, for passing the phone around.
+• Four hands along the bottom, for passing the iPhone or iPad around.
 • Shuffle, deal, draw, search, and fan a stack out.
 • Lasso a group of cards to move, flip or gather them together.
 • Snap to grid, lock cards in place, and pick a table theme.
@@ -37,10 +37,10 @@ Open a big table and bring on any of your decks, or just the cards you choose.
 A ready-dealt game of Solitaire, with a classic 52-card deck, is included to show what tables can do.
 
 YOURS, AND PRIVATE
-Your decks live on your phone. No account, no ads, no tracking.
+Your decks live on your iPhone or iPad. No account, no ads, no tracking.
 
 FREE TO TRY, PRO TO GO FURTHER
-Shufflevale is free with up to 200 cards of your own, dice, counters, timers, score pads and every other table tool, and you can open any deck or table a friend sends you. Shufflevale Pro, a one-time purchase, removes the card limit, lets you share and back up decks and tables, and adds your own art: custom art, custom tokens, and your own faces on dice and coins.
+Shufflevale is free with up to 200 cards of your own, dice, counters, timers, score pads and every other table tool, and you can open any deck or table a friend sends you. Shufflevale Pro, a one-time purchase, removes the card limit, lets you share decks and tables and back them up to Files to bring to a new device, and adds your own art: custom art, custom tokens, and your own faces on dice and coins.
 
 New to it? A short guided tour walks you through making your first deck and playing it, and Help lists every gesture.
 
