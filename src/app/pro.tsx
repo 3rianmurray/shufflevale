@@ -23,7 +23,7 @@ const PERKS: [string, string][] = [
   ['Unlimited cards', `No ${FREE_CARD_LIMIT}-card limit: every deck for every game, and every prototype.`],
   ['Custom pieces', 'Add custom art to the table: game boards, player dashboards, score tracks, and more. Plus custom tokens and your own faces on dice and coins.'],
   ['Share decks and tables', 'Send a deck, a group or a whole table to a friend as one file. Opening it is free for them.'],
-  ['Back up', 'Keep everything safe in Files, and bring it to a new phone.'],
+  ['Back up', 'Keep everything safe in Files, and bring it to a new device.'],
   ['Support Shufflevale', 'Made by one person. Every Pro keeps it growing.'],
 ];
 
@@ -76,7 +76,7 @@ export default function ProScreen() {
       )}
       {pro.busy ? <ActivityIndicator color={colors.accent} style={{ marginTop: 12 }} /> : null}
 
-      {/* Apple asks for this: Pro bought before (or on another phone) can always be brought back. */}
+      {/* Apple asks for this: Pro bought before (or on another device) can always be brought back. */}
       <Pressable onPress={restorePro} disabled={pro.busy} hitSlop={10} accessibilityRole="button" style={({ pressed }) => [styles.restore, pressed && { opacity: 0.6 }]}>
         <Text style={styles.restoreText}>Restore Purchases</Text>
       </Pressable>
