@@ -551,8 +551,8 @@ function Die({
   // (None on a die that takes none: a d4 or d8, even one given some before.)
   const faceArt = faceCount(piece) ? (piece.faces?.[shown - 1] ?? null) : null;
   const color = (faceArt && piece.faceColors?.[shown - 1]) || ownColor;
-  // (Drawn on the canvas, clipped to its face, for every die but a d6, whose square face takes it as a picture.)
-  const artImage = useImage(faceArt && sides !== 6 ? imageUri(faceArt) : null);
+  // (Drawn on the canvas, clipped to its face, smoothed; a d6 in 3D draws each face's itself.)
+  const artImage = useImage(faceArt && !solid ? imageUri(faceArt) : null);
   const { dx, dy } = motion;
   // It spins the way it's thrown (a die in 3D turns over in its own drawing instead, still lit from the same side).
   const turn = solid || poly ? 0 : (dx >= 0 ? 1 : -1) * 360 * ROLL_TURNS;
@@ -658,7 +658,15 @@ function Die({
             {/* The light catching the top face's edge. */}
             <Path path={rounded(cube.top, CUBE_ROUND)} color={shade(color, 0.35)} style="stroke" strokeWidth={0.8 * OS} opacity={0.5} />
             {selected && !rolling ? <Path path={rounded(cube.outline, CUBE_ROUND)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
-            {/* (The player's own art for this face, if it has some, is drawn over the face instead: below.) */}
+            {/* The player's own art for the face it shows, filling its top face, its corners rounded as the face's are, turned with it. */}
+            {artImage ? (
+              <Group transform={[{ rotate: (angle * Math.PI) / 180 }]} origin={vec(...at([CUBE_FACE.x + CUBE_FACE.size / 2, CUBE_FACE.y + CUBE_FACE.size / 2]))}>
+                <Group clip={Skia.RRectXY(Skia.XYWHRect(...at([CUBE_FACE.x, CUBE_FACE.y]), CUBE_FACE.size * px, CUBE_FACE.size * px), CUBE_ROUND * px, CUBE_ROUND * px)}>
+                  <SkImage image={artImage} x={at([CUBE_FACE.x, 0])[0]} y={at([0, CUBE_FACE.y])[1]} width={CUBE_FACE.size * px} height={CUBE_FACE.size * px} fit="cover" sampling={SMOOTH} />
+                </Group>
+              </Group>
+            ) : null}
+            {/* (Pips instead, without art.) */}
             {(faceArt ? [] : (PIPS[shown] ?? [])).map((cell) => {
               const pip = turned([[CUBE_FACE.x + CUBE_FACE.size * ((cell % 3) * 0.3 + 0.2), CUBE_FACE.y + CUBE_FACE.size * (Math.floor(cell / 3) * 0.3 + 0.2)]], angle, CUBE_MID)[0];
               const [cx, cy] = at(pip);
@@ -697,24 +705,6 @@ function Die({
           </>
         )}
       </Canvas>
-      {faceArt && sides === 6 && !solid ? (
-        // The player's own art for the face it shows, filling its top face, its corners rounded as the face's are.
-        <Image
-          source={{ uri: imageUri(faceArt) }}
-          style={{
-            position: 'absolute',
-            left: CUBE_FACE.x * size,
-            top: CUBE_FACE.y * size,
-            width: CUBE_FACE.size * size,
-            height: CUBE_FACE.size * size,
-            borderRadius: CUBE_ROUND * size,
-            // Turned with the face, round its middle.
-            transform: [{ rotate: `${angle}deg` }],
-          }}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-        />
-      ) : null}
       {sides === 6 || faceArt || poly ? null : (
         <Text
           allowFontScaling={false}
@@ -1123,6 +1113,9 @@ const COIN_FLIPS = 5;
 const COIN_HEADS = require('../../assets/pieces/coin-heads.png');
 const COIN_TAILS = require('../../assets/pieces/coin-tails.png');
 
+/** A coin with the player's own art: its rim in the gold coin's gold. */
+const COIN_RIM = '#c9a133';
+
 /** A gold coin: heads or tails. Tossed, it hops and turns over and over, edge-on between faces. */
 function Coin({ piece, rollKey, size, selected }: { piece: TablePiece; rollKey: number; size: number; selected: boolean }) {
   const OS = useContext(OversampleContext);
@@ -1152,6 +1145,14 @@ function Coin({ piece, rollKey, size, selected }: { piece: TablePiece; rollKey: 
   }, [motion]);
   const art = artFrame(size, size, OS);
   const c = art.at([0.5, 0.5]);
+  // The player's own art for each side (both loaded, so a toss swaps between them at once). Drawn with the shadow,
+  // smoothed and at the drawing's size: as its own image view it was kept only as big as the coin, and went jagged
+  // small and soft zoomed in.
+  const owns = !!faceCount(piece);
+  const heads = useImage(owns && piece.faces?.[0] ? imageUri(piece.faces[0]) : null);
+  const tails = useImage(owns && piece.faces?.[1] ? imageUri(piece.faces[1]) : null);
+  const own = owns && piece.faces?.[shown - 1] ? (shown === 1 ? heads : tails) : null;
+  const rim = art.len(0.05);
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { transform }]}>
       {/* Its shadow on the cloth, then the face it shows. */}
@@ -1159,17 +1160,18 @@ function Coin({ piece, rollKey, size, selected }: { piece: TablePiece; rollKey: 
         <Circle cx={c[0]} cy={c[1]} r={art.len(0.49)} color="#000">
           {pieceShadow(OS)}
         </Circle>
+        {/* The player's own art for the side it shows, if it has some: round, with a gold rim. */}
+        {own ? (
+          <>
+            <Group clip={Skia.Path.Circle(c[0], c[1], art.len(0.5))}>
+              <SkImage image={own} x={c[0] - art.len(0.5)} y={c[1] - art.len(0.5)} width={art.len(1)} height={art.len(1)} fit="cover" sampling={SMOOTH} />
+            </Group>
+            <Circle cx={c[0]} cy={c[1]} r={art.len(0.5) - rim / 2} color={COIN_RIM} style="stroke" strokeWidth={rim} />
+          </>
+        ) : null}
       </Canvas>
-      {/* The player's own art for the side it shows, if it has some: round, with a gold rim; or the gold coin's. */}
-      {/* (Only if it takes face art: see faceCount. One given some before shows the gold coin's.) */}
-      {faceCount(piece) && piece.faces?.[shown - 1] ? (
-        <Image
-          source={{ uri: imageUri(piece.faces[shown - 1]!) }}
-          style={[StyleSheet.absoluteFill, styles.coinOwn, { borderRadius: size / 2, borderWidth: size * 0.05 }]}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-        />
-      ) : (
+      {/* Or the gold coin's. (Only if it takes face art: see faceCount. One given some before shows the gold coin's.) */}
+      {owns && piece.faces?.[shown - 1] ? null : (
         <Image source={shown === 1 ? COIN_HEADS : COIN_TAILS} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" />
       )}
       {selected ? <View style={[StyleSheet.absoluteFill, styles.coinSelected, { borderRadius: size / 2 }]} /> : null}
@@ -1905,8 +1907,6 @@ const styles = StyleSheet.create({
   timerHint: { position: 'absolute', left: 0, textAlign: 'center', fontSize: 9, fontWeight: '700', opacity: 0.7 },
   zone: { flex: 1, borderWidth: 3, borderRadius: 12 },
   coinSelected: { borderWidth: 3, borderColor: colors.accent },
-  // A coin with the player's own art: its rim in the gold coin's gold.
-  coinOwn: { borderColor: '#c9a133' },
   scorePad: { flex: 1, boxShadow: '1px 3px 8px rgba(0, 0, 0, 0.45)' },
   scoreColumns: { flex: 1, flexDirection: 'row' },
   scoreCell: { alignItems: 'center', justifyContent: 'center' },
