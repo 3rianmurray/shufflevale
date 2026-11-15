@@ -1,5 +1,5 @@
-import { Canvas, Circle, Group, Image as SkImage, matchFont, Path, PathOp, Shadow, Skia, Text as SkText, useImage, vec } from '@shopify/react-native-skia';
-import type { SkFont, SkImage as SkiaImage, SkPath } from '@shopify/react-native-skia';
+import { Canvas, Circle, FilterMode, Group, Image as SkImage, matchFont, MipmapMode, Path, PathOp, Shadow, Skia, Text as SkText, useImage, vec } from '@shopify/react-native-skia';
+import type { SamplingOptions, SkFont, SkImage as SkiaImage, SkPath } from '@shopify/react-native-skia';
 import Reanimated, { Easing as ReEasing, interpolate, makeMutable, useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { drawCubeSlots, restingTurn, SIDE_VALUES, tumbleFor, tumblingTurn } from '../lib/cube3d';
@@ -685,6 +685,7 @@ function Die({
                     width={boundsOf(flat.front).w * px}
                     height={boundsOf(flat.front).h * px}
                     fit="cover"
+                    sampling={SMOOTH}
                   />
                 </Group>
               </Group>
@@ -1022,7 +1023,7 @@ function SolidSide({
       </Group>
       {art ? (
         <Group clip={square}>
-          <SkImage image={art} x={0} y={0} width={1} height={1} fit="cover" />
+          <SkImage image={art} x={0} y={0} width={1} height={1} fit="cover" sampling={SMOOTH} />
           <Path path={square} color={tint} />
         </Group>
       ) : (
@@ -1429,7 +1430,12 @@ function RoundToken({ piece, color, size, selected, k, square }: { piece: TableP
   const body = square ? null : cylinderPath(c, art.len(0.48), depth);
   const sticker = isSticker(piece);
   // A picture covers the whole top, edge to edge (no rim of its color round it); a sticker sits a little inside it.
-  const inset = size * (sticker ? 0.1 : 0.02);
+  // (Drawn here, smoothed, rather than as its own image view, which went jagged once the token was made small.)
+  const picture = useImage(piece.image ? imageUri(piece.image) : null);
+  const inset = sticker ? 0.1 : 0.02;
+  const [px0, py0] = art.at([inset, inset]);
+  const [px1, py1] = art.at([1 - inset, 1 - inset]);
+  const pictureClip = sticker ? undefined : square ? roundedPath(art, outline, 0.14) : Skia.Path.Circle(c[0], c[1], art.len(0.5 - inset));
   return (
     <View style={StyleSheet.absoluteFill}>
       <Canvas style={art.style}>
@@ -1440,7 +1446,6 @@ function RoundToken({ piece, color, size, selected, k, square }: { piece: TableP
             </Path>
             <Path path={roundedPath(art, squareSide, 0.14)} color={shade(color, -0.45)} />
             <Path path={roundedPath(art, outline, 0.14)} color={color} />
-            {selected ? <Path path={roundedPath(art, outline, 0.14)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
           </>
         ) : (
           <>
@@ -1449,28 +1454,22 @@ function RoundToken({ piece, color, size, selected, k, square }: { piece: TableP
             </Path>
             <Path path={body!} color={shade(color, -0.45)} />
             <Circle cx={c[0]} cy={c[1]} r={art.len(0.48)} color={color} />
-            {selected ? <Circle cx={c[0]} cy={c[1]} r={art.len(0.5)} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
           </>
         )}
+        {/* A cut-out sits whole on the token, as a sticker would; any other picture fills its face. */}
+        {picture ? (
+          <Group clip={pictureClip}>
+            <SkImage image={picture} x={px0} y={py0} width={px1 - px0} height={py1 - py0} fit={sticker ? 'contain' : 'cover'} sampling={SMOOTH} />
+          </Group>
+        ) : null}
+        {selected ? (
+          square ? (
+            <Path path={roundedPath(art, outline, 0.14)} color={colors.accent} style="stroke" strokeWidth={3 * OS} />
+          ) : (
+            <Circle cx={c[0]} cy={c[1]} r={art.len(0.5)} color={colors.accent} style="stroke" strokeWidth={3 * OS} />
+          )
+        ) : null}
       </Canvas>
-      {piece.image ? (
-        <Image
-          source={{ uri: imageUri(piece.image) }}
-          // A cut-out sits whole on the token, as a sticker would; any other picture fills its face.
-          style={{
-            position: 'absolute',
-            left: inset,
-            top: inset,
-            width: size - inset * 2,
-            height: size - inset * 2,
-            // (A circle's radius no more than half its width: any more, and iOS leaves it square.)
-            borderRadius: sticker ? 0 : square ? size * 0.14 : (size - inset * 2) / 2,
-            overflow: 'hidden',
-          }}
-          contentFit={sticker ? 'contain' : 'cover'}
-          cachePolicy="memory-disk"
-        />
-      ) : null}
       <TokenCount n={piece.value} k={k} />
     </View>
   );
@@ -1493,6 +1492,9 @@ function TokenCount({ n, k }: { n: number; k: number }) {
     </View>
   );
 }
+
+/** A player's picture drawn smaller than it is stays smooth (blended from a mipmap), rather than jagged. */
+const SMOOTH: SamplingOptions = { filter: FilterMode.Linear, mipmap: MipmapMode.Linear };
 
 /** How far down and right a token's top is from its foot, as a share of its width, at the usual thickness. */
 const TOKEN_DEPTH: Pt = [0.04, 0.06];
@@ -1540,7 +1542,7 @@ function ShapedToken({ piece, shape, color, size, selected, k }: { piece: TableP
         <Path path={face} color={color} />
         {picture ? (
           <Group clip={seeThrough ? undefined : face}>
-            <SkImage image={picture} x={x0} y={y0} width={x1 - x0} height={y1 - y0} fit={seeThrough ? 'contain' : 'cover'} />
+            <SkImage image={picture} x={x0} y={y0} width={x1 - x0} height={y1 - y0} fit={seeThrough ? 'contain' : 'cover'} sampling={SMOOTH} />
           </Group>
         ) : null}
         {selected ? <Path path={face} color={colors.accent} style="stroke" strokeWidth={3 * OS} /> : null}
