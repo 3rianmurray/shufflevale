@@ -25,8 +25,10 @@ export interface SheetAction {
   keepsOpen?: boolean;
   /** Starts a new group of actions: a little space above it. */
   groupStart?: boolean;
-  /** A heading above the action, starting a named group of actions (e.g. a deck group's name). */
-  heading?: string;
+  /** Not an action but a group's header (e.g. a deck group's), open or closed, with how many are in it: tapped, `onPress` runs and the sheet stays. */
+  folder?: { open: boolean; count: number };
+  /** In the group above it: set in a little. */
+  inFolder?: boolean;
   /** Part of Shufflevale Pro, not yet unlocked: a gold PRO tag on the right (a tile's, in its corner). It still works: it opens Pro. */
   pro?: boolean;
 }
@@ -320,19 +322,30 @@ export function ActionSheet(props: Props) {
           {wideTiles.length ? <View style={styles.tileRow}>{wideTiles.map((t) => tileButton(t, 2))}</View> : null}
         </View>
       ) : null}
-      {actions.map((a, i) => (
+      {actions.map((a, i) =>
+        a.folder ? (
+          // A group's header (as on the home screen): tapped, it opens or closes; the sheet stays.
+          <Pressable
+            key={`${i}:${a.label}`}
+            onPress={a.onPress}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: a.folder.open }}
+            accessibilityLabel={`${a.label}, group of ${a.folder.count}`}
+            style={({ pressed }) => [styles.folder, pressed && styles.pressed]}>
+            <Text style={styles.folderChevron}>{a.folder.open ? '▾' : '▸'}</Text>
+            <Text style={styles.folderName} numberOfLines={1}>
+              {a.label}
+            </Text>
+            <Text style={styles.folderCount}>{a.folder.count}</Text>
+          </Pressable>
+        ) : (
         <Fragment key={`${i}:${a.label}`}>
-        {a.heading ? (
-          <Text style={styles.heading} numberOfLines={1}>
-            {a.heading}
-          </Text>
-        ) : null}
         <Pressable
           onPress={() => run(a)}
           disabled={isOff(a)}
           accessibilityRole="button"
           accessibilityState={{ disabled: isOff(a) }}
-          style={({ pressed }) => [styles.action, a.groupStart && styles.groupStart, isGuided(a) && styles.guided, pressed && styles.pressed, isOff(a) && styles.tileDisabled]}>
+          style={({ pressed }) => [styles.action, a.groupStart && styles.groupStart, a.inFolder && styles.inFolder, isGuided(a) && styles.guided, pressed && styles.pressed, isOff(a) && styles.tileDisabled]}>
           <Text style={[styles.actionText, a.destructive && { color: colors.danger }]}>{a.label}</Text>
           {a.pro ? (
             <View style={styles.proTagSpot}>
@@ -343,7 +356,8 @@ export function ActionSheet(props: Props) {
           ) : null}
         </Pressable>
         </Fragment>
-      ))}
+        ),
+      )}
       {closeLabel ? (
         <Pressable
           onPress={onClose}
@@ -533,8 +547,23 @@ const styles = StyleSheet.create({
   },
   cancel: { marginTop: 6 },
   groupStart: { marginTop: 10 },
-  // A named group's heading (a deck group's name, gold as on the home screen), a little space above it.
-  heading: { color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 10, marginBottom: 2, paddingHorizontal: 6 },
+  // A group's header, as on the home screen (a touch of gold), and the actions in it set in under it.
+  folder: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginTop: 4,
+    borderRadius: 10,
+    backgroundColor: '#282620',
+    borderWidth: 1,
+    borderColor: '#695732',
+  },
+  folderChevron: { color: colors.accent, fontSize: 16, width: 14 },
+  folderName: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '700' },
+  folderCount: { color: colors.textMuted, fontSize: 14 },
+  inFolder: { marginLeft: 14 },
   // Part of Pro, not yet unlocked: a gold tag at the right end of the action.
   proTagSpot: { position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' },
   proTag: { backgroundColor: colors.accent, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },

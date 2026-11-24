@@ -622,6 +622,19 @@ export default function HomeScreen() {
       : r.kind === 'session'
         ? [sessionsStart, sessionsStart + sessions.length]
         : [decksStart, homeRows.length];
+  /** The group a deck or table dropped at `at` goes into (between its header and its end): its header's and end's rows. */
+  const groupAt = (r: HomeRow, at: number): [number, number] | null => {
+    if (r.kind !== 'deck' && r.kind !== 'table') return null;
+    for (let i = at - 1; i >= 0; i--) {
+      const k = homeRows[i].kind;
+      if (k === 'end' || k === 'tableEnd' || k === 'heading') return null;
+      if (k === 'group' || k === 'tableGroup') {
+        const end = homeRows.findIndex((x, j) => j > i && (x.kind === 'end' || x.kind === 'tableEnd') && x.id === homeRows[i].id);
+        return end === -1 ? null : [i, end];
+      }
+    }
+    return null;
+  };
   const dropHome = (r: HomeRow, at: number) => {
     if (r.kind === 'table' || r.kind === 'tableGroup') {
       const to = at - tablesStart;
@@ -701,6 +714,7 @@ export default function HomeScreen() {
         // Headings stay put, and a row swiped open can't be picked up: a press on it closes it instead.
         canLift={(r, x, width) => r.kind !== 'heading' && r.kind !== 'end' && r.kind !== 'tableEnd' && openRow?.key !== `${r.kind}:${r.id}` && x < width - BUTTON_ZONE}
         dropRange={dropRange}
+        groupAt={groupAt}
         onDrop={dropHome}
         bottomInset={insets.bottom + 92}
         contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 120 }]}

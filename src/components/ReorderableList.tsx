@@ -40,6 +40,11 @@ interface Props<R> {
   onDrop: (row: R, at: number) => void;
   /** The insertion points a row can be dropped at (first and last), e.g. to keep it within its own section. */
   dropRange?: (row: R) => [number, number];
+  /**
+   * The group a row dropped at `at` would go into, as the first and last of its rows (its header and its end), to
+   * outline while it's dragged there; or null.
+   */
+  groupAt?: (row: R, at: number) => [number, number] | null;
   header?: ReactNode;
   footer?: ReactNode;
   contentContainerStyle?: StyleProp<ViewStyle>;
@@ -61,6 +66,7 @@ export function ReorderableList<R>({
   canLift,
   onDrop,
   dropRange,
+  groupAt,
   header,
   footer,
   contentContainerStyle,
@@ -247,6 +253,15 @@ export function ReorderableList<R>({
     return at < rows.length ? l.y - 4 : l.y + l.h + 2;
   })();
 
+  // The group it'd go into: outlined, as a stack a card's dragged onto is on a table.
+  const groupBox = (() => {
+    if (!lifted || at === null || !groupAt) return null;
+    const span = groupAt(rows[lifted.index], at);
+    const first = span && rowLayout(span[0]);
+    const last = span && rowLayout(span[1]);
+    return first && last ? { top: first.y - 2, height: last.y + last.h - first.y - 4 } : null;
+  })();
+
   const liftedLayout = lifted ? rowLayout(lifted.index) : undefined;
 
   return (
@@ -277,6 +292,7 @@ export function ReorderableList<R>({
               {renderRow(row)}
             </View>
           ))}
+          {groupBox ? <View style={[styles.groupBox, groupBox]} /> : null}
           {lineY !== null ? <View style={[styles.line, { top: lineY }]} /> : null}
         </View>
         {footer}
@@ -309,6 +325,16 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 2,
     backgroundColor: colors.accent,
+    pointerEvents: 'none',
+  },
+  groupBox: {
+    position: 'absolute',
+    left: -6,
+    right: -6,
+    borderWidth: 3,
+    borderColor: colors.accent,
+    borderRadius: 14,
+    backgroundColor: 'rgba(224,179,84,0.08)',
     pointerEvents: 'none',
   },
   lifted: {

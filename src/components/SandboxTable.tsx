@@ -3902,6 +3902,9 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
   const [heldTarget, setHeldTarget] = useState<{ menu: Menu; rect: typeof menuTarget } | null>(null);
   if (menu && heldTarget?.menu !== menu) setHeldTarget({ menu, rect: menuTarget });
   const windowAvoids = menu && heldTarget?.menu === menu ? heldTarget.rect : menuTarget;
+  // The deck groups opened in the add-a-deck menu: all closed again each time it opens.
+  const [openDeckGroups, setOpenDeckGroups] = useState<string[]>([]);
+  if (menu?.kind !== 'addDeck' && openDeckGroups.length) setOpenDeckGroups([]);
   const spotlight =spot && !IS_PAD ? (
     <Animated.View style={[styles.world, spotStyle]} pointerEvents="none">
       {menuStack ? (
@@ -4936,22 +4939,31 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       };
     }
     if (menu.kind === 'addDeck') {
-      // In the home screen's order and groups (every group open; groups with nothing to add left out).
+      // In the home screen's order and groups, each group closed until tapped open (groups with nothing to add
+      // left out).
       const playable = decks.filter((d) => d.cards.length);
       const actions: SheetAction[] = [];
-      let heading: string | undefined;
       let afterGroup = false;
-      for (const row of buildRows(playable, groups.map((g) => ({ ...g, collapsed: false })))) {
-        if (row.kind === 'group') heading = groups.find((g) => g.id === row.id)?.name;
-        else if (row.kind === 'end') {
-          // A group that showed decks: a little space before the loose decks after it.
-          if (!heading) afterGroup = true;
-          heading = undefined;
+      for (const row of buildRows(playable, groups.map((g) => ({ ...g, collapsed: !openDeckGroups.includes(g.id) })))) {
+        if (row.kind === 'group') {
+          const g = groups.find((x) => x.id === row.id);
+          const count = playable.filter((d) => d.groupId === row.id).length;
+          if (!g || !count) continue;
+          const open = openDeckGroups.includes(g.id);
+          actions.push({
+            label: g.name,
+            folder: { open, count },
+            onPress: () => setOpenDeckGroups((all) => (open ? all.filter((x) => x !== g.id) : [...all, g.id])),
+          });
+        } else if (row.kind === 'end') {
+          // After a group shown: a little space before the loose decks after it.
+          const last = actions[actions.length - 1];
+          afterGroup = !!last && (!!last.folder || !!last.inFolder);
         } else {
           const d = playable.find((x) => x.id === row.id);
           if (!d) continue;
-          actions.push({ label: d.name, heading, groupStart: afterGroup, onPress: () => addDeckToTable(d) });
-          heading = undefined;
+          const inGroup = !!d.groupId && groups.some((g) => g.id === d.groupId);
+          actions.push({ label: d.name, inFolder: inGroup, groupStart: afterGroup && !inGroup, onPress: () => addDeckToTable(d) });
           afterGroup = false;
         }
       }
