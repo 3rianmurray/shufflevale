@@ -253,6 +253,7 @@ export default function HomeScreen() {
       decks.filter((d) => !isExampleDeck(d) || used.has(d.id)),
       own,
       groups,
+      tableGrouping,
     );
   };
   /**

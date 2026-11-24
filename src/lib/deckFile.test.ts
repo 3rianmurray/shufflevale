@@ -305,6 +305,25 @@ test('a zipped file lists each picture once beside what is in it, and its decks 
   assert.throws(() => unpackManifest(JSON.stringify(file), () => { throw new DeckFileError('missing'); }), DeckFileError);
 });
 
+test('a backup keeps its tables in their groups, by their places in the file', () => {
+  const table = (id: string) => ({ id, name: id, createdAt: 0, updatedAt: 0, handNames: [], hands: [[], [], [], []], stacks: [] });
+  const tables = [table('a'), table('b'), table('c')];
+  const grouping = {
+    groups: [
+      { id: 'g1', name: 'Games', collapsed: true, before: 'c' },
+      // None of its tables are in the file, so it stays out.
+      { id: 'g2', name: 'Empty' },
+    ],
+    groupOf: { b: 'g1', a: 'g1', gone: 'g2' },
+  };
+  const { file } = packManifest([], tables, [], grouping);
+  assert.deepEqual(file.tableGroups, [{ name: 'Games', collapsed: true, tables: [0, 1], before: 2 }]);
+  const read = unpackManifest(JSON.stringify(file), (name, ext) => ({ ext, name, bytes: () => new Uint8Array() }));
+  assert.deepEqual(read.tableGroups, [{ name: 'Games', collapsed: true, tables: [0, 1], before: 2 }]);
+  // Files without them have none.
+  assert.deepEqual(unpackManifest(JSON.stringify(packManifest([], tables).file), (name, ext) => ({ ext, name, bytes: () => new Uint8Array() })).tableGroups, []);
+});
+
 test('a group lying above a deck not in the file keeps its decks, lying with the rest instead', () => {
   const { file } = packManifest([deck({ groupId: 'g' })], [], [{ id: 'g', name: 'G', before: 'elsewhere' }]);
   const read = unpackManifest(JSON.stringify(file), (name, ext) => ({ ext, name, bytes: () => new Uint8Array() }));

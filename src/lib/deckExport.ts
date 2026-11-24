@@ -8,7 +8,7 @@ import * as Sharing from 'expo-sharing';
 import { strFromU8, strToU8 } from 'fflate';
 
 import { checkPicture, DeckFileError, decksOnTable, FILE_EXT, fileNameFor, MANIFEST, packManifest, partFromHead, PICTURE_HEAD, unpackFile, unpackManifest } from './deckFile';
-import type { FilePart, UnpackedFile } from './deckFile';
+import type { FilePart, TableGrouping, UnpackedFile } from './deckFile';
 import type { DeckGroup } from './groups';
 import type { SandboxTable } from './sandbox';
 import { readImageBytes } from './storage';
@@ -22,6 +22,8 @@ export interface FileContents {
   decks: Deck[];
   tables?: SandboxTable[];
   groups?: DeckGroup[];
+  /** The tables' groups (in a backup). */
+  tableGroups?: TableGrouping;
 }
 
 /** A file for one table: the table, and the decks its cards come from. */
@@ -32,11 +34,12 @@ export const tableFile = (table: SandboxTable, allDecks: Deck[]): FileContents =
 });
 
 /** Everything: every deck, group and table, named by today's date. */
-export const everythingFile = (decks: Deck[], tables: SandboxTable[], groups: DeckGroup[]): FileContents => ({
+export const everythingFile = (decks: Deck[], tables: SandboxTable[], groups: DeckGroup[], tableGroups?: TableGrouping): FileContents => ({
   name: `Shufflevale backup ${new Date().toISOString().slice(0, 10)}`,
   decks,
   tables,
   groups,
+  tableGroups,
 });
 
 /**
@@ -47,8 +50,8 @@ export const FILE_UTI = 'com.3rianmurray.shufflevale.file';
 const FILE_MIME = 'application/x-shufflevale';
 
 /** Writes the file at `target`: what's in it, then each picture, one at a time. */
-function writeFile(target: File, { decks, tables, groups }: FileContents) {
-  const { file, pictures } = packManifest(decks, tables ?? [], groups ?? []);
+function writeFile(target: File, { decks, tables, groups, tableGroups }: FileContents) {
+  const { file, pictures } = packManifest(decks, tables ?? [], groups ?? [], tableGroups);
   if (target.exists) target.delete();
   target.create();
   const handle = target.open(FileMode.WriteOnly);

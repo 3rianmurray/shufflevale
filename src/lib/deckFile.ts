@@ -89,6 +89,25 @@ export interface DeckFile {
   tables?: FileTable[];
   /** The decks' groups, in order (older files have none). */
   groups?: FileGroup[];
+  /** The tables' groups on the home screen, in order (only in backups; older files have none). */
+  tableGroups?: FileTableGroup[];
+}
+
+/**
+ * A group of tables in a file: its tables, and the table it lies just above (see `DeckGroup.before`), by their
+ * places among the file's `tables` (tables have no ids in a file).
+ */
+export interface FileTableGroup {
+  name: string;
+  collapsed?: boolean;
+  tables: number[];
+  before?: number;
+}
+
+/** The home screen's table groups, and which group each table (by id) is in. */
+export interface TableGrouping {
+  groups: DeckGroup[];
+  groupOf: Record<string, string>;
 }
 
 /**
@@ -110,6 +129,8 @@ export interface UnpackedFile {
   groups: UnpackedGroup[];
   /** The pictures the tables' pieces use, by key. */
   images: Record<string, FilePicture>;
+  /** The tables' groups, in order (their tables by place among `tables`): each with at least one of them. */
+  tableGroups: FileTableGroup[];
 }
 
 /** A group read back from a file: its id in the file (which its decks' `fileGroup` is), and the deck it lies above. */
@@ -153,7 +174,12 @@ export interface PackedPicture {
  * the pictures to go beside it. A table's decks must be among `decks` (see `decksOnTable`); only groups some of
  * the decks are in go in.
  */
-export function packManifest(decks: Deck[], tables: SandboxTable[] = [], groups: DeckGroup[] = []): { file: DeckFile; pictures: PackedPicture[] } {
+export function packManifest(
+  decks: Deck[],
+  tables: SandboxTable[] = [],
+  groups: DeckGroup[] = [],
+  tableGrouping?: TableGrouping,
+): { file: DeckFile; pictures: PackedPicture[] } {
   const images: Record<string, FileImage> = {};
   const pictures: PackedPicture[] = [];
   const keys = new Map<string, string>();
@@ -180,6 +206,14 @@ export function packManifest(decks: Deck[], tables: SandboxTable[] = [], groups:
   const ids = new Set(decks.map((d) => d.id));
   const used = groups.filter((g) => decks.some((d) => d.groupId === g.id));
   const inFile = new Set(used.map((g) => g.id));
+  // The tables' groups that have some of these tables, by the tables' places in the file.
+  const tableAt = new Map(tables.map((t, i) => [t.id, i]));
+  const tableGroups: FileTableGroup[] = (tableGrouping?.groups ?? []).flatMap((g) => {
+    const members = tables.flatMap((t, i) => (tableGrouping?.groupOf[t.id] === g.id ? [i] : []));
+    if (!members.length) return [];
+    const before = g.before === undefined ? undefined : tableAt.get(g.before);
+    return [{ name: g.name, ...(g.collapsed ? { collapsed: true } : {}), tables: members, ...(before !== undefined ? { before } : {}) }];
+  });
   const file: DeckFile = {
     kind: KIND,
     version: VERSION,
@@ -220,6 +254,7 @@ export function packManifest(decks: Deck[], tables: SandboxTable[] = [], groups:
           })),
         }
       : {}),
+    ...(tableGroups.length ? { tableGroups } : {}),
   };
   return { file, pictures };
 }
@@ -509,9 +544,33 @@ function unpackWith(file: Record<string, unknown>, picture: (key: string) => Fil
       return undefined;
     }
   };
-  const tables = hasTables ? (file.tables as unknown[]).slice(0, MAX_TABLES).flatMap((t) => tableFrom(t, known, pieceImage)) : [];
+  // Each table's place in the file, to where it is among those kept (a damaged one is left out).
+  const tables: FileTable[] = [];
+  const keptAt = new Map<number, number>();
+  if (hasTables) {
+    (file.tables as unknown[]).slice(0, MAX_TABLES).forEach((t, i) => {
+      const [laid] = tableFrom(t, known, pieceImage);
+      if (!laid) return;
+      keptAt.set(i, tables.length);
+      tables.push(laid);
+    });
+  }
+  // The tables' groups: each with at least one table kept, and lying above one of them or none.
+  const seen = new Set<number>();
+  const tableGroups: FileTableGroup[] = (Array.isArray(file.tableGroups) ? file.tableGroups.slice(0, MAX_GROUPS) : []).flatMap((g: unknown) => {
+    if (!isObject(g) || !Array.isArray(g.tables)) return [];
+    const members = g.tables.flatMap((n: unknown) => {
+      const at = typeof n === 'number' ? keptAt.get(n) : undefined;
+      if (at === undefined || seen.has(at)) return [];
+      seen.add(at);
+      return [at];
+    });
+    if (!members.length) return [];
+    const before = typeof g.before === 'number' ? keptAt.get(g.before) : undefined;
+    return [{ name: nameFrom(g.name, 'Group'), ...(g.collapsed === true ? { collapsed: true } : {}), tables: members, ...(before !== undefined ? { before } : {}) }];
+  });
   const part = partFrom(file.part);
-  return { ...(part ? { part } : {}), decks, tables, groups, images: tableImages };
+  return { ...(part ? { part } : {}), decks, tables, groups, images: tableImages, tableGroups };
 }
 
 /** The most tables a file is opened with, and the most cards each can hold (as `MAX_TABLE_CARDS` in sandbox.ts). */

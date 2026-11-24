@@ -20,7 +20,7 @@ import { newId } from './id';
 import { cardRoom } from './limits';
 import { pictureComparer } from './pictureCompare';
 import { exampleAllowances, usePro } from './pro';
-import { createSandboxWith, replaceSandbox, sandboxes } from './sandboxStore';
+import { addTableGroups, createSandboxWith, replaceSandbox, sandboxes } from './sandboxStore';
 import { saveImageData } from './storage';
 import { showUndo } from './undoBar';
 
@@ -192,17 +192,21 @@ export function useFileImport() {
     const replaced: string[] = [];
     const addedTables: string[] = [];
     const tableNames: { replaced: string[]; added: string[] } = { replaced: [], added: [] };
-    found.tables.forEach((t, i) => {
+    // Where each of the file's tables went, for its table groups (a backup's).
+    const tableIds = found.tables.map((t, i) => {
       const m = plan?.tables[i];
       if (m && choices?.tables[i] === 'replace') {
         replaceSandbox(m, laid[i]);
         replaced.push(m);
         tableNames.replaced.push(t.name);
-      } else {
-        addedTables.push(createSandboxWith(t.name, (empty) => ({ ...empty, ...laid[i] })).id);
-        tableNames.added.push(t.name);
+        return m;
       }
+      const id = createSandboxWith(t.name, (empty) => ({ ...empty, ...laid[i] })).id;
+      addedTables.push(id);
+      tableNames.added.push(t.name);
+      return id;
     });
+    addTableGroups(found.tableGroups, tableIds);
     haptics.success();
     if (updated.length || replaced.length) {
       // Something here changed: what changed, and a moment to undo all of it.

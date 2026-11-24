@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 
 import { deckIdsOn } from './deckFile';
+import type { FileTableGroup } from './deckFile';
 import { repointTable } from './deckMatch';
 import { withoutDeck } from './groups';
 import type { Arrangement, DeckGroup, Placed } from './groups';
@@ -180,6 +181,29 @@ export function deleteTableGroup(id: string, withTables = false) {
   const groupOf = { ...allGrouping().groupOf };
   for (const t of inIt) delete groupOf[t];
   setGrouping({ groups: allGrouping().groups.filter((x) => x.id !== id), groupOf });
+}
+
+/**
+ * A file's table groups, added as new groups at the end: `ids` is where each of the file's tables went (by its place
+ * in the file). A table already in a group here (one replaced from the file) stays in it.
+ */
+export function addTableGroups(fileGroups: FileTableGroup[], ids: (string | undefined)[]) {
+  if (!fileGroups.length) return;
+  const g = allGrouping();
+  const groupOf = { ...g.groupOf };
+  const made: DeckGroup[] = [];
+  for (const fg of fileGroups) {
+    const members = fg.tables.flatMap((i) => {
+      const id = ids[i];
+      return id && !(groupOf[id] && g.groups.some((x) => x.id === groupOf[id])) ? [id] : [];
+    });
+    if (!members.length) continue;
+    const id = newId();
+    const before = fg.before === undefined ? undefined : ids[fg.before];
+    made.push({ id, name: fg.name, ...(fg.collapsed ? { collapsed: true } : {}), ...(before ? { before } : {}) });
+    for (const t of members) groupOf[t] = id;
+  }
+  if (made.length) setGrouping({ groups: [...g.groups, ...made], groupOf });
 }
 
 /** The tables' order, groups and where each group lies, as a drag on the home screen left them. */
