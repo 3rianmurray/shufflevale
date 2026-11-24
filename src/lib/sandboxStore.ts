@@ -5,11 +5,14 @@ import { AppState } from 'react-native';
 
 import { deckIdsOn } from './deckFile';
 import { repointTable } from './deckMatch';
+import { withoutDeck } from './groups';
+import type { Arrangement, DeckGroup, Placed } from './groups';
 import { newId } from './id';
 import { previousOf, setPrevious, tableSlot } from './previousVersions';
 import { newSandbox, upgradeTable } from './sandbox';
 import type { SandboxTable } from './sandbox';
-import { loadSandboxes, saveSandboxes } from './storage';
+import { loadSandboxes, loadTableGroups, saveSandboxes, saveTableGroups } from './storage';
+import type { TableGroups } from './storage';
 
 /** Changes are written to the phone this long after the last one (and straight away if the app is left). */
 const SAVE_DELAY_MS = 400;
@@ -70,6 +73,9 @@ export function duplicateSandbox(id: string): SandboxTable | undefined {
   const { origin: _from, ...source } = tables[at];
   const copy = { ...source, id: newId(), name: `${tables[at].name} Copy`, createdAt: now, updatedAt: now };
   set([...tables.slice(0, at + 1), copy, ...tables.slice(at + 1)]);
+  // In the same group as the one copied.
+  const g = allGrouping();
+  if (g.groupOf[id]) setGrouping({ ...g, groupOf: { ...g.groupOf, [copy.id]: g.groupOf[id] } });
   return copy;
 }
 
@@ -87,6 +93,12 @@ export function moveSandbox(id: string, to: number) {
 
 export function deleteSandbox(id: string) {
   if (previousOf(tableSlot(id))) setPrevious(tableSlot(id), undefined);
+  // Any group lying just above it stays where it was; it leaves its group.
+  const g = allGrouping();
+  if (g.groupOf[id] || g.groups.some((x) => x.before === id)) {
+    const { [id]: _gone, ...groupOf } = g.groupOf;
+    setGrouping({ groups: withoutDeck(g.groups, placedTables(all(), g), id), groupOf });
+  }
   set(all().filter((t) => t.id !== id));
 }
 
@@ -118,6 +130,66 @@ export function undoReplaceSandbox(id: string) {
   if (!prev) return;
   setPrevious(tableSlot(id), undefined);
   set(all().map((t) => (t.id === id ? { ...prev, id } : t)));
+}
+
+// ---- Table groups on the home screen ----
+// Named groups of tables, as decks have (see lib/groups.ts): the groups, in order, and which group each table is in.
+// Kept apart from the tables, so a table replaced from a file or put back keeps its group.
+
+let grouping: TableGroups | null = null;
+const groupListeners = new Set<() => void>();
+const allGrouping = () => (grouping ??= loadTableGroups());
+const setGrouping = (next: TableGroups) => {
+  grouping = next;
+  saveTableGroups(next);
+  groupListeners.forEach((l) => l());
+};
+const subscribeGrouping = (l: () => void) => {
+  groupListeners.add(l);
+  return () => groupListeners.delete(l);
+};
+
+/** The table groups, and which group each table is in. Redraws when they change. */
+export const useTableGroups = () => useSyncExternalStore(subscribeGrouping, allGrouping);
+
+/** The tables with the group each is in, for lib/groups' rows. */
+export const placedTables = (list: SandboxTable[], g: TableGroups): Placed[] =>
+  list.map((t) => ({ id: t.id, groupId: g.groupOf[t.id] }));
+
+export function createTableGroup(name: string): DeckGroup {
+  const group: DeckGroup = { id: newId(), name };
+  setGrouping({ ...allGrouping(), groups: [...allGrouping().groups, group] });
+  return group;
+}
+
+export function renameTableGroup(id: string, name: string) {
+  const g = allGrouping();
+  setGrouping({ ...g, groups: g.groups.map((x) => (x.id === id ? { ...x, name } : x)) });
+}
+
+export function toggleTableGroup(id: string) {
+  const g = allGrouping();
+  setGrouping({ ...g, groups: g.groups.map((x) => (x.id === id ? { ...x, collapsed: !x.collapsed } : x)) });
+}
+
+/** Deletes a group: its tables stay, out of any group (unless `withTables`, when they go too). */
+export function deleteTableGroup(id: string, withTables = false) {
+  const g = allGrouping();
+  const inIt = Object.keys(g.groupOf).filter((t) => g.groupOf[t] === id);
+  if (withTables) for (const t of inIt) deleteSandbox(t);
+  const groupOf = { ...allGrouping().groupOf };
+  for (const t of inIt) delete groupOf[t];
+  setGrouping({ groups: allGrouping().groups.filter((x) => x.id !== id), groupOf });
+}
+
+/** The tables' order, groups and where each group lies, as a drag on the home screen left them. */
+export function arrangeTables(next: Arrangement) {
+  const byId = new Map(all().map((t) => [t.id, t]));
+  const ordered = next.order.flatMap((id) => byId.get(id) ?? []);
+  set([...ordered, ...all().filter((t) => !next.order.includes(t.id))]);
+  const groupOf: Record<string, string> = {};
+  for (const [t, gid] of Object.entries(next.groupOf)) if (gid) groupOf[t] = gid;
+  setGrouping({ groups: next.groups, groupOf });
 }
 
 /** Every table's cards from one deck pointed at another's (merging decks: see `repointTable`). */

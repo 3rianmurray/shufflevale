@@ -15,6 +15,7 @@ const GROUPS_FILE = 'groups.json';
 const SETTINGS_FILE = 'settings.json';
 const SANDBOXES_FILE = 'sandboxes.json';
 const PREVIOUS_FILE = 'previous.json';
+const TABLE_GROUPS_FILE = 'tableGroups.json';
 
 /** A file's contents, parsed, or undefined if it's missing or can't be read. */
 function parseFile<T>(file: File): T | undefined {
@@ -65,7 +66,7 @@ function writeJson(name: string, value: unknown) {
 }
 
 /** Everything the app keeps: its saved files (by name), and the folder of each deck's pictures. */
-const ALL_FILES = [DECKS_FILE, TABLES_FILE, SESSIONS_FILE, GROUPS_FILE, SETTINGS_FILE, SANDBOXES_FILE, PREVIOUS_FILE];
+const ALL_FILES = [DECKS_FILE, TABLES_FILE, SESSIONS_FILE, GROUPS_FILE, SETTINGS_FILE, SANDBOXES_FILE, PREVIOUS_FILE, TABLE_GROUPS_FILE];
 let erasing = false;
 
 /**
@@ -127,6 +128,13 @@ export const saveGroups = (groups: DeckGroup[]) => writeJson(GROUPS_FILE, groups
 
 export const loadSandboxes = () => readJson<SandboxTable[]>(SANDBOXES_FILE, []);
 export const saveSandboxes = (tables: SandboxTable[]) => writeJson(SANDBOXES_FILE, tables);
+/** The home screen's table groups, and which group each table is in (kept apart from the tables themselves). */
+export interface TableGroups {
+  groups: DeckGroup[];
+  groupOf: Record<string, string>;
+}
+export const loadTableGroups = () => readJson<TableGroups>(TABLE_GROUPS_FILE, { groups: [], groupOf: {} });
+export const saveTableGroups = (g: TableGroups) => writeJson(TABLE_GROUPS_FILE, g);
 
 /** Decks' and tables' versions from before they were updated, replaced or merged into (see previousVersions). */
 export const loadPrevious = <T,>() => readJson<Record<string, T>>(PREVIOUS_FILE, {});

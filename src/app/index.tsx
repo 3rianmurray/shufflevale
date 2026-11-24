@@ -28,9 +28,22 @@ import { cardRoom, cardsUsed, FREE_CARD_LIMIT } from '../lib/limits';
 import { exampleAllowances, isPlayground, usePro } from '../lib/pro';
 import * as haptics from '../lib/haptics';
 import { buildRows, dropDeck, dropGroup } from '../lib/groups';
-import type { Row } from '../lib/groups';
+import type { DeckGroup, Row } from '../lib/groups';
 import { isExampleDeck, isExampleTable, resetExampleLabel, useExamples } from '../lib/examples';
-import { deleteSandbox, duplicateSandbox, moveSandbox, restoreSandbox, updateSandbox, useSandboxes } from '../lib/sandboxStore';
+import {
+  arrangeTables,
+  createTableGroup,
+  deleteSandbox,
+  deleteTableGroup,
+  duplicateSandbox,
+  placedTables,
+  renameTableGroup,
+  restoreSandbox,
+  toggleTableGroup,
+  updateSandbox,
+  useSandboxes,
+  useTableGroups,
+} from '../lib/sandboxStore';
 import { loadSettings, saveSettings } from '../lib/storage';
 import { offerTipAfterUses, resetTips, setTipsOn, tipsOn } from '../lib/tips';
 import { startTour, tourEvent, useTourStep } from '../lib/tour';
@@ -67,6 +80,7 @@ export default function HomeScreen() {
   } = useDecks();
   const insets = useSafeAreaInsets();
   const sandboxes = useSandboxes();
+  const tableGrouping = useTableGroups();
   const { addFile, addParts, fits, planFile } = useFileImport();
 
   // The walkthrough starts by itself the first time the app opens; after that, from the help button.
@@ -102,6 +116,7 @@ export default function HomeScreen() {
   const swipeTipSoon = () => offerTipAfterUses('home-swipe', 2, 1200);
 
   const [groupMenu, setGroupMenu] = useState<string | null>(null);
+  const [tableGroupMenu, setTableGroupMenu] = useState<string | null>(null);
   /** The Table (Free Play, sandbox in the code) whose options are showing. */
   const [tableMenu, setTableMenu] = useState<string | null>(null);
   /** The app's menu (••• at the top): files and the examples. */
@@ -300,6 +315,35 @@ export default function HomeScreen() {
   };
 
   const newGroup = () => askName('New group', `Group ${groups.length + 1}`, (name) => createGroup(name));
+  const newTableGroup = () => askName('New group', `Group ${tableGrouping.groups.length + 1}`, (name) => createTableGroup(name));
+  const menuTableGroup = tableGrouping.groups.find((g) => g.id === tableGroupMenu);
+  /** As a deck group's: what's to become of its tables, asked (empty, it just goes). */
+  const confirmDeleteTableGroup = (id: string) => {
+    const group = tableGrouping.groups.find((g) => g.id === id);
+    if (!group) return;
+    const inIt = sandboxes.filter((t) => tableGrouping.groupOf[t.id] === id);
+    if (!inIt.length) {
+      deleteTableGroup(id);
+      swipeTipSoon();
+      return;
+    }
+    haptics.warn();
+    Alert.alert(`Delete the group “${group.name}”?`, undefined, [
+      {
+        text: inIt.length === 1 ? 'Keep the table' : 'Keep the tables',
+        onPress: () => {
+          deleteTableGroup(id);
+          swipeTipSoon();
+        },
+      },
+      {
+        text: inIt.length === 1 ? 'Delete the table too' : `Delete all ${inIt.length} tables too`,
+        style: 'destructive',
+        onPress: () => deleteTableGroup(id, true),
+      },
+      { text: 'Cancel', style: 'cancel', onPress: closeRows },
+    ]);
+  };
 
   const drop = (row: Row, at: number) => {
     if (row.kind === 'end') return;
@@ -318,46 +362,60 @@ export default function HomeScreen() {
     onAccessibilityAction: (e: AccessibilityActionEvent) => actions.find((a) => a.name === e.nativeEvent.actionName)?.run(),
   });
 
+  /** A group's header row (of decks or of tables): tap to open or close it, ••• for its options, swipe to delete. */
+  const groupHeader = (
+    group: DeckGroup,
+    count: number,
+    unit: 'deck' | 'table',
+    lifted: boolean,
+    on: { toggle: () => void; menu: () => void; remove: () => void },
+  ) => {
+    const groupRow = (
+      <Pressable
+        onPress={() => {
+          on.toggle();
+          haptics.tick();
+        }}
+        // Matches the list's hold-to-lift, so letting go after lifting doesn't also toggle the group.
+        onLongPress={() => {}}
+        delayLongPress={LIFT_HOLD_MS}
+        accessibilityRole="button"
+        accessibilityLabel={`${group.name}, group of ${count} ${count === 1 ? unit : `${unit}s`}, ${group.collapsed ? 'collapsed' : 'expanded'}`}
+        {...rowActions([
+          { name: 'options', label: 'Options', run: on.menu },
+          { name: 'delete', label: 'Delete group', run: on.remove },
+        ])}
+        style={[styles.groupRow, lifted && styles.liftedRow]}>
+        <Text style={styles.chevron}>{group.collapsed ? '▸' : '▾'}</Text>
+        <Text style={styles.groupName} numberOfLines={1}>
+          {group.name}
+        </Text>
+        <Text style={styles.groupCount}>{count}</Text>
+        <Pressable onPress={on.menu} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${group.name} options`}>
+          <Text style={styles.groupMenu}>•••</Text>
+        </Pressable>
+      </Pressable>
+    );
+    return lifted ? (
+      <View style={styles.groupGap}>{groupRow}</View>
+    ) : (
+      <SwipeRow style={styles.groupGap} radius={10} {...swipe(`${unit === 'deck' ? 'group' : 'tableGroup'}:${group.id}`, on.remove)}>
+        {groupRow}
+      </SwipeRow>
+    );
+  };
+
   const renderRow = (row: Row, lifted = false) => {
     // A group's end: a line under its decks. A deck dropped above it goes in the group; below it, out of it.
     if (row.kind === 'end') return <View style={styles.groupEnd} />;
     if (row.kind === 'group') {
       const group = groups.find((g) => g.id === row.id);
       if (!group) return null;
-      const count = decks.filter((d) => d.groupId === group.id).length;
-      const groupRow = (
-        <Pressable
-          onPress={() => {
-            toggleGroup(group.id);
-            haptics.tick();
-          }}
-          // Matches the list's hold-to-lift, so letting go after lifting doesn't also toggle the group.
-          onLongPress={() => {}}
-          delayLongPress={LIFT_HOLD_MS}
-          accessibilityRole="button"
-          accessibilityLabel={`${group.name}, group of ${count} ${count === 1 ? 'deck' : 'decks'}, ${group.collapsed ? 'collapsed' : 'expanded'}`}
-          {...rowActions([
-            { name: 'options', label: 'Options', run: () => setGroupMenu(group.id) },
-            { name: 'delete', label: 'Delete group', run: () => confirmDeleteGroup(group.id) },
-          ])}
-          style={[styles.groupRow, lifted && styles.liftedRow]}>
-          <Text style={styles.chevron}>{group.collapsed ? '▸' : '▾'}</Text>
-          <Text style={styles.groupName} numberOfLines={1}>
-            {group.name}
-          </Text>
-          <Text style={styles.groupCount}>{count}</Text>
-          <Pressable onPress={() => setGroupMenu(group.id)} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${group.name} options`}>
-            <Text style={styles.groupMenu}>•••</Text>
-          </Pressable>
-        </Pressable>
-      );
-      return lifted ? (
-        <View style={styles.groupGap}>{groupRow}</View>
-      ) : (
-        <SwipeRow style={styles.groupGap} radius={10} {...swipe(`group:${group.id}`, () => confirmDeleteGroup(group.id))}>
-          {groupRow}
-        </SwipeRow>
-      );
+      return groupHeader(group, decks.filter((d) => d.groupId === group.id).length, 'deck', lifted, {
+        toggle: () => toggleGroup(group.id),
+        menu: () => setGroupMenu(group.id),
+        remove: () => confirmDeleteGroup(group.id),
+      });
     }
     const deck = getDeck(row.id);
     if (!deck) return null;
@@ -463,10 +521,12 @@ export default function HomeScreen() {
               )}
             </Pressable>
     );
+    const indent = tableGrouping.groupOf[t.id] && tableGrouping.groups.some((g) => g.id === tableGrouping.groupOf[t.id]) ? styles.inGroup : undefined;
     return lifted ? (
-      tableRow
+      <View style={indent}>{tableRow}</View>
     ) : (
       <SwipeRow
+        style={indent}
         {...swipe(`table:${t.id}`, () => confirmDeleteSandbox(t.id, t.name), () => {
           closeRows();
           if (duplicateTable(t.id)) haptics.success();
@@ -531,29 +591,40 @@ export default function HomeScreen() {
    * Everything on the home screen is one list, so tables and sessions can be held and dragged too: each section's
    * heading, then its rows. A row stays in its own section (see `dropRange`).
    */
-  type HomeRow = Row | { kind: 'heading'; id: 'tables' | 'sessions' | 'decks' } | { kind: 'table'; id: string } | { kind: 'session'; id: string };
-  const tablesStart = sandboxes.length ? 1 : 0;
-  const sessionsStart = tablesStart + sandboxes.length + (sessions.length ? 1 : 0);
+  type HomeRow =
+    | Row
+    | { kind: 'heading'; id: 'tables' | 'sessions' | 'decks' }
+    | { kind: 'table'; id: string }
+    | { kind: 'tableGroup'; id: string }
+    | { kind: 'tableEnd'; id: string }
+    | { kind: 'session'; id: string };
+  // Tables are grouped as decks are (the same rows: see lib/groups), each kind of row named for tables.
+  const placed = placedTables(sandboxes, tableGrouping);
+  const tableRows: HomeRow[] = buildRows(placed, tableGrouping.groups).map((r) =>
+    r.kind === 'deck' ? { kind: 'table', id: r.id } : r.kind === 'group' ? { kind: 'tableGroup', id: r.id } : { kind: 'tableEnd', id: r.id },
+  );
+  const showTables = sandboxes.length > 0 || tableGrouping.groups.length > 0;
+  const tablesStart = showTables ? 1 : 0;
+  const sessionsStart = tablesStart + tableRows.length + (sessions.length ? 1 : 0);
   const decksStart = sessionsStart + sessions.length + 1;
   const homeRows: HomeRow[] = [
-    ...(sandboxes.length ? [{ kind: 'heading' as const, id: 'tables' as const }] : []),
-    ...sandboxes.map((t) => ({ kind: 'table' as const, id: t.id })),
+    ...(showTables ? [{ kind: 'heading' as const, id: 'tables' as const }] : []),
+    ...tableRows,
     ...(sessions.length ? [{ kind: 'heading' as const, id: 'sessions' as const }] : []),
     ...sessions.map((s) => ({ kind: 'session' as const, id: s.id })),
     { kind: 'heading', id: 'decks' },
     ...rows,
   ];
   const dropRange = (r: HomeRow): [number, number] =>
-    r.kind === 'table'
-      ? [tablesStart, tablesStart + sandboxes.length]
+    r.kind === 'table' || r.kind === 'tableGroup'
+      ? [tablesStart, tablesStart + tableRows.length]
       : r.kind === 'session'
         ? [sessionsStart, sessionsStart + sessions.length]
         : [decksStart, homeRows.length];
   const dropHome = (r: HomeRow, at: number) => {
-    if (r.kind === 'table') {
-      const from = sandboxes.findIndex((t) => t.id === r.id);
+    if (r.kind === 'table' || r.kind === 'tableGroup') {
       const to = at - tablesStart;
-      moveSandbox(r.id, to > from ? to - 1 : to);
+      arrangeTables(r.kind === 'table' ? dropDeck(placed, tableGrouping.groups, r.id, to) : dropGroup(placed, tableGrouping.groups, r.id, to));
     } else if (r.kind === 'session') {
       const from = sessions.findIndex((s) => s.id === r.id);
       const to = at - sessionsStart;
@@ -567,25 +638,47 @@ export default function HomeScreen() {
     id === 'decks' ? (
       <View style={[styles.sectionRow, decksStart > 1 && styles.laterSection]}>
         <Text style={styles.section}>Decks</Text>
-        {/* Grouping is only about decks, so it's here (making decks is in the bar at the bottom). */}
+        {/* A new group of decks (making decks is in the bar at the bottom). Tables have their own. */}
         <Pressable onPress={newGroup} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && { opacity: 0.6 }}>
           <Text style={styles.sectionLink}>New Group</Text>
         </Pressable>
       </View>
+    ) : id === 'tables' ? (
+      <View style={styles.sectionRow}>
+        <Text style={styles.section}>Tables</Text>
+        <Pressable onPress={newTableGroup} hitSlop={10} accessibilityRole="button" accessibilityLabel="New table group" style={({ pressed }) => pressed && { opacity: 0.6 }}>
+          <Text style={styles.sectionLink}>New Group</Text>
+        </Pressable>
+      </View>
     ) : (
-      <View style={[styles.sectionRow, id === 'sessions' && sandboxes.length > 0 && styles.laterSection]}>
-        <Text style={styles.section}>{id === 'tables' ? 'Tables' : 'Sessions'}</Text>
+      <View style={[styles.sectionRow, showTables && styles.laterSection]}>
+        <Text style={styles.section}>Sessions</Text>
       </View>
     );
+
+  const renderTableGroup = (id: string, lifted: boolean) => {
+    const group = tableGrouping.groups.find((g) => g.id === id);
+    if (!group) return null;
+    const count = placed.filter((t) => t.groupId === id).length;
+    return groupHeader(group, count, 'table', lifted, {
+      toggle: () => toggleTableGroup(id),
+      menu: () => setTableGroupMenu(id),
+      remove: () => confirmDeleteTableGroup(id),
+    });
+  };
 
   const renderHome = (r: HomeRow, lifted = false) =>
     r.kind === 'heading'
       ? renderHeading(r.id)
       : r.kind === 'table'
         ? renderTable(r.id, lifted)
-        : r.kind === 'session'
-          ? renderSession(r.id, lifted)
-          : renderRow(r, lifted);
+        : r.kind === 'tableGroup'
+          ? renderTableGroup(r.id, lifted)
+          : r.kind === 'tableEnd'
+            ? <View style={styles.groupEnd} />
+            : r.kind === 'session'
+              ? renderSession(r.id, lifted)
+              : renderRow(r, lifted);
 
   return (
     <View style={styles.screen}>
@@ -605,14 +698,14 @@ export default function HomeScreen() {
         renderRow={(r) => <View style={r.kind === 'heading' ? undefined : styles.rowWrap}>{renderHome(r)}</View>}
         renderLifted={(r) => <View style={styles.liftedWrap}>{renderHome(r, true)}</View>}
         // Headings stay put, and a row swiped open can't be picked up: a press on it closes it instead.
-        canLift={(r, x, width) => r.kind !== 'heading' && r.kind !== 'end' && openRow?.key !== `${r.kind}:${r.id}` && x < width - BUTTON_ZONE}
+        canLift={(r, x, width) => r.kind !== 'heading' && r.kind !== 'end' && r.kind !== 'tableEnd' && openRow?.key !== `${r.kind}:${r.id}` && x < width - BUTTON_ZONE}
         dropRange={dropRange}
         onDrop={dropHome}
         bottomInset={insets.bottom + 92}
         contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 120 }]}
         footer={
           decks.length || groups.length ? (
-            <Text style={styles.hint}>Hold any row to drag it. Drop a deck under a group to file it there.</Text>
+            <Text style={styles.hint}>Hold any row to drag it. Drop a deck or table under a group to file it there.</Text>
           ) : (
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No decks yet</Text>
@@ -737,6 +830,34 @@ export default function HomeScreen() {
                   // It asks what's to become of the group's decks, once this menu has gone.
                   opensModal: true,
                   onPress: () => confirmDeleteGroup(menuGroup.id),
+                },
+              ]
+            : []
+        }
+      />
+
+      <ActionSheet
+        visible={!!menuTableGroup}
+        title={menuTableGroup?.name}
+        onClose={() => setTableGroupMenu(null)}
+        actions={
+          menuTableGroup
+            ? [
+                ...(Platform.OS === 'ios'
+                  ? [
+                      {
+                        label: 'Rename group',
+                        opensModal: true,
+                        onPress: () => askName('Rename group', menuTableGroup.name, (name) => renameTableGroup(menuTableGroup.id, name)),
+                      },
+                    ]
+                  : []),
+                {
+                  label: 'Delete group…',
+                  destructive: true,
+                  groupStart: true,
+                  opensModal: true,
+                  onPress: () => confirmDeleteTableGroup(menuTableGroup.id),
                 },
               ]
             : []
