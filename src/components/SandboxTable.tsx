@@ -190,6 +190,7 @@ import { cardRadius, cardRatio, cardSizeMm, copiesOf, deckSize, PRESET_SIZES_MM 
 import type { Deck } from '../lib/types';
 import { colors } from '../theme';
 import { ActionSheet } from './ActionSheet';
+import { buildRows } from '../lib/groups';
 import { CropModal } from './CropModal';
 import { SpriteSheetModal } from './SpriteSheetModal';
 import { FaceSlots } from './FaceSlots';
@@ -477,7 +478,7 @@ function useStoreState<T>(initial: T): [T, (next: T | ((was: T) => T)) => void] 
  */
 export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: TableControls | null) => void }) {
   const stored = useSandbox(id);
-  const { decks, getDeck } = useDecks();
+  const { decks, getDeck, groups } = useDecks();
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useWindowDimensions();
   /** An iPhone turned on its side (the iPad keeps its own layout either way). */
@@ -4935,11 +4936,29 @@ export function SandboxBoard({ id, onControls }: { id: string; onControls: (c: T
       };
     }
     if (menu.kind === 'addDeck') {
+      // In the home screen's order and groups (every group open; groups with nothing to add left out).
       const playable = decks.filter((d) => d.cards.length);
+      const actions: SheetAction[] = [];
+      let heading: string | undefined;
+      let afterGroup = false;
+      for (const row of buildRows(playable, groups.map((g) => ({ ...g, collapsed: false })))) {
+        if (row.kind === 'group') heading = groups.find((g) => g.id === row.id)?.name;
+        else if (row.kind === 'end') {
+          // A group that showed decks: a little space before the loose decks after it.
+          if (!heading) afterGroup = true;
+          heading = undefined;
+        } else {
+          const d = playable.find((x) => x.id === row.id);
+          if (!d) continue;
+          actions.push({ label: d.name, heading, groupStart: afterGroup, onPress: () => addDeckToTable(d) });
+          heading = undefined;
+          afterGroup = false;
+        }
+      }
       return {
         title: playable.length ? 'Add a deck to the table' : 'No decks with cards yet',
         tiles: [],
-        actions: playable.map((d) => ({ label: d.name, onPress: () => addDeckToTable(d) })),
+        actions,
       };
     }
     return null;

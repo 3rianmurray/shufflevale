@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { SymbolView } from 'expo-symbols';
 import type { SymbolViewProps } from 'expo-symbols';
@@ -25,6 +25,8 @@ export interface SheetAction {
   keepsOpen?: boolean;
   /** Starts a new group of actions: a little space above it. */
   groupStart?: boolean;
+  /** A heading above the action, starting a named group of actions (e.g. a deck group's name). */
+  heading?: string;
   /** Part of Shufflevale Pro, not yet unlocked: a gold PRO tag on the right (a tile's, in its corner). It still works: it opens Pro. */
   pro?: boolean;
 }
@@ -318,9 +320,14 @@ export function ActionSheet(props: Props) {
           {wideTiles.length ? <View style={styles.tileRow}>{wideTiles.map((t) => tileButton(t, 2))}</View> : null}
         </View>
       ) : null}
-      {actions.map((a) => (
+      {actions.map((a, i) => (
+        <Fragment key={`${i}:${a.label}`}>
+        {a.heading ? (
+          <Text style={styles.heading} numberOfLines={1}>
+            {a.heading}
+          </Text>
+        ) : null}
         <Pressable
-          key={a.label}
           onPress={() => run(a)}
           disabled={isOff(a)}
           accessibilityRole="button"
@@ -335,6 +342,7 @@ export function ActionSheet(props: Props) {
             </View>
           ) : null}
         </Pressable>
+        </Fragment>
       ))}
       {closeLabel ? (
         <Pressable
@@ -525,6 +533,8 @@ const styles = StyleSheet.create({
   },
   cancel: { marginTop: 6 },
   groupStart: { marginTop: 10 },
+  // A named group's heading (a deck group's name, gold as on the home screen), a little space above it.
+  heading: { color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 10, marginBottom: 2, paddingHorizontal: 6 },
   // Part of Pro, not yet unlocked: a gold tag at the right end of the action.
   proTagSpot: { position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' },
   proTag: { backgroundColor: colors.accent, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
