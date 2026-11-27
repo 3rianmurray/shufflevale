@@ -967,8 +967,8 @@ const styles = StyleSheet.create({
   },
   // Decks in a group sit slightly indented under its header.
   inGroup: { marginLeft: 14 },
-  // Keeps the group's end row (drops and the drag outline use it) without drawing a line under the group.
-  groupEnd: { marginLeft: 14, height: 2 },
+  // Keeps the group's end row (drops and the drag outline use it) without drawing a line or taking up space.
+  groupEnd: { marginLeft: 14, height: 0 },
   liftedRow: { backgroundColor: colors.surfaceRaised },
   // Pressed: a lighter tint, not a fade (a faded row lets the swipe buttons behind it show through).
   rowPressed: { backgroundColor: colors.surfaceRaised },
