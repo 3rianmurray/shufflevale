@@ -711,7 +711,8 @@ export default function HomeScreen() {
       <ReorderableList
         rows={homeRows}
         keyOf={(r) => `${r.kind}:${r.id}`}
-        renderRow={(r) => <View style={r.kind === 'heading' ? undefined : styles.rowWrap}>{renderHome(r)}</View>}
+        // Headings and a group's end row (no height of its own) get no gap under them.
+        renderRow={(r) => <View style={r.kind === 'heading' || r.kind === 'end' || r.kind === 'tableEnd' ? undefined : styles.rowWrap}>{renderHome(r)}</View>}
         renderLifted={(r) => <View style={styles.liftedWrap}>{renderHome(r, true)}</View>}
         // Headings stay put, and a row swiped open can't be picked up: a press on it closes it instead.
         canLift={(r, x, width) => r.kind !== 'heading' && r.kind !== 'end' && r.kind !== 'tableEnd' && openRow?.key !== `${r.kind}:${r.id}` && x < width - BUTTON_ZONE}
