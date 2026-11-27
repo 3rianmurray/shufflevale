@@ -1,5 +1,5 @@
 import { Stack, router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, View } from 'react-native';
 import type { AccessibilityActionEvent } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,7 +23,7 @@ import { findDuplicates } from '../lib/deckMatch';
 import { pictureComparer } from '../lib/pictureCompare';
 import { previousOf, tableSlot, versionDate } from '../lib/previousVersions';
 import { whenText } from '../lib/when';
-import { deleteDeckWarning } from '../lib/deckInUse';
+import { countTablesByDeck, deleteDeckWarning } from '../lib/deckInUse';
 import { cardRoom, cardsUsed, FREE_CARD_LIMIT } from '../lib/limits';
 import { exampleAllowances, isPlayground, usePro } from '../lib/pro';
 import * as haptics from '../lib/haptics';
@@ -80,6 +80,7 @@ export default function HomeScreen() {
   } = useDecks();
   const insets = useSafeAreaInsets();
   const sandboxes = useSandboxes();
+  const tablesPerDeck = useMemo(() => countTablesByDeck(sandboxes), [sandboxes]);
   const tableGrouping = useTableGroups();
   const { addFile, addParts, fits, planFile } = useFileImport();
 
@@ -444,6 +445,7 @@ export default function HomeScreen() {
           </Text>
           <Text style={styles.meta}>
             {deckSize(deck)} {deckSize(deck) === 1 ? 'card' : 'cards'}
+            {tablesPerDeck.get(deck.id) ? ` · on ${tablesPerDeck.get(deck.id)} ${tablesPerDeck.get(deck.id) === 1 ? 'table' : 'tables'}` : ''}
           </Text>
         </View>
         <Button
