@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -53,6 +53,21 @@ interface Shot {
 export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel, onClosed }: Props) {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
+  /**
+   * Camera access is asked for straight away with the system's own prompt, with no screen of ours before it (App
+   * Review 5.1.1(iv)). Our screen shows only once the user has said no, to point them to Settings.
+   */
+  const [askedThisTime, setAskedThisTime] = useState(false);
+  const asking = useRef(false);
+  if (!visible && askedThisTime) setAskedThisTime(false);
+  useEffect(() => {
+    if (!visible || !permission || permission.granted || !permission.canAskAgain || askedThisTime || asking.current) return;
+    asking.current = true;
+    void requestPermission().finally(() => {
+      asking.current = false;
+      setAskedThisTime(true);
+    });
+  }, [visible, permission, askedThisTime, requestPermission]);
   const [camera, setCamera] = useState<CameraView | null>(null);
   const [ready, setReady] = useState(false);
   const [backs, setBacks] = useState(false);
@@ -222,16 +237,15 @@ export function CardCamera({ visible, single = false, ratioFor, onDone, onCancel
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" supportedOrientations={ALL_ORIENTATIONS} onRequestClose={cancel} onDismiss={onClosed}>
       <View style={styles.screen}>
         {!permission ? null : !permission.granted ? (
-          <View style={[styles.ask, { paddingTop: insets.top + 40 }]}>
-            <Text style={styles.askTitle}>Camera access</Text>
-            <Text style={styles.askText}>Shufflevale uses the camera to photograph your cards.</Text>
-            {permission.canAskAgain ? (
-              <Button label="Allow the camera" variant="primary" onPress={() => void requestPermission()} />
-            ) : (
+          // While the system's prompt is up, nothing of ours shows behind it.
+          permission.canAskAgain && !askedThisTime ? null : (
+            <View style={[styles.ask, { paddingTop: insets.top + 40 }]}>
+              <Text style={styles.askTitle}>Camera is off</Text>
+              <Text style={styles.askText}>Turn on the camera for Shufflevale in Settings to photograph your cards.</Text>
               <Button label="Open Settings" variant="primary" onPress={() => void Linking.openSettings()} />
-            )}
-            <Button label="Cancel" onPress={cancel} />
-          </View>
+              <Button label="Close" onPress={cancel} />
+            </View>
+          )
         ) : visible ? (
           <>
             <CameraView
