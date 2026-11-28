@@ -75,10 +75,71 @@ const setOwned = (owned: boolean) => {
 };
 
 let started = false;
+/** Connected to the App Store (with the purchase listeners on), or connecting. */
+let connected = false;
+let connecting: Promise<boolean> | null = null;
+/** A purchase from Unlock Pro is under way: its result (success, failure or cancel) is told once, by whichever hears first. */
+let purchasing = false;
+
+/** A purchase that failed: said so, unless canceled; one already bought is restored instead. */
+function purchaseFailed(m: Iap, code: string | undefined, message?: string) {
+  if (!purchasing) return;
+  purchasing = false;
+  set({ busy: false });
+  if (code === m.ErrorCode.UserCancelled) return;
+  // Bought before (on this Apple Account): it's theirs, so it's restored.
+  if (code === m.ErrorCode.AlreadyOwned) {
+    void restorePro();
+    return;
+  }
+  Alert.alert('Purchase didn’t go through', message || 'Please try again in a moment.');
+}
+
+/** Connects to the App Store and starts listening for purchases, once; tried again if it failed before. */
+function connect(m: Iap): Promise<boolean> {
+  if (connected) return Promise.resolve(true);
+  if (connecting) return connecting;
+  connecting = (async () => {
+    try {
+      await m.initConnection();
+    } catch (e) {
+      console.warn('App Store connection failed', e);
+      return false;
+    }
+    m.purchaseUpdatedListener((purchase) => {
+      if (purchase.productId !== PRO_PRODUCT_ID) return;
+      if (purchase.purchaseState === 'purchased') {
+        setOwned(true);
+        m.finishTransaction({ purchase, isConsumable: false }).catch((e) => console.warn('finishTransaction failed', e));
+        if (purchasing) Alert.alert('Welcome to Shufflevale Pro', 'Unlimited cards, deck files and every component are yours. Thank you!');
+        purchasing = false;
+      }
+      set({ busy: false });
+    });
+    m.purchaseErrorListener((error) => purchaseFailed(m, error.code, error.message));
+    connected = true;
+    return true;
+  })().finally(() => {
+    connecting = null;
+  });
+  return connecting;
+}
+
+/** Looks up Pro's price on the App Store. Whether it was found. */
+async function loadProduct(m: Iap): Promise<boolean> {
+  try {
+    const product = ((await m.fetchProducts({ skus: [PRO_PRODUCT_ID], type: 'in-app' })) ?? []).find((p) => p.id === PRO_PRODUCT_ID);
+    if (product) set({ price: product.displayPrice });
+    return !!product;
+  } catch (e) {
+    console.warn('Pro lookup failed', e);
+    return false;
+  }
+}
 
 /**
- * Connects to the App Store once, as the app opens: listens for purchases, looks up Pro's price, and checks whether
- * it's owned.
+ * Connects to the App Store as the app opens: listens for purchases, looks up Pro's price, and checks whether it's
+ * owned. Unlock Pro tries again if this didn't get through.
  */
 export async function startPro() {
   if (started) return;
@@ -88,36 +149,8 @@ export async function startPro() {
     set({ available: false });
     return;
   }
-  try {
-    await m.initConnection();
-  } catch (e) {
-    console.warn('App Store connection failed', e);
-    return;
-  }
-  m.purchaseUpdatedListener((purchase) => {
-    if (purchase.productId !== PRO_PRODUCT_ID) return;
-    if (purchase.purchaseState === 'purchased') {
-      setOwned(true);
-      m.finishTransaction({ purchase, isConsumable: false }).catch((e) => console.warn('finishTransaction failed', e));
-      if (state.busy) Alert.alert('Welcome to Shufflevale Pro', 'Unlimited cards, deck files and every component are yours. Thank you!');
-    }
-    set({ busy: false });
-  });
-  m.purchaseErrorListener((error) => {
-    set({ busy: false });
-    if (error.code === m.ErrorCode.UserCancelled) return;
-    // Bought before (on this Apple Account): it's theirs, so it's restored.
-    if (error.code === m.ErrorCode.AlreadyOwned) {
-      void restorePro();
-      return;
-    }
-    Alert.alert('Purchase didn’t go through', error.message || 'Please try again in a moment.');
-  });
-  const [products, purchases] = await Promise.allSettled([m.fetchProducts({ skus: [PRO_PRODUCT_ID], type: 'in-app' }), m.getAvailablePurchases()]);
-  if (products.status === 'fulfilled') {
-    const product = (products.value ?? []).find((p) => p.id === PRO_PRODUCT_ID);
-    if (product) set({ price: product.displayPrice });
-  }
+  if (!(await connect(m))) return;
+  const [, purchases] = await Promise.allSettled([loadProduct(m), m.getAvailablePurchases()]);
   // What the App Store says now (a refund takes Pro away again).
   if (purchases.status === 'fulfilled') setOwned(purchases.value.some((p) => p.productId === PRO_PRODUCT_ID));
 }
@@ -153,16 +186,27 @@ export function exampleAllowances(): Map<string, number> {
   return out;
 }
 
-/** Opens Apple's purchase sheet for Pro. The result arrives through the listeners in `startPro`. */
+/**
+ * Opens Apple's purchase sheet for Pro, connecting to the App Store first if that hadn't worked yet. The result
+ * arrives through the listeners in `connect`; if the App Store can't be reached, it says so.
+ */
 export async function buyPro() {
   const m = iap();
   if (!m || state.busy) return;
   set({ busy: true });
+  const ready = (await connect(m)) && (state.price !== null || (await loadProduct(m)));
+  if (!ready) {
+    set({ busy: false });
+    Alert.alert('Couldn’t reach the App Store', 'Please try again in a moment.');
+    return;
+  }
+  purchasing = true;
   try {
     await m.requestPurchase({ request: { apple: { sku: PRO_PRODUCT_ID } }, type: 'in-app' });
   } catch (e) {
-    set({ busy: false });
     console.warn('requestPurchase failed', e);
+    const err = e as { code?: string; message?: string };
+    purchaseFailed(m, err?.code, err?.message);
   }
 }
 
@@ -172,6 +216,7 @@ export async function restorePro(): Promise<boolean> {
   if (!m) return false;
   set({ busy: true });
   try {
+    if (!(await connect(m))) throw new Error('Couldn’t reach the App Store. Please try again in a moment.');
     await m.restorePurchases();
     const owned = (await m.getAvailablePurchases()).some((p) => p.productId === PRO_PRODUCT_ID);
     setOwned(owned);

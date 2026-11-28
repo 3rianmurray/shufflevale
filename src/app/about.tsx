@@ -60,6 +60,15 @@ export default function AboutScreen() {
           <ScrollView style={styles.windowScroll} bounces={false} contentContainerStyle={styles.content}>
             {body}
           </ScrollView>
+          {/* Always in sight, as well as a tap outside. */}
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            style={({ pressed }) => [styles.close, pressed && { opacity: 0.6 }]}>
+            <Text style={styles.closeText}>Close</Text>
+          </Pressable>
         </View>
       </View>
     );
@@ -99,4 +108,6 @@ const styles = StyleSheet.create({
   linkText: { flex: 1, color: colors.accent, fontSize: 16, fontWeight: '600' },
   chevron: { color: colors.textMuted, fontSize: 20 },
   footnote: { color: colors.textMuted, fontSize: 12, marginTop: 24 },
+  close: { position: 'absolute', top: 14, right: 16 },
+  closeText: { color: colors.accent, fontSize: 17, fontWeight: '600' },
 });

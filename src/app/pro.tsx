@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -94,16 +94,29 @@ export default function ProScreen() {
           <ScrollView style={styles.cardScroll} contentContainerStyle={styles.content}>
             {body}
           </ScrollView>
+          <CloseButton style={styles.cardClose} />
         </View>
       </View>
     );
   }
 
-  // On iPhone the whole screen; it scrolls, so Restore Purchases at the bottom is always reachable.
+  // On iPhone the whole screen, with Close in its top bar; it scrolls, so Restore Purchases at the bottom is always reachable.
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
-      {body}
-    </ScrollView>
+    <>
+      <Stack.Screen options={{ headerRight: () => <CloseButton /> }} />
+      <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
+        {body}
+      </ScrollView>
+    </>
+  );
+}
+
+/** Closes the Pro screen: always in sight, so it's plain that Pro can be passed on. */
+function CloseButton({ style }: { style?: object }) {
+  return (
+    <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={({ pressed }) => [style, pressed && { opacity: 0.6 }]}>
+      <Text style={styles.closeText}>Close</Text>
+    </Pressable>
   );
 }
 
@@ -138,4 +151,6 @@ const styles = StyleSheet.create({
   owned: { color: colors.accent, fontSize: 16, fontWeight: '600', marginTop: 24 },
   restore: { marginTop: 20, padding: 6 },
   restoreText: { color: colors.textMuted, fontSize: 14, textDecorationLine: 'underline' },
+  cardClose: { position: 'absolute', top: 16, right: 18 },
+  closeText: { color: colors.accent, fontSize: 17, fontWeight: '600' },
 });
